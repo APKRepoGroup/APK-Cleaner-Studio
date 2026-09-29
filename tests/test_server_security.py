@@ -14,10 +14,64 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "studio"))
 
-from server import StudioHandler, _ACTIVE_JOBS, _ACTIVE_JOBS_LOCK, _BLOCKED_CLIENTS, _CLIENTS, _CLIENTS_LOCK, _JOB_CANCEL_EVENTS, _JOB_THREADS, cancel_clean_job, cleanup_stale_jobs, client_identity, clone_job_for_reuse, delete_job_history, direct_https_target, effective_client_address, lan_https_target, list_job_history, manage_client, observe_public_origin, preferred_browser_url, public_https_target, read_json, record_blocked_client_details, record_client, request_client_access, start_clean_job, write_json
+from server import StudioHandler, _ACTIVE_JOBS, _ACTIVE_JOBS_LOCK, _BLOCKED_CLIENTS, _CLIENTS, _CLIENTS_LOCK, _JOB_CANCEL_EVENTS, _JOB_THREADS, cancel_clean_job, cleanup_stale_jobs, client_identity, clone_job_for_reuse, delete_job_history, diagnostic_report, direct_https_target, effective_client_address, failure_diagnostic, lan_https_target, list_job_history, list_job_storage, manage_client, observe_public_origin, preferred_browser_url, public_https_target, read_json, record_blocked_client_details, record_client, request_client_access, start_clean_job, write_json
 
 
 class LocalRequestSecurityTests(unittest.TestCase):
+    def test_storage_summary_counts_only_visible_job_files_and_protects_active_jobs(self):
+        with tempfile.TemporaryDirectory() as name, mock.patch("server.JOBS", Path(name)):
+            owner = "owner-123"
+            own_id, other_id = "a" * 32, "b" * 32
+            for job_id, identity in ((own_id, owner), (other_id, "other-456")):
+                job = Path(name) / job_id
+                (job / "output").mkdir(parents=True)
+                write_json(job / "analysis.json", {"owner_id": identity, "source_path": "source.apks", "filename": "source.apks"})
+                write_json(job / "state.json", {"status": "done"})
+                (job / "source.apks").write_bytes(b"s" * 5)
+                (job / "output" / "result.apk").write_bytes(b"o" * 7)
+                (job / "work.tmp").write_bytes(b"w" * 3)
+            with _ACTIVE_JOBS_LOCK:
+                _ACTIVE_JOBS.add(own_id)
+            try:
+                result = list_job_storage(owner, False)
+                self.assertEqual(len(result["jobs"]), 1)
+                self.assertEqual(result["jobs"][0]["job_id"], own_id)
+                self.assertEqual(result["jobs"][0]["sizes"]["source"], 5)
+                self.assertEqual(result["jobs"][0]["sizes"]["output"], 7)
+                self.assertGreaterEqual(result["jobs"][0]["sizes"]["working"], 3)
+                self.assertFalse(result["jobs"][0]["can_delete"])
+                with self.assertRaises(ValueError):
+                    delete_job_history(own_id, owner, False)
+            finally:
+                with _ACTIVE_JOBS_LOCK:
+                    _ACTIVE_JOBS.discard(own_id)
+
+    def test_diagnostic_preview_hides_identifiers_and_untrusted_error_text(self):
+        with tempfile.TemporaryDirectory() as name, mock.patch("server.ANDROID_RUNTIME", False):
+            job = Path(name)
+            write_json(job / "analysis.json", {"filename": "private-app.apk", "package_name": "test.private.app"})
+            write_json(job / "state.json", {"status": "error"})
+            error = RuntimeError("private-app.apk --ks-pass pass:secret başarısız oldu (1)")
+            write_json(job / "diagnostic.json", failure_diagnostic(error))
+            preview = diagnostic_report(job)
+            self.assertNotIn("private-app.apk", preview)
+            self.assertNotIn("test.private.app", preview)
+            self.assertNotIn("pass:secret", preview)
+            self.assertIn("Gömülü araç çıkış kodu: 1", preview)
+            opted_in = diagnostic_report(job, include_identifiers=True)
+            self.assertIn("private-app.apk", opted_in)
+            self.assertIn("test.private.app", opted_in)
+
+    def test_remote_client_cannot_open_diagnostic_report(self):
+        handler = StudioHandler.__new__(StudioHandler)
+        handler.path = "/api/diagnostic"
+        handler.client_address = ("10.10.30.45", 12345)
+        handler.headers = {"Host": "10.10.30.33:8080", "X-Client-ID": "remote-client-123"}
+        with mock.patch.object(handler, "send_json") as send_json, mock.patch.object(handler, "send_diagnostic") as send_diagnostic:
+            handler.do_GET()
+        self.assertEqual(send_json.call_args.args[1], 403)
+        send_diagnostic.assert_not_called()
+
     def handler(self, host: str, origin: str | None = None):
         instance = StudioHandler.__new__(StudioHandler)
         instance.headers = {"Host": host}

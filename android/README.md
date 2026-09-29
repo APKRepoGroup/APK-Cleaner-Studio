@@ -5,8 +5,8 @@ Bu modül, Windows ve Termux sürümlerindeki ortak web arayüzünü uygulama i�
 ## Hedef paket
 
 - Uygulama kimliği: `com.apkrepo.apkcleanerstudio`
-- Sürüm adı: `0.6.3-dev.1`
-- Sürüm kodu: `6301`
+- Sürüm adı: `0.6.3-dev.2`
+- Sürüm kodu: `6302`
 - Minimum Android: 8.0 / API 26
 - Hedef mimariler: `arm64-v8a`, `armeabi-v7a`
 - Paketlenen diller: varsayılan İngilizce ve Türkçe
@@ -24,7 +24,7 @@ PowerShell'de proje kökünden:
 .\android\build-android.ps1 -Variant Release
 ```
 
-Betik her derlemeden önce `packaging/sync_android.py` aracını çalıştırır. Böylece `studio/` altındaki ortak Python motoru ve aynı web arayüzü Android paketine otomatik taşınır. Masaüstü sürümünde yapılan ortak bir değişikliğin Android'e aktarılması tek komutla gerçekleşir.
+Betik her derlemeden önce `packaging/build_java_tools.py` ile Java işlem motorlarını kaynaklarından yeniler, ardından `packaging/sync_android.py` aracını çalıştırır. Böylece `studio/` altındaki ortak Python motoru, aynı web arayüzü ve güncel Java adaptörleri Android paketine taşınır. Masaüstü sürümünde yapılan ortak bir değişikliğin Android'e aktarılması tek komutla gerçekleşir.
 
 Uygulama dağıtım imzası ve parola yapılandırması kaynak ağacının dışındaki yerel, korumalı imza dizininde tutulur. Bu özel anahtar gelecekteki bütün Android güncellemelerinde aynen korunmalı ve güvenli biçimde yedeklenmelidir. Anahtar ve parolalar Git tarafından izlenmez ve APK'nın içine eklenmez. Uygulama dağıtım imzası, işlenen APK çıktılarının imzalanmasında kullanılan gömülü anahtardan tamamen ayrıdır.
 

@@ -46,6 +46,7 @@ public final class EngineService extends Service {
             startForeground(31, notification(getString(R.string.engine_starting)));
         } catch (Throwable error) {
             startupError = describe(error);
+            DiagnosticRecorder.record(this, "engine-startup", error);
             Log.e(TAG, "Motor servisi başlatılamadı", error);
             stopSelf();
             return;
@@ -106,6 +107,7 @@ public final class EngineService extends Service {
         } catch (Throwable error) {
             ready = false;
             startupError = describe(error);
+            DiagnosticRecorder.record(this, "engine-startup", error);
             Log.e(TAG, "Gömülü motor başlatılamadı", error);
         }
     }

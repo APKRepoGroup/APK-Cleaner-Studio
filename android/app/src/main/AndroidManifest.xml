@@ -53,5 +53,9 @@
             android:authorities="${applicationId}.files"
             android:exported="false"
             android:grantUriPermissions="true" />
+
+        <receiver
+            android:name=".OriginalSplitInstaller$ResultReceiver"
+            android:exported="false" />
     </application>
 </manifest>

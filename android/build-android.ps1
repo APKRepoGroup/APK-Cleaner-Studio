@@ -2,7 +2,7 @@
 param(
   [ValidateSet("Debug", "Release")]
   [string]$Variant = "Debug",
-  [string]$OutputName = "APK-Cleaner-Studio-v0.6.3-dev.1-Android.apk"
+  [string]$OutputName = "APK-Cleaner-Studio-v0.6.3-dev.2-Android.apk"
 )
 
 $ErrorActionPreference = "Stop"
@@ -36,9 +36,6 @@ if (-not $Python -or -not (Test-Path -LiteralPath $Python)) {
   if ($PythonCommand) { $Python = $PythonCommand.Source }
 }
 if (-not $Python) { throw "Python bulunamadı. APK_CLEANER_PYTHON değişkenini bir Python 3 yolu olarak ayarla." }
-
-& $Python (Join-Path $ProjectRoot "packaging\sync_android.py")
-if ($LASTEXITCODE -ne 0) { throw "Android kaynak eşitlemesi başarısız oldu." }
 
 $Sdk = $env:ANDROID_SDK_ROOT
 if (-not $Sdk) { $Sdk = $env:ANDROID_HOME }
@@ -82,6 +79,10 @@ if (-not $env:APK_CLEANER_SHORT_PATH_BUILD -and $ProjectRoot.Length -gt 80) {
     "sdk.dir=$RestoredSdk" | Set-Content -LiteralPath (Join-Path $PSScriptRoot "local.properties") -Encoding ASCII
   }
 }
+& $Python (Join-Path $ProjectRoot "packaging\build_java_tools.py")
+if ($LASTEXITCODE -ne 0) { throw "Java işlem motorları derlenemedi." }
+& $Python (Join-Path $ProjectRoot "packaging\sync_android.py")
+if ($LASTEXITCODE -ne 0) { throw "Android kaynak eşitlemesi başarısız oldu." }
 $EscapedSdk = $Sdk.Replace('\', '\\').Replace(':', '\:')
 "sdk.dir=$EscapedSdk" | Set-Content -LiteralPath (Join-Path $PSScriptRoot "local.properties") -Encoding ASCII
 

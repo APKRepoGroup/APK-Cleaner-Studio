@@ -16,7 +16,7 @@ from pathlib import Path
 
 from engine import DATA_ROOT, RUNTIME, TOOLS, Toolchain
 
-USER_AGENT = "APK-Cleaner-Studio/0.6.3-dev.1"
+USER_AGENT = "APK-Cleaner-Studio/0.6.3-dev.2"
 MAX_METADATA_BYTES = 2 * 1024 * 1024
 MAX_RUNTIME_ARCHIVE_BYTES = 1024 * 1024 * 1024
 MAX_RUNTIME_EXPANDED_BYTES = 3 * 1024 * 1024 * 1024

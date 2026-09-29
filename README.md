@@ -127,7 +127,10 @@ Yükleyici, Termux deposunda bulunduğunda OpenJDK 25’i kullanır; cihaz mimar
 
 ## Raporlar, geçmiş ve yerel veriler
 
-- Sonuç ekranında **Raporu aç**, **Paylaş**, **APK’yı yükle** ve **APK’yı indir** seçenekleri, platformun desteklediği ölçüde gösterilir.
+- Sonuç ekranında **Raporu aç**, **Paylaş**, **APK’yı kur** ve **APK’yı indir** seçenekleri, platformun desteklediği ölçüde gösterilir.
+- Çıktı sunulmadan önce APK arşivinin CRC bütünlüğü, manifest ve DEX kayıtları, native kütüphaneleri ve imzası doğrulanır. Split paketlerde seçilen modüller birleştirmeden önce denetlenir.
+- İşlem raporu, değişen DEX dosyalarının önce/sonra boyutunu ve SHA-256 değerini, kaldırılan manifest kayıtlarını ve XML alanlarının eski/yeni değerlerini gösterir.
+- Sık kullanılan işlem seçenekleri **Kayıtlı işlem profilleri** bölümünde saklanabilir. Bu profillere kaynak APK, dosya adı veya kullanıcı verisi eklenmez; kayıtlar yalnızca kullanılan cihazın tarayıcı alanındadır.
 - Tamamlanan işlemler yeniden açılabilir; rapor ve çıktı hazırsa doğrudan görüntülenebilir veya indirilebilir.
 - Kaynak paketler, raporlar ve çıktılar 14 gün boyunca yalnızca yerel cihazda tutulur. İstenmeyen kayıtlar geçmiş listesinden silinebilir.
 - Yerel ağ oturumları 10 saniyede bir yenilenir; bağlantısı kesilen cihazlar 5 dakika sonra listeden kaldırılır. Verilen görünen ad yalnızca uygulamanın çalıştığı cihazda saklanır.

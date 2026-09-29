@@ -7,7 +7,8 @@ const state = {
   displayedProgress: 0, targetProgress: 0, progressFrame: 0, progressLastTick: 0,
   pollInFlight: false, jobRunning: false, statusInFlight: false,
   installedApps: [], installedAppsLoading: false, installedAppsReady: false, selectedInstalledPackage: "", installedSharePackage: "",
-  outputUrl: "", outputFilename: "", nativeInstallBusy: false, nativeShareBusy: false,
+  outputUrl: "", outputFilename: "", nativeInstallBusy: false, nativeShareBusy: false, nativeSplitInstallBusy: false,
+  splitInstallPlan: null, splitInstallRequestJobId: null, splitInstallSubmitted: false,
   update: null, updateBusy: false
 };
 const MAX_UPLOAD_BYTES = 1024 ** 3;
@@ -17,6 +18,8 @@ const THEME_KEY = "apk-cleaner-theme";
 const DISMISSED_UPDATE_KEY = "apk-cleaner-dismissed-update";
 const CLIENT_ID_KEY = "apk-cleaner-client-id";
 const CLIENT_COOKIE_NAME = "apk_cleaner_client_id";
+const SAVED_PRESETS_KEY = "apk-cleaner-processing-presets-v1";
+const ACTION_NEXT_ICON = '<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h15m-6-6 6 6-6 6"/></svg>';
 function setJobRunning(active) {
   state.jobRunning = Boolean(active);
   if (document.documentElement.dataset.embedded !== "android") return;
@@ -50,6 +53,24 @@ document.cookie = `${CLIENT_COOKIE_NAME}=${clientId}; Path=/; Max-Age=31536000; 
 const themeMedia = matchMedia("(prefers-color-scheme: dark)");
 const motionMedia = matchMedia("(prefers-reduced-motion: reduce)");
 const desktopPointer = matchMedia("(hover: hover) and (pointer: fine)");
+const desktopThanks = matchMedia("(min-width: 721px)");
+const supporterDisclosure = $(".supporter-disclosure");
+let supporterDisclosureInitialized = false;
+function syncSupporterDisclosure() {
+  if (!supporterDisclosure) return;
+  // Keep an expanded list open when a desktop window becomes narrow. Closing
+  // it during resize removes page height and makes the browser jump upward.
+  if (desktopThanks.matches) supporterDisclosure.open = true;
+  else if (!supporterDisclosureInitialized) supporterDisclosure.open = false;
+  supporterDisclosureInitialized = true;
+  const summary = supporterDisclosure.querySelector("summary");
+  if (summary) summary.tabIndex = desktopThanks.matches ? -1 : 0;
+}
+supporterDisclosure?.querySelector("summary")?.addEventListener("click", (event) => {
+  if (desktopThanks.matches) event.preventDefault();
+});
+desktopThanks.addEventListener?.("change", syncSupporterDisclosure);
+syncSupporterDisclosure();
 const uiScheduler = StudioUI.createScheduler();
 let nativeUiVisible = true;
 let uiReadController = new AbortController();
@@ -309,6 +330,95 @@ function closeReportViewer() {
   modalMotion.close(viewer, () => unlockPageScroll("report-viewer"));
 }
 
+let diagnosticJobId = null;
+let diagnosticGeneration = 0;
+let diagnosticSanitizedReport = null;
+function closeDiagnosticViewer() {
+  diagnosticGeneration++;
+  diagnosticJobId = null;
+  $("#diagnosticViewerContent").setAttribute("aria-busy", "false");
+  const download = $("#diagnosticViewerDownload");
+  download.removeAttribute("href");
+  download.setAttribute("aria-disabled", "true");
+  download.classList.remove("has-report");
+  const card = $("#diagnosticViewer .diagnostic-card");
+  card.classList.remove("is-size-stable");
+  card.style.removeProperty("--diagnostic-stable-height");
+  modalMotion.close($("#diagnosticViewer"), () => unlockPageScroll("diagnostic-viewer"));
+}
+
+async function refreshDiagnosticPreview(stabilizeSize = false) {
+  const generation = ++diagnosticGeneration;
+  const content = $("#diagnosticViewerContent");
+  const download = $("#diagnosticViewerDownload");
+  const includesIdentifiers = $("#diagnosticIdentifiers").checked;
+  const query = `identifiers=${includesIdentifiers ? "1" : "0"}`;
+  const base = diagnosticJobId ? `/api/jobs/${encodeURIComponent(diagnosticJobId)}/diagnostic` : "/api/diagnostic";
+  if (stabilizeSize) {
+    const card = $("#diagnosticViewer .diagnostic-card");
+    if (!card.classList.contains("is-size-stable")) {
+      card.style.setProperty("--diagnostic-stable-height", `${card.getBoundingClientRect().height.toFixed(2)}px`);
+      card.classList.add("is-size-stable");
+    }
+  }
+  // Checkbox changes should not briefly replace the report with a one-line
+  // placeholder: that shrinks the dialog and makes the content flash. When the
+  // option is turned off, never leave the identifying version on screen.
+  if (!includesIdentifiers && content.dataset.identifiers === "true") {
+    content.textContent = diagnosticSanitizedReport ?? "";
+    content.dataset.identifiers = "false";
+  }
+  content.setAttribute("aria-busy", "true");
+  // Keep the existing link styling while refreshing. aria-disabled and the
+  // click guard below prevent downloading a stale report in the meantime.
+  download.setAttribute("aria-disabled", "true");
+  try {
+    const response = await apiFetch(`${base}?${query}`, { cache: "no-store", headers: clientHeaders() });
+    const report = await response.text();
+    if (!response.ok) {
+      let message = report;
+      try { message = JSON.parse(report).error || report; } catch {}
+      throw new Error(message || "Hata raporu açılamadı.");
+    }
+    if (generation !== diagnosticGeneration) return;
+    content.textContent = report;
+    content.dataset.identifiers = includesIdentifiers ? "true" : "false";
+    if (!includesIdentifiers) diagnosticSanitizedReport = report;
+    content.scrollTop = 0;
+    download.href = `${base}?${query}&download=1`;
+    download.classList.add("has-report");
+    download.setAttribute("aria-disabled", "false");
+  } catch (error) {
+    if (generation === diagnosticGeneration) {
+      content.textContent = `Hata raporu açılamadı.\n\n${error.message || "Bilinmeyen hata"}`;
+      content.dataset.identifiers = "false";
+      download.removeAttribute("href");
+      download.classList.remove("has-report");
+    }
+  } finally {
+    if (generation === diagnosticGeneration) content.setAttribute("aria-busy", "false");
+  }
+}
+
+function openDiagnosticViewer(jobId = null) {
+  diagnosticJobId = jobId;
+  diagnosticSanitizedReport = null;
+  const download = $("#diagnosticViewerDownload");
+  download.removeAttribute("href");
+  download.setAttribute("aria-disabled", "true");
+  download.classList.remove("has-report");
+  const card = $("#diagnosticViewer .diagnostic-card");
+  card.classList.remove("is-size-stable");
+  card.style.removeProperty("--diagnostic-stable-height");
+  $("#diagnosticIdentifiers").checked = false;
+  $("#diagnosticViewerContent").textContent = "Rapor hazırlanıyor…";
+  $("#diagnosticViewerContent").dataset.identifiers = "false";
+  modalMotion.open($("#diagnosticViewer"));
+  lockPageScroll("diagnostic-viewer");
+  requestAnimationFrame(() => $("#diagnosticViewerClose").focus());
+  refreshDiagnosticPreview();
+}
+
 function closeMessageReview() {
   messageReviewGeneration++;
   const viewer = $("#messageReview");
@@ -548,6 +658,38 @@ globalThis.onNativeAction = async (action, payload) => {
   let result;
   try { result = JSON.parse(payload); }
   catch { result = { status: "error", error: "Android yanıtı okunamadı." }; }
+  if (action === "split_install") {
+    const button = $("#directSplitInstallButton");
+    if (result.status === "plan_ready") {
+      if (!state.jobId || !state.splitInstallRequestJobId || state.splitInstallRequestJobId !== state.jobId) return;
+      state.nativeSplitInstallBusy = false;
+      button.disabled = false;
+      button.textContent = "Bileşenleri yeniden incele";
+      renderDirectSplitPlan(result);
+      return;
+    }
+    if (["installed", "error", "cancelled"].includes(result.status)) {
+      state.nativeSplitInstallBusy = false;
+      state.splitInstallSubmitted = false;
+      button.disabled = false;
+      button.textContent = "Bileşenleri yeniden incele";
+      clearDirectSplitPlan();
+      refreshInstallHistory();
+    }
+    if (result.status === "permission_required") {
+      toast("Kuruluma devam etmek için bu kaynaktan uygulama yükleme iznini etkinleştir.");
+    } else if (result.status === "session_submitted") {
+      state.nativeSplitInstallBusy = false;
+      toast(`${result.modules || 0} özgün APK bileşeni Android kurulumuna gönderildi.`);
+    } else if (result.status === "confirmation_opened") {
+      toast("Android kurulum onayı açıldı.");
+    } else if (result.status === "installed") {
+      toast(result.message || "Özgün split paketi kuruldu.");
+    } else if (result.status === "error" || result.status === "cancelled") {
+      await openAppDialog({ title: "Doğrudan kurulum tamamlanamadı", message: result.error || result.message || "Android paketi kuramadı.", confirmText: "Anladım", eyebrow: "SPLIT KURULUMU" });
+    }
+    return;
+  }
   if (action === "update") {
     const button = $("#updateDownload");
     if (result.status === "permission_required") {
@@ -926,12 +1068,14 @@ function renderHistory(jobs = []) {
       <nav>
         ${job.can_reuse ? `<button type="button" data-history-reuse="${escapeHTML(job.job_id)}">Tekrar işle</button>` : ""}
         ${job.has_report ? `<button type="button" data-history-report="${escapeHTML(job.job_id)}" data-history-name="${escapeHTML(job.filename)}">Rapor</button>` : ""}
+        ${job.status === "error" ? `<button type="button" data-history-diagnostic="${escapeHTML(job.job_id)}">Hata raporu</button>` : ""}
         ${job.has_output ? `<a href="/api/jobs/${escapeHTML(job.job_id)}/download?filename=${encodeURIComponent(job.output_filename || "APK-Cleaner-Studio-output.apk")}" download="${escapeHTML(job.output_filename || "APK-Cleaner-Studio-output.apk")}">İndir</a>` : ""}
         ${job.can_delete ? `<button type="button" class="history-delete" data-history-delete="${escapeHTML(job.job_id)}" data-history-name="${escapeHTML(job.filename)}">Sil</button>` : ""}
       </nav>
     </article>`).join("") : `<p class="fineprint">Tamamladığın paketler burada görünür. Kayıtlar yalnızca bu yerel cihazda tutulur.</p>`;
   $$('[data-history-reuse]').forEach((button) => button.addEventListener("click", () => loadHistoryJob(button.dataset.historyReuse)));
   $$('[data-history-report]').forEach((button) => button.addEventListener("click", () => openReportViewer(button.dataset.historyReport, button.dataset.historyName)));
+  $$('[data-history-diagnostic]').forEach((button) => button.addEventListener("click", () => openDiagnosticViewer(button.dataset.historyDiagnostic)));
   $$('[data-history-delete]').forEach((button) => button.addEventListener("click", () => deleteHistoryJob(button.dataset.historyDelete, button.dataset.historyName)));
 }
 
@@ -957,6 +1101,79 @@ async function refreshHistory() {
   finally { state.historyInFlight = false; }
 }
 
+async function refreshStorage() {
+  if (!$("#storageCard").open) return;
+  try {
+    const response = await apiFetch("/api/storage", { cache: "no-store", headers: clientHeaders() });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "Depolama bilgisi okunamadı.");
+    const totals = data.totals || {};
+    $("#storageTitle").textContent = `${(data.jobs || []).length} yerel işlem kaydı`;
+    $("#storageTotals").textContent = `Kaynak: ${humanSize(totals.source || 0)} · Çıktı: ${humanSize(totals.output || 0)} · Çalışma dosyaları: ${humanSize(totals.working || 0)}`;
+    $("#storageList").innerHTML = (data.jobs || []).length ? data.jobs.map((job) => {
+      const sizes = job.sizes || {};
+      return `<label class="storage-row"><input type="checkbox" value="${escapeHTML(job.job_id)}" ${job.can_delete ? "" : "disabled"}><span><b>${escapeHTML(job.filename || "Paket")}</b><small>Kaynak ${humanSize(sizes.source || 0)} · Çıktı ${humanSize(sizes.output || 0)} · Çalışma ${humanSize(sizes.working || 0)}${job.can_delete ? "" : " · İşlem sürüyor"}</small></span></label>`;
+    }).join("") : '<p class="fineprint">Temizlenecek işlem dosyası yok.</p>';
+    $("#storageCleanButton").disabled = true;
+    refreshNativeCacheStorage();
+  } catch (error) { $("#storageTitle").textContent = error.message || "Depolama bilgisi okunamadı."; }
+}
+
+function refreshNativeCacheStorage() {
+  const bridge = globalThis.AndroidThemeBridge;
+  const area = $("#nativeCacheStorage");
+  area.classList.toggle("hidden", !bridge?.getNativeCacheStorage);
+  if (!bridge?.getNativeCacheStorage) return;
+  try {
+    const data = JSON.parse(bridge.getNativeCacheStorage());
+    $("#nativeCacheTotals").textContent = `${Number(data.count || 0)} eski dosya · ${humanSize(data.bytes || 0)}. Son 24 saatte kullanılan dosyalar korunur.`;
+    $("#nativeCacheCleanButton").disabled = !data.count;
+  } catch { $("#nativeCacheTotals").textContent = "Önbellek bilgisi okunamadı."; }
+}
+
+async function cleanNativeCache() {
+  if (!await confirmAction("Eski önbelleği temizle", "Yalnızca 24 saatten eski Android kurulum önbelleği dosyaları silinecek. Devam edilsin mi?", "Önbelleği temizle", true)) return;
+  try {
+    const result = JSON.parse(globalThis.AndroidThemeBridge?.clearNativeCache?.() || "{}");
+    toast(`${Number(result.removed || 0)} eski önbellek dosyası temizlendi.`);
+    refreshNativeCacheStorage();
+  } catch { toast("Android önbelleği temizlenemedi."); }
+}
+
+async function cleanSelectedStorage() {
+  const selected = $$('#storageList input:checked').map((item) => item.value).filter((id) => /^[a-f0-9]{32}$/.test(id));
+  if (!selected.length) return;
+  if (!await confirmAction("Seçili dosyaları temizle", `${selected.length} işlem kaydı, kaynak paketleri, çıktıları ve çalışma dosyalarıyla birlikte kalıcı olarak silinecek. Devam edilsin mi?`, "Kalıcı olarak sil", true)) return;
+  const button = $("#storageCleanButton");
+  button.disabled = true;
+  let removed = 0;
+  try {
+    for (const id of selected) {
+      const response = await apiFetch(`/api/jobs/${id}/delete`, { method: "POST", headers: clientHeaders() });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Dosyalar temizlenemedi.");
+      removed++;
+    }
+    toast(`${removed} işlem kaydı temizlendi.`);
+  } catch (error) { toast(`${removed} kayıt temizlendi. ${error.message}`); }
+  finally { await Promise.all([refreshStorage(), refreshHistory()]); }
+}
+
+function refreshInstallHistory() {
+  const card = $("#installHistoryCard");
+  if (card.classList.contains("hidden") || !card.open) return;
+  let rows = [];
+  try { rows = JSON.parse(globalThis.AndroidThemeBridge?.getInstallHistory?.() || "[]"); } catch {}
+  const list = $("#installHistoryList");
+  list.innerHTML = rows.length ? rows.map((row) => {
+    const success = row.status === "installed";
+    const pending = row.status === "pending";
+    const date = new Date(Number(row.timestamp || 0));
+    const when = Number.isNaN(date.getTime()) ? "—" : date.toLocaleString("tr-TR", { dateStyle: "short", timeStyle: "short" });
+    return `<article class="install-history-row ${success || pending ? "" : "failed"}"><b>${escapeHTML(row.package || "Split paketi")}</b><small>${when} · ${success ? "Kuruldu" : pending ? "Onay bekleniyor" : row.status === "cancelled" ? "İptal edildi" : "Başarısız"} · ${Number(row.modules || 0)} bileşen</small><small>${escapeHTML(row.message || "")}</small></article>`;
+  }).join("") : '<p class="fineprint">Henüz doğrudan split kurulum kaydı yok.</p>';
+}
+
 async function loadHistoryJob(jobId) {
   try {
     const response = await apiFetch(`/api/jobs/${jobId}/reuse`, { method: "POST", cache: "no-store", headers: clientHeaders() });
@@ -964,9 +1181,12 @@ async function loadHistoryJob(jobId) {
     if (!response.ok) throw new Error(data.error || "Eski işlem açılamadı.");
     const analysis = data.analysis;
     state.file = null; state.jobId = data.job_id; state.analysis = analysis; state.operation = "patch";
+    $("#diagnosticAfterFailure").classList.add("hidden");
     const badge = String(analysis.source_type || "apk").toUpperCase();
     $("#fileCard").innerHTML = `<div class="apk">${escapeHTML(badge)}</div><div><b>${escapeHTML(analysis.filename)}</b><span>${humanSize(analysis.size || 0)} · Geçmiş işlem yeniden açıldı</span></div>`;
     renderNetworks(analysis); renderSplitOptions(analysis.split_options);
+    updateDirectSplitInstall(analysis);
+    prepareCloneOption(analysis);
     $("#convertOperation").classList.toggle("hidden", !analysis.split_merged);
     $("#patchAds").checked = false; $("#patchAds").disabled = !analysis.network_count;
     setOperation(analysis.split_merged && !analysis.network_count ? "convert" : "patch");
@@ -1144,6 +1364,14 @@ function updateSplitSelection(options = state.analysis?.split_options) {
 }
 
 function setOperation(operation, toggle = false) {
+  if (toggle && operation === "patch" && state.analysis && !state.analysis.network_count) {
+    toast("Bu pakette desteklenen reklam SDK’sı bulunmadı; reklam yaması uygulanamaz.");
+    return;
+  }
+  if (toggle && operation === "clone" && !state.analysis?.package_name) {
+    toast("Paket adı okunamadığı için bu pakette klonlama kullanılamıyor.");
+    return;
+  }
   if (operation === "patch") {
     const hasAds = Number(state.analysis?.network_count || 0) > 0;
     const hasConvertChoice = Boolean(state.analysis?.split_merged);
@@ -1153,7 +1381,9 @@ function setOperation(operation, toggle = false) {
       : hasAds || !state.analysis;
     const description = $("#patchOperationDescription");
     if (description) {
-      description.textContent = hasConvertChoice
+      description.textContent = state.analysis && !hasAds
+        ? "Bu pakette desteklenen reklam SDK’sı bulunmadı; reklam yaması uygulanamaz."
+        : hasConvertChoice
         ? "Doğrulanmış DEX çağrılarını, manifest kayıtlarını ve XML reklam alanlarını düzenler. Tek APK oluşturma seçeneğiyle bunun arasında geçiş yapabilirsin."
         : "Doğrulanmış DEX çağrılarını, manifest kayıtlarını ve XML reklam alanlarını düzenler. İstemiyorsan tekrar dokunarak kapatabilirsin.";
     }
@@ -1165,13 +1395,100 @@ function setOperation(operation, toggle = false) {
     item.setAttribute("aria-pressed", String(selected));
   });
   const converting = operation === "convert";
-  $("#convertPatchOption").classList.toggle("hidden", !converting);
-  $("#profileSection").classList.toggle("soft-disabled", converting && !$("#patchAds").checked);
+  const combining = converting || operation === "clone";
+  $("#convertPatchOption").classList.toggle("hidden", !combining);
+  $("#combinedPatchTitle").textContent = converting ? "Dönüştürme sırasında reklam yaması uygula" : "Klonlama sırasında reklam yaması uygula";
+  $("#cloneOptions").classList.toggle("hidden", operation !== "clone");
+  $("#profileSection").classList.toggle("soft-disabled", combining && !$("#patchAds").checked);
   updateActionState();
+}
+
+function prepareCloneOption(analysis) {
+  const original = String(analysis?.package_name || "");
+  $("#originalPackageName").textContent = original || "Paket adı okunamadı";
+  $("#clonePackageName").value = original ? String(analysis.suggested_clone_package_name || `${original}.clone`) : "";
+  $("#cloneOperation").classList.toggle("operation-unavailable", !original);
+  $("#cloneOperation").setAttribute("aria-disabled", String(!original));
+  $("#cloneAvailabilityNote").classList.toggle("hidden", Boolean(original));
+  $("#cloneOperation").title = original ? "" : "Paket adı okunamadığı için klonlama kullanılamıyor.";
+}
+
+function updateDirectSplitInstall(analysis) {
+  clearDirectSplitPlan();
+  state.splitInstallRequestJobId = null;
+  state.nativeSplitInstallBusy = false;
+  state.splitInstallSubmitted = false;
+  $("#directSplitInstallButton").disabled = false;
+  $("#directSplitInstallButton").textContent = "Bileşenleri incele";
+  const supported = document.documentElement.dataset.embedded === "android"
+    && ["apks", "apkm", "xapk"].includes(String(analysis?.source_type || "").toLowerCase());
+  $("#directSplitInstall").classList.toggle("hidden", !supported);
+}
+
+function clearDirectSplitPlan() {
+  state.splitInstallPlan = null;
+  $("#directSplitPlan").classList.add("hidden");
+  $("#directSplitModules").replaceChildren();
+}
+
+function chosenDirectSplitModules() {
+  return $$("#directSplitModules input[type=checkbox]:checked").map((input) => input.value);
+}
+
+function updateDirectSplitSummary() {
+  const plan = state.splitInstallPlan;
+  if (!plan) return;
+  const selected = new Set(chosenDirectSplitModules());
+  const selectedModules = plan.modules.filter((module) => selected.has(module.name));
+  const bytes = selectedModules.reduce((sum, module) => sum + Number(module.size || 0), 0);
+  $("#directSplitSelectionSummary").textContent = `${selectedModules.length} / ${plan.modules.length} bileşen · ${humanSize(bytes)} · Özgün imza korunur`;
+  const blocked = String(plan.blocked_reason || "");
+  $("#directSplitWarning").textContent = blocked || ($("input[name=directSplitMode]:checked").value === "manual"
+    ? "Temel APK zorunludur; alternatif temel APK aynı kuruluma eklenemez. Gerekli bir split bileşenini çıkarırsan kurulum veya uygulamanın açılışı başarısız olabilir." : "");
+  $("#directSplitWarning").classList.toggle("hidden", !$("#directSplitWarning").textContent);
+  $("#directSplitConfirm").disabled = Boolean(blocked) || state.nativeSplitInstallBusy || state.splitInstallSubmitted
+    || !selected.has(plan.modules.find((module) => module.required)?.name);
+}
+
+function renderDirectSplitPlan(plan) {
+  state.splitInstallPlan = plan;
+  state.splitInstallSubmitted = false;
+  $("#directSplitPlan").classList.remove("hidden");
+  $("#directSplitPackageSummary").textContent = `${plan.package} · sürüm ${plan.version} (${plan.version_code}) · ${plan.installed ? "Mevcut kurulum güncellenecek" : "Yeni kurulum"} · ${plan.signature_status}`;
+  $("input[name=directSplitMode][value=auto]").checked = true;
+  const list = $("#directSplitModules");
+  list.replaceChildren();
+  const labels = { base: "Temel APK", abi: "İşlemci", density: "Ekran yoğunluğu", language: "Dil", feature: "Özellik", alternative: "Alternatif temel APK" };
+  for (const splitModule of plan.modules) {
+    const row = document.createElement("label");
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox"; checkbox.value = splitModule.name; checkbox.checked = Boolean(splitModule.auto);
+    checkbox.disabled = true;
+    checkbox.dataset.required = String(Boolean(splitModule.required));
+    checkbox.dataset.alternative = String(splitModule.kind === "alternative");
+    const name = document.createElement("span"); name.textContent = splitModule.name;
+    const kind = document.createElement("small"); kind.textContent = labels[splitModule.kind] || "Bileşen";
+    row.append(checkbox, name, kind);
+    list.append(row);
+  }
+  updateDirectSplitSummary();
+  $("#directSplitPlan").scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
+function validClonePackageName() {
+  const original = String(state.analysis?.package_name || "");
+  const proposed = $("#clonePackageName").value.trim();
+  return proposed !== original && proposed.length <= 200 && /^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)+$/.test(proposed);
 }
 
 function updateAdProfileAvailability(enabled = null) {
   const hasAds = Number(state.analysis?.network_count || 0) > 0;
+  $("#patchAvailabilityNote").textContent = state.analysis?.split_merged
+    ? "Bu pakette desteklenen bir reklam SDK’sı bulunmadı. Reklam yaması uygulanamaz; split paketi yine tek APK’ya dönüştürebilirsin."
+    : "Bu pakette desteklenen bir reklam SDK’sı bulunmadı. Reklam yaması uygulanamaz; diğer bağımsız iyileştirmeleri kullanabilirsin.";
+  $("#patchAvailabilityNote").classList.toggle("hidden", hasAds || !state.analysis);
+  $("[data-operation='patch']").classList.toggle("operation-unavailable", !hasAds && Boolean(state.analysis));
+  $("[data-operation='patch']").setAttribute("aria-disabled", String(!hasAds && Boolean(state.analysis)));
   const profilesEnabled = hasAds && (enabled === null ? true : Boolean(enabled));
   $$(".profile").forEach((button) => {
     button.disabled = !profilesEnabled;
@@ -1192,20 +1509,109 @@ function updateAdProfileAvailability(enabled = null) {
 function updateActionState() {
   if (!state.analysis) return;
   const hasAds = Number(state.analysis.network_count || 0) > 0;
-  const wantsAds = hasAds && ((state.operation === "patch" && state.patchAdsSelected) || (state.operation === "convert" && $("#patchAds").checked));
+  const wantsAds = hasAds && ((state.operation === "patch" && state.patchAdsSelected) || (state.operation !== "patch" && $("#patchAds").checked));
   updateAdProfileAvailability(wantsAds);
   const hasIndependentPatch = $("#stripDebug").checked || $("#normalizeDex").checked || $("#optimizeApk").checked || $("#deobfuscateResources").checked || state.messageTargets.length > 0;
-  const canRun = state.operation === "convert" || wantsAds || hasIndependentPatch;
+  const canRun = state.operation === "clone" ? validClonePackageName() : state.operation === "convert" || wantsAds || hasIndependentPatch;
   $("#profileSection").classList.toggle("soft-disabled", !wantsAds);
   $(".manifest-note").classList.toggle("hidden", !wantsAds || state.profile === "safe");
   $("#cleanButton").disabled = !canRun;
-  if (state.operation === "convert") {
-    $("#cleanButton").innerHTML = "APK oluşturmayı başlat <span>→</span>";
+  if (state.operation === "clone") {
+    $("#cleanButton").innerHTML = `Klonlamayı başlat ${ACTION_NEXT_ICON}`;
+  } else if (state.operation === "convert") {
+    $("#cleanButton").innerHTML = `APK oluşturmayı başlat ${ACTION_NEXT_ICON}`;
   } else if (wantsAds) {
-    $("#cleanButton").innerHTML = "Temizlemeyi başlat <span>→</span>";
+    $("#cleanButton").innerHTML = `Temizlemeyi başlat ${ACTION_NEXT_ICON}`;
   } else {
-    $("#cleanButton").innerHTML = "Seçili işlemleri başlat <span>→</span>";
+    $("#cleanButton").innerHTML = `Seçili işlemleri başlat ${ACTION_NEXT_ICON}`;
   }
+}
+
+function readSavedPresets() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(SAVED_PRESETS_KEY) || "[]");
+    return Array.isArray(parsed) ? parsed.filter((item) => item && typeof item.id === "string" && typeof item.name === "string" && item.options && typeof item.options === "object").slice(0, 12) : [];
+  } catch { return []; }
+}
+
+function renderSavedPresets(selectedId = $("#savedPresetSelect").value) {
+  const select = $("#savedPresetSelect");
+  select.replaceChildren(new Option("Profil seç", ""));
+  for (const preset of readSavedPresets()) select.add(new Option(preset.name, preset.id));
+  select.value = [...select.options].some((option) => option.value === selectedId) ? selectedId : "";
+  $("#applyPresetButton").disabled = !select.value;
+  $("#deletePresetButton").disabled = !select.value;
+}
+
+function currentPresetOptions() {
+  return {
+    operation: state.operation,
+    profile: state.profile,
+    patchAds: state.operation !== "patch" ? $("#patchAds").checked : state.patchAdsSelected,
+    stripDebug: $("#stripDebug").checked,
+    normalizeDex: $("#normalizeDex").checked,
+    optimizeApk: $("#optimizeApk").checked,
+    deobfuscateResources: $("#deobfuscateResources").checked,
+  };
+}
+
+function applySavedPreset() {
+  const preset = readSavedPresets().find((item) => item.id === $("#savedPresetSelect").value);
+  if (!preset || !state.analysis) return;
+  const options = preset.options;
+  const hasAds = Number(state.analysis.network_count || 0) > 0;
+  const canConvert = Boolean(state.analysis.split_merged);
+  const operation = options.operation === "clone" && state.analysis.package_name ? "clone" : options.operation === "convert" && canConvert ? "convert" : "patch";
+  state.profile = ["safe", "balanced", "deep"].includes(options.profile) ? options.profile : "balanced";
+  setOperation(operation);
+  state.patchAdsSelected = hasAds && Boolean(options.patchAds);
+  $("#patchAds").checked = hasAds && Boolean(options.patchAds);
+  for (const [key, selector] of Object.entries({
+    stripDebug: "#stripDebug", normalizeDex: "#normalizeDex", optimizeApk: "#optimizeApk", deobfuscateResources: "#deobfuscateResources"
+  })) $(selector).checked = Boolean(options[key]);
+  $$(".operation").forEach((button) => {
+    const selected = button.dataset.operation === operation && (operation !== "patch" || state.patchAdsSelected);
+    button.classList.toggle("selected", selected);
+    button.setAttribute("aria-pressed", String(selected));
+  });
+  updateActionState();
+  toast(options.operation === "clone" && !state.analysis.package_name
+    ? "Paket adı okunamadı; klonlama seçeneği uygulanamadı."
+    : options.operation === "convert" && !canConvert
+    ? "Bu paket split değil; profilin diğer seçenekleri uygulandı."
+    : !hasAds && options.patchAds ? "Reklam ağı bulunmadı; profilin diğer seçenekleri uygulandı." : "İşlem profili uygulandı.");
+}
+
+async function saveCurrentPreset() {
+  if (!state.analysis) return;
+  const name = await openAppDialog({
+    title: "İşlem profilini kaydet", message: "Bu cihazda tekrar kullanmak için kısa bir ad ver.",
+    confirmText: "Kaydet", eyebrow: "İŞLEM PROFİLİ", mode: "prompt"
+  });
+  if (name === null) return;
+  const cleanName = name.replace(/\s+/g, " ").trim();
+  if (!cleanName || cleanName.length > 40) return toast("Profil adı 1–40 karakter olmalı.");
+  const presets = readSavedPresets();
+  const previous = presets.find((item) => item.name.toLocaleLowerCase("tr-TR") === cleanName.toLocaleLowerCase("tr-TR"));
+  if (previous && !(await confirmAction("Profil güncellensin mi?", `${previous.name} adlı kayıtlı profil mevcut seçeneklerle değiştirilecek.`, "Güncelle"))) return;
+  if (!previous && presets.length >= 12) return toast("En fazla 12 işlem profili kaydedilebilir.");
+  const entry = { id: previous?.id || globalThis.crypto?.randomUUID?.() || `preset-${Date.now()}`, name: cleanName, options: currentPresetOptions() };
+  const updated = previous ? presets.map((item) => item.id === previous.id ? entry : item) : [...presets, entry];
+  try { localStorage.setItem(SAVED_PRESETS_KEY, JSON.stringify(updated)); }
+  catch { return toast("Profil bu cihazda kaydedilemedi."); }
+  renderSavedPresets(entry.id);
+  toast("İşlem profili kaydedildi.");
+}
+
+async function deleteSavedPreset() {
+  const selected = $("#savedPresetSelect").value;
+  const presets = readSavedPresets();
+  const preset = presets.find((item) => item.id === selected);
+  if (!preset || !(await confirmAction("Profil silinsin mi?", `${preset.name} adlı işlem profili yalnızca bu cihazdan kaldırılacak.`, "Sil", true))) return;
+  try { localStorage.setItem(SAVED_PRESETS_KEY, JSON.stringify(presets.filter((item) => item.id !== selected))); }
+  catch { return toast("Profil kaldırılamadı."); }
+  renderSavedPresets("");
+  toast("İşlem profili silindi.");
 }
 
 function prepareAnalysisView(name, size, split = false) {
@@ -1218,6 +1624,9 @@ function prepareAnalysisView(name, size, split = false) {
 function applyAnalysisResult(data) {
   state.messageTargets = []; state.messageCandidates = [];
   state.jobId = data.job_id; state.analysis = data.analysis; renderNetworks(data.analysis); renderSplitOptions(data.analysis.split_options);
+  $("#diagnosticAfterFailure").classList.add("hidden");
+  updateDirectSplitInstall(data.analysis);
+  prepareCloneOption(data.analysis);
   $("#convertOperation").classList.toggle("hidden", !data.analysis.split_merged);
   $("#patchAds").checked = false; $("#patchAds").disabled = !data.analysis.network_count;
   updateAdProfileAvailability();
@@ -1240,9 +1649,6 @@ async function acceptFile(file) {
   const ext = file ? extension(file.name) : "";
   if (!file || !ext) return toast("Lütfen .apk, .apks, .apkm veya .xapk dosyası seç.");
   if (file.size > MAX_UPLOAD_BYTES) return toast("Paket 1 GB sınırını aşıyor.");
-  if (isSplit(file.name) && state.toolchain && !state.toolchain.split_tool) {
-    toast("Split paketi işlemek için önce eksik bileşenleri hazırla."); $("#toolCard").scrollIntoView({ behavior: "smooth", block: "center" }); return;
-  }
   state.file = file; prepareAnalysisView(file.name, file.size, isSplit(file.name));
   const form = new FormData(); form.append("package", file);
   try {
@@ -1349,13 +1755,15 @@ async function waitForJobResult(initialResult = null) {
 async function runJob() {
   if (!state.jobId || state.jobRunning) return;
   const hasAds = Number(state.analysis?.network_count || 0) > 0;
-  const patchAds = hasAds && ((state.operation === "patch" && state.patchAdsSelected) || (state.operation === "convert" && $("#patchAds").checked));
-  const needsDex = patchAds || $("#stripDebug").checked || $("#normalizeDex").checked;
+  const patchAds = hasAds && ((state.operation === "patch" && state.patchAdsSelected) || (state.operation !== "patch" && $("#patchAds").checked));
+  if (state.operation === "clone" && !validClonePackageName()) { toast("Klon için özgün addan farklı, geçerli bir paket adı gir."); return; }
+  const needsDex = state.operation === "clone" || patchAds || $("#stripDebug").checked || $("#normalizeDex").checked;
   const needsResources = $("#deobfuscateResources").checked;
-  if (state.toolchain && (!state.toolchain.signer || (needsDex && !state.toolchain.dex_tools) || (needsResources && !state.toolchain.resource_tool))) {
+  if (state.toolchain && (!state.toolchain.signer || (needsDex && !state.toolchain.dex_tools) || (state.operation === "clone" && !state.toolchain.manifest_tool) || (needsResources && !state.toolchain.resource_tool))) {
     toast("İşlem için önce eksik bileşenleri hazırla."); $("#toolCard").scrollIntoView({ behavior: "smooth", block: "center" }); return;
   }
   setJobRunning(true);
+  $("#diagnosticAfterFailure").classList.add("hidden");
   const cancelButton = $("#cancelJobButton");
   cancelButton.disabled = false; cancelButton.textContent = "İşlemi iptal et";
   resetProgress(); setStep(3); showView("#workingView"); updateProgress(4, "Yerel işlem motoru hazırlanıyor");
@@ -1363,6 +1771,7 @@ async function runJob() {
   try {
     const payload = {
       job_id: state.jobId, profile: state.profile, operation: state.operation, patch_ads: patchAds,
+      clone_package_name: state.operation === "clone" ? $("#clonePackageName").value.trim() : null,
       strip_debug: $("#stripDebug").checked, normalize_dex: $("#normalizeDex").checked, optimize_apk: $("#optimizeApk").checked,
       deobfuscate_resources: $("#deobfuscateResources").checked, normalize_resources: false,
       message_targets: state.messageTargets,
@@ -1373,8 +1782,10 @@ async function runJob() {
     const result = await waitForJobResult(data.result || null);
     updateProgress(100, "Tamamlandı"); await waitForProgress(100);
     const patchCount = result.patches.void_patches + result.patches.boolean_patches;
-    $("#resultTitle").textContent = result.operation === "convert" ? "Tek APK başarıyla oluşturuldu." : "Temizlenmiş APK kullanıma hazır.";
-    $("#resultStats").innerHTML = `<div><b>${patchCount}</b><span>DEX yaması</span></div><div><b>${result.manifest.count}</b><span>Manifest kaydı</span></div><div><b>${result.layouts?.count || 0}</b><span>XML alanı</span></div><div><b>${result.patches.debug_directives_removed || 0}</b><span>Hata ayıklama yönergesi</span></div>`;
+    $("#resultTitle").textContent = result.operation === "clone" ? "Klon APK oluşturuldu." : result.operation === "convert" ? "Tek APK başarıyla oluşturuldu." : "Temizlenmiş APK kullanıma hazır.";
+    $("#resultStats").innerHTML = result.operation === "clone"
+      ? `<div><b>${result.clone?.dex_strings_changed || 0}</b><span>DEX kimliği</span></div><div><b>${result.clone?.changes?.length || 0}</b><span>Manifest alanı</span></div><div><b>${patchCount}</b><span>Reklam yaması</span></div><div><b>${result.layouts?.count || 0}</b><span>XML alanı</span></div>`
+      : `<div><b>${patchCount}</b><span>DEX yaması</span></div><div><b>${result.manifest.count}</b><span>Manifest kaydı</span></div><div><b>${result.layouts?.count || 0}</b><span>XML alanı</span></div><div><b>${result.patches.debug_directives_removed || 0}</b><span>Hata ayıklama yönergesi</span></div>`;
     const outputFilename = result.output || "APK-Cleaner-Studio-output.apk";
     state.outputUrl = `/api/jobs/${state.jobId}/download?filename=${encodeURIComponent(outputFilename)}`;
     state.outputFilename = outputFilename;
@@ -1385,7 +1796,12 @@ async function runJob() {
     setStep(4); showView("#resultView"); focusProcessingView("#resultView");
     refreshHistory();
     if (!result.signed) toast(result.sign_warning || "Çıktı imzalanamadı.");
-  } catch (error) { toast(error.message); setStep(2); showView("#analysisView"); }
+  } catch (error) {
+    toast(error.message);
+    setStep(2); showView("#analysisView");
+    $("#diagnosticAfterFailure").classList.toggle("hidden", !state.jobId);
+    refreshHistory();
+  }
   finally { setJobRunning(false); state.pollInFlight = false; }
 }
 
@@ -1404,10 +1820,16 @@ async function cancelJob() {
 }
 
 function reset() {
-  Object.assign(state, { file: null, jobId: null, analysis: null, operation: "patch", patchAdsSelected: true, splitSelection: { abis: [], languages: [] }, messageTargets: [], messageCandidates: [], pollInFlight: false, jobRunning: false, outputUrl: "", outputFilename: "", nativeInstallBusy: false, nativeShareBusy: false, installedSharePackage: "" });
+  Object.assign(state, { file: null, jobId: null, analysis: null, profile: "balanced", operation: "patch", patchAdsSelected: true, splitSelection: { abis: [], languages: [] }, messageTargets: [], messageCandidates: [], pollInFlight: false, jobRunning: false, outputUrl: "", outputFilename: "", nativeInstallBusy: false, nativeShareBusy: false, nativeSplitInstallBusy: false, splitInstallRequestJobId: null, splitInstallSubmitted: false, installedSharePackage: "" });
   setJobRunning(false);
   resetProgress();
   $("#fileInput").value = ""; $("#cleanButton").disabled = false; $("#stripDebug").checked = false; $("#normalizeDex").checked = false; $("#optimizeApk").checked = false; $("#deobfuscateResources").checked = false; $("#patchAds").checked = false;
+  $("#clonePackageName").value = ""; $("#cloneOptions").classList.add("hidden");
+  $("#patchAvailabilityNote").classList.add("hidden"); $("#cloneAvailabilityNote").classList.add("hidden");
+  for (const operation of [$("[data-operation='patch']"), $("#cloneOperation")]) {
+    operation.classList.remove("operation-unavailable"); operation.setAttribute("aria-disabled", "false");
+  }
+  $("#directSplitInstall").classList.add("hidden"); clearDirectSplitPlan(); $("#directSplitInstallButton").disabled = false; $("#directSplitInstallButton").textContent = "Bileşenleri incele";
   $("#installButton").disabled = false; $("#shareOutputButton").disabled = false;
   $(".network-card").classList.remove("network-card--scrollable");
   $("#networkTitle").textContent = "İşlenecek paket bekleniyor"; $("#networkList").innerHTML = "<p>Paket seçildiğinde tespit edilen reklam ağları ve referans sayıları burada gösterilir.</p>";
@@ -1459,6 +1881,11 @@ $$(".profile").forEach((button) => button.addEventListener("click", () => {
 }));
 $("#patchAds").addEventListener("change", updateActionState);
 $("#patchAds").addEventListener("input", updateActionState);
+$("#clonePackageName").addEventListener("input", updateActionState);
+$("#savedPresetSelect").addEventListener("change", () => renderSavedPresets());
+$("#applyPresetButton").addEventListener("click", applySavedPreset);
+$("#savePresetButton").addEventListener("click", saveCurrentPreset);
+$("#deletePresetButton").addEventListener("click", deleteSavedPreset);
 ["#stripDebug", "#normalizeDex", "#optimizeApk", "#deobfuscateResources"].forEach((selector) => {
   $(selector).addEventListener("change", updateActionState);
   $(selector).addEventListener("input", updateActionState);
@@ -1471,6 +1898,41 @@ $("#installButton").addEventListener("click", () => {
   if (state.nativeInstallBusy) return;
   state.nativeInstallBusy = true; $("#installButton").disabled = true;
   globalThis.AndroidThemeBridge?.prepareInstall?.(new URL(state.outputUrl, location.href).href, state.outputFilename);
+});
+$("#directSplitInstallButton").addEventListener("click", () => {
+  if (!state.jobId || !state.analysis || state.nativeSplitInstallBusy) return;
+  if (!globalThis.AndroidThemeBridge?.inspectOriginalSplit) return toast("Doğrudan kurulum yalnızca Android uygulamasında kullanılabilir.");
+  if (!["apks", "apkm", "xapk"].includes(String(state.analysis.source_type || "").toLowerCase())) return;
+  clearDirectSplitPlan();
+  state.nativeSplitInstallBusy = true;
+  state.splitInstallRequestJobId = state.jobId;
+  const button = $("#directSplitInstallButton");
+  button.disabled = true; button.textContent = "Bileşenler inceleniyor…";
+  const sourceUrl = new URL(`/api/jobs/${state.jobId}/source`, location.href).href;
+  globalThis.AndroidThemeBridge.inspectOriginalSplit(sourceUrl, state.analysis.filename);
+});
+$$('input[name="directSplitMode"]').forEach((radio) => radio.addEventListener("change", () => {
+  const manual = $("input[name=directSplitMode]:checked").value === "manual";
+  $$("#directSplitModules input[type=checkbox]").forEach((checkbox) => {
+    checkbox.disabled = !manual || checkbox.dataset.required === "true" || checkbox.dataset.alternative === "true";
+    if (!manual) checkbox.checked = Boolean(state.splitInstallPlan?.modules.find((module) => module.name === checkbox.value)?.auto);
+  });
+  updateDirectSplitSummary();
+}));
+$("#directSplitModules").addEventListener("change", updateDirectSplitSummary);
+$("#directSplitConfirm").addEventListener("click", async () => {
+  const plan = state.splitInstallPlan;
+  if (!plan || state.nativeSplitInstallBusy || state.splitInstallSubmitted) return;
+  const selected = chosenDirectSplitModules();
+  if (!selected.length || plan.blocked_reason) return;
+  const bytes = plan.modules.filter((module) => selected.includes(module.name)).reduce((sum, module) => sum + Number(module.size || 0), 0);
+  if (!await confirmAction("Özgün split paketi kur", `${plan.package} · sürüm ${plan.version}\n${selected.length} bileşen · ${humanSize(bytes)}\n${plan.installed ? "Mevcut uygulama güncellenecek." : "Yeni uygulama kurulacak."}\nBileşenler değiştirilmeden Android'e gönderilecek.`, "Kuruluma geç")) return;
+  if (state.splitInstallPlan !== plan || state.jobId !== state.splitInstallRequestJobId) return;
+  state.nativeSplitInstallBusy = true;
+  state.splitInstallSubmitted = true;
+  $("#directSplitConfirm").disabled = true;
+  $("#directSplitInstallButton").disabled = true;
+  globalThis.AndroidThemeBridge?.installOriginalSplit?.(JSON.stringify(selected));
 });
 $("#shareOutputButton").addEventListener("click", () => {
   if (!state.outputUrl) return toast("Paylaşılacak çıktı bulunamadı.");
@@ -1487,6 +1949,21 @@ $("#reportViewerClose").addEventListener("click", closeReportViewer);
 $("#reportViewerDone").addEventListener("click", closeReportViewer);
 $("#reportViewer").addEventListener("click", (event) => { if (event.target === event.currentTarget) closeReportViewer(); });
 containModalTouch("#reportViewer", "#reportViewerContent");
+$("#diagnosticButton").addEventListener("click", () => openDiagnosticViewer());
+$("#storageCard").addEventListener("toggle", refreshStorage);
+$("#storageList").addEventListener("change", () => { $("#storageCleanButton").disabled = !$("#storageList input:checked"); });
+$("#storageCleanButton").addEventListener("click", cleanSelectedStorage);
+$("#nativeCacheCleanButton").addEventListener("click", cleanNativeCache);
+$("#installHistoryCard").addEventListener("toggle", refreshInstallHistory);
+$("#diagnosticAfterFailure").addEventListener("click", () => openDiagnosticViewer(state.jobId));
+$("#diagnosticViewerClose").addEventListener("click", closeDiagnosticViewer);
+$("#diagnosticViewerDone").addEventListener("click", closeDiagnosticViewer);
+$("#diagnosticViewer").addEventListener("click", (event) => { if (event.target === event.currentTarget) closeDiagnosticViewer(); });
+$("#diagnosticIdentifiers").addEventListener("change", () => refreshDiagnosticPreview(true));
+$("#diagnosticViewerDownload").addEventListener("click", (event) => {
+  if (event.currentTarget.getAttribute("aria-disabled") === "true") event.preventDefault();
+});
+containModalTouch("#diagnosticViewer", "#diagnosticViewerContent");
 $("#messageReviewButton").addEventListener("click", openMessageReview);
 $("#messageScanButton").addEventListener("click", scanMessageCandidates);
 $("#messageReviewApply").addEventListener("click", applyMessageSelection);
@@ -1498,6 +1975,7 @@ containModalTouch("#messageReview", ".message-review-body");
 document.addEventListener("keydown", (event) => {
   if (event.key !== "Escape") return;
   if (!$("#messageReview").classList.contains("hidden")) closeMessageReview();
+  else if (!$("#diagnosticViewer").classList.contains("hidden")) closeDiagnosticViewer();
   else if (!$("#installedApps").classList.contains("hidden")) closeInstalledApps();
   else if (!$("#reportViewer").classList.contains("hidden")) closeReportViewer();
   else if (activeDialog) closeAppDialog(null);
@@ -1536,9 +2014,11 @@ function revealReadyInterface() {
 }
 
 const embeddedAndroid = document.documentElement.dataset.embedded === "android";
+$("#installHistoryCard").classList.toggle("hidden", !embeddedAndroid || !globalThis.AndroidThemeBridge?.getInstallHistory);
 $("#installedAppsButton").classList.toggle("hidden", !embeddedAndroid
   || (!globalThis.AndroidThemeBridge?.requestInstalledPackages && !globalThis.AndroidThemeBridge?.listInstalledPackages));
 applyTheme(localStorage.getItem(THEME_KEY) || "system", false); startHeroRotation();
+renderSavedPresets();
 if (!embeddedAndroid) registerClientDetails();
 refreshStatus(); refreshHistory();
 checkForUpdates();

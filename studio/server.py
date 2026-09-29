@@ -17,6 +17,7 @@ import textwrap
 import tempfile
 import threading
 import time
+import traceback
 import uuid
 import webbrowser
 from email import policy
@@ -26,7 +27,7 @@ from http import HTTPStatus
 from http.cookies import CookieError, SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import quote, unquote, urlparse
+from urllib.parse import parse_qs, quote, unquote, urlparse
 
 from engine import (
     DATA_ROOT,
@@ -67,7 +68,7 @@ MAX_JOB_DIRECTORIES = 100
 MAX_OWNER_JOBS = 25
 MAX_JOB_STORAGE_BYTES = 4 * 1024 * 1024 * 1024
 JOB_ID = re.compile(r"^[a-f0-9]{32}$")
-VERSION = "0.6.3-dev.1"
+VERSION = "0.6.3-dev.2"
 RELEASE_CHANNEL = "dev"
 DEFAULT_HOST = "0.0.0.0"
 CONSOLE_COLUMNS = 110
@@ -112,6 +113,56 @@ def public_error(error: BaseException) -> str:
         if sensitive:
             message = re.sub(re.escape(sensitive), "[yerel-dizin]", message, flags=re.IGNORECASE)
     return message[:1000] or "İşlem güvenli biçimde tamamlanamadı."
+
+
+def diagnostic_error(error: BaseException) -> str:
+    """Export only an exit code, not untrusted tool output or arbitrary error text."""
+    match = re.search(r"başarısız oldu \((\d{1,3})\)", str(error))
+    if match:
+        return f"Gömülü araç çıkış kodu: {match.group(1)}"
+    return "Ayrıntılı hata metni gizlilik nedeniyle rapora eklenmedi."
+
+
+def failure_diagnostic(error: BaseException) -> dict:
+    frames = traceback.extract_tb(error.__traceback__)[-12:]
+    return {
+        "kind": type(error).__name__[:80],
+        "message": diagnostic_error(error),
+        "frames": [f"{Path(frame.filename).name}:{frame.lineno} · {frame.name[:80]}" for frame in frames],
+    }
+
+
+def diagnostic_report(job: Path | None, include_identifiers: bool = False) -> str:
+    lines = [
+        "APK Cleaner Studio · Hata raporu", "",
+        f"Sürüm: {VERSION} ({RELEASE_CHANNEL})",
+        f"Platform: {'Android' if ANDROID_RUNTIME else 'Windows / Termux'}",
+        "Not: Ham araç günlüğü, imzalama bilgileri ve yerel dosya yolları eklenmez.",
+    ]
+    if job is not None:
+        state = read_json(job / "state.json")
+        analysis = read_json(job / "analysis.json")
+        details = read_json(job / "diagnostic.json")
+        lines.extend(["", "İşlem", f"Durum: {state.get('status', 'bilinmiyor')}"])
+        if include_identifiers:
+            lines.append(f"Dosya adı: {str(analysis.get('filename') or 'bilinmiyor')[:160]}")
+            lines.append(f"Paket adı: {str(analysis.get('package_name') or 'bilinmiyor')[:160]}")
+        if details:
+            lines.extend([f"Hata türü: {details.get('kind', 'bilinmiyor')}",
+                          f"Açıklama: {details.get('message', 'bilinmiyor')}"])
+            frames = details.get("frames")
+            if isinstance(frames, list) and frames:
+                lines.extend(["Çağrı konumu:", *(f"  {frame}" for frame in frames[:12] if isinstance(frame, str))])
+        elif state.get("status") == "error":
+            lines.append("Ayrıntılı kayıt bu işlem için bulunmuyor; eski sürümde oluşturulmuş olabilir.")
+    native = DATA_ROOT / "diagnostic-native.txt"
+    if ANDROID_RUNTIME and native.is_file():
+        # This file contains only our own event code and class/method frames;
+        # never include Android logcat or arbitrary exception messages.
+        lines.extend(["", "Android uygulama olayı", native.read_text(encoding="utf-8", errors="replace")[:3000].strip()])
+    if job is None and not (ANDROID_RUNTIME and native.is_file()):
+        lines.extend(["", "Kaydedilmiş bir hata bulunamadı."])
+    return "\n".join(lines).strip() + "\n"
 
 
 def trusted_public_hostname(hostname: str) -> bool:
@@ -1035,6 +1086,43 @@ def list_job_history(requester_id: str, requester_is_local: bool, limit: int = 2
     return rows[:limit]
 
 
+def list_job_storage(requester_id: str, requester_is_local: bool) -> dict:
+    """Summarize only visible, app-owned job files; never follow symlinks."""
+    rows = []
+    totals = {"source": 0, "output": 0, "working": 0}
+    if not JOBS.is_dir():
+        return {"jobs": rows, "totals": totals}
+    with _ACTIVE_JOBS_LOCK:
+        busy = _ACTIVE_JOBS | _SCANNING_JOBS
+    for job in JOBS.iterdir():
+        if job.is_symlink() or not job.is_dir() or not JOB_ID.fullmatch(job.name):
+            continue
+        if not job_visible_to(job, requester_id, requester_is_local):
+            continue
+        analysis = read_json(job / "analysis.json")
+        if not analysis:
+            continue
+        source_name = analysis.get("source_path")
+        source_name = source_name if isinstance(source_name, str) and Path(source_name).name == source_name else None
+        sizes = {"source": 0, "output": 0, "working": 0}
+        for item in job.rglob("*"):
+            try:
+                if item.is_symlink() or not item.is_file():
+                    continue
+                relative = item.relative_to(job)
+                category = "output" if relative.parts[0] == "output" else "source" if relative.as_posix() == source_name else "working"
+                sizes[category] += item.stat().st_size
+            except OSError:
+                continue
+        for category, amount in sizes.items():
+            totals[category] += amount
+        state = read_json(job / "state.json")
+        rows.append({"job_id": job.name, "filename": analysis.get("filename", "paket.apk"),
+                     "sizes": sizes, "can_delete": job.name not in busy and state.get("status") not in {"analyzing", "working"}})
+    rows.sort(key=lambda row: sum(row["sizes"].values()), reverse=True)
+    return {"jobs": rows, "totals": totals}
+
+
 def clone_job_for_reuse(job_id: str, requester_id: str, requester_is_local: bool) -> tuple[str, dict]:
     """Create a fresh ready job from history instead of reopening completed state/output."""
     if not JOB_ID.fullmatch(job_id):
@@ -1094,7 +1182,7 @@ def delete_job_history(job_id: str, requester_id: str, requester_is_local: bool)
     if not JOB_ID.fullmatch(job_id):
         raise ValueError("Geçersiz işlem kimliği.")
     job = JOBS / job_id
-    if not job.is_dir():
+    if job.is_symlink() or not job.is_dir():
         raise FileNotFoundError("İşlem kaydı bulunamadı.")
     if not job_visible_to(job, requester_id, requester_is_local):
         raise PermissionError("Bu işlem kaydını silme yetkin yok.")
@@ -1103,7 +1191,9 @@ def delete_job_history(job_id: str, requester_id: str, requester_is_local: bool)
         raise ValueError("Devam eden işlem tamamlanmadan silinemez.")
     with _ACTIVE_JOBS_LOCK:
         if job_id in _SCANNING_JOBS:
-            raise ValueError("Başlangıç taraması tamamlanmadan işlem silinemez.")
+            raise ValueError("Başlangıç çağrısı taraması tamamlanmadan işlem silinemez.")
+        if job_id in _ACTIVE_JOBS:
+            raise ValueError("Devam eden işlem tamamlanmadan silinemez.")
         shutil.rmtree(job)
 
 
@@ -1157,7 +1247,10 @@ def _execute_clean_job(job_id: str, payload: dict) -> None:
         reset_tool_cancellation()
         mode = str(payload.get("profile", "balanced"))
         operation = str(payload.get("operation", "patch"))
-        patch_ads = bool(payload.get("patch_ads", operation != "convert"))
+        patch_ads = bool(payload.get("patch_ads", operation == "patch"))
+        clone_package_name = payload.get("clone_package_name") if operation == "clone" else None
+        if operation == "clone" and not isinstance(clone_package_name, str):
+            raise ValueError("Klon için yeni paket adını gir.")
         strip_debug = bool(payload.get("strip_debug", False))
         normalize_dex = bool(payload.get("normalize_dex", False))
         optimize_apk = bool(payload.get("optimize_apk", False))
@@ -1170,12 +1263,13 @@ def _execute_clean_job(job_id: str, payload: dict) -> None:
         if any(not isinstance(item, str) or item not in approved_message_targets for item in message_targets):
             raise ValueError("Başlangıç çağrısı seçimi güncel değil. Paketi yeniden tara.")
         split_selection = payload.get("split_selection")
-        if operation not in {"patch", "convert"}:
+        if operation not in {"patch", "convert", "clone"}:
             raise ValueError("Bilinmeyen işlem türü.")
 
         prepared_path = analysis.get("prepared_path")
         prepared = job / prepared_path if prepared_path else Path("missing")
         selected_split_rebuilt = False
+        split_details: dict = {}
         if analysis.get("split_merged"):
             source_path = analysis.get("source_path")
             split_source = job / source_path if source_path else Path("missing")
@@ -1188,7 +1282,7 @@ def _execute_clean_job(job_id: str, payload: dict) -> None:
                     "languages": [item.get("code") for item in options.get("languages", []) if item.get("code")],
                 }
             prepared, selected_log = merge_split_package(
-                split_source, job / "prepared-selected", progress, split_selection,
+                split_source, job / "prepared-selected", progress, split_selection, details=split_details,
             )
             analysis["merge_log"] = selected_log[-100:]
             selected_split_rebuilt = True
@@ -1209,10 +1303,11 @@ def _execute_clean_job(job_id: str, payload: dict) -> None:
             normalize_resources=normalize_resources,
             source_name=filename,
             split_merged=bool(analysis.get("split_merged")),
+            split_details=split_details,
             analysis_report=None if selected_split_rebuilt else {
                 key: analysis[key]
                 for key in (
-                    "filename", "size", "sha256", "dex", "dex_count", "detections",
+                    "filename", "size", "sha256", "package_name", "suggested_clone_package_name", "dex", "dex_count", "detections",
                     "network_count", "manifest_hits", "layout_hits", "install_source_checks", "source_integrity_risk",
                     "message_ui_candidates", "message_ui_candidate_count", "requires_splits",
                     "suspicious_files", "toolchain", "warnings",
@@ -1220,6 +1315,7 @@ def _execute_clean_job(job_id: str, payload: dict) -> None:
                 if key in analysis
             },
             message_targets=message_targets,
+            clone_package_name=clone_package_name,
         )
         if cancel_event.is_set():
             raise JobCancelled("İşlem kullanıcı tarafından iptal edildi.")
@@ -1242,8 +1338,12 @@ def _execute_clean_job(job_id: str, payload: dict) -> None:
                 "progress": 0, "filename": filename,
             })
             return
+        try:
+            write_json(job / "diagnostic.json", failure_diagnostic(exc))
+        except OSError:
+            pass  # Reporting must never mask the original job failure.
         write_json(job / "state.json", {
-            "status": "error", "message": str(exc), "progress": 0, "filename": filename,
+            "status": "error", "message": public_error(exc), "progress": 0, "filename": filename,
         })
     finally:
         with _ACTIVE_JOBS_LOCK:
@@ -1397,6 +1497,19 @@ class StudioHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def send_diagnostic(self, report: str, download: bool) -> None:
+        body = report.encode("utf-8")
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", "text/plain; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        if download:
+            self.send_header("Content-Disposition", 'attachment; filename="apk-cleaner-hata-raporu.txt"')
+        self.security_headers()
+        self.cors()
+        self.end_headers()
+        self.wfile.write(body)
+
     def send_blocked_page(self) -> None:
         body = """<!doctype html><html lang=\"tr\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1,viewport-fit=cover\"><meta name=\"color-scheme\" content=\"dark light\"><meta name=\"theme-color\" content=\"#07100d\"><title>Erişim engellendi · APK Cleaner Studio</title><style>*{box-sizing:border-box}html{font-family:system-ui,sans-serif;color-scheme:dark;background:#07100d;color:#eef5ef}body{min-height:100vh;min-height:100dvh;margin:0;display:grid;place-items:center;padding:max(20px,env(safe-area-inset-top)) max(20px,env(safe-area-inset-right)) max(20px,env(safe-area-inset-bottom)) max(20px,env(safe-area-inset-left));background:radial-gradient(circle at 50% 0,#10251d 0,#07100d 56%)}main{width:min(520px,100%);padding:clamp(28px,7vw,42px);border:1px solid #29463d;border-radius:24px;background:#0d1915;text-align:center;box-shadow:0 24px 80px #0008;overflow-wrap:anywhere}i{display:grid;place-items:center;width:58px;height:58px;margin:0 auto 20px;border-radius:18px;background:#251512;color:#ff7a61;font-size:28px;font-style:normal;font-weight:900}h1{margin:0 0 12px;font-size:clamp(26px,8vw,38px);line-height:1.12}p{margin:0;color:#a8b8b0;font-size:clamp(15px,4vw,17px);line-height:1.65}small{display:block;margin-top:18px;color:#63d9b2;font-size:clamp(13px,3.6vw,15px);line-height:1.55}form{margin-top:24px}button{width:100%;min-height:50px;border:1px solid #63d9b2;border-radius:14px;background:#63d9b2;color:#07100d;font:inherit;font-weight:850;cursor:pointer}@media(max-width:520px){body{place-items:stretch;align-content:center}main{border-radius:20px;padding:30px 22px}i{width:54px;height:54px;margin-bottom:18px}}@media(max-height:520px) and (orientation:landscape){body{padding:14px}main{padding:20px 28px}i{width:44px;height:44px;margin-bottom:10px;font-size:22px}h1{font-size:25px;margin-bottom:8px}small{margin-top:10px}form{margin-top:14px}}</style></head><body><main><i>!</i><h1>Erişim engellendi</h1><p>Bu cihazın APK Cleaner Studio arayüzüne erişimi ana makine tarafından engellendi.</p><small>Erişimin yeniden açılması için yöneticiye istek gönderebilirsin.</small><form method=\"post\" action=\"/api/access-request\"><button type=\"submit\">Yöneticiden erişim iste</button></form></main><script>(()=>{const identify=(async()=>{const d={model:\"\",platform:navigator.userAgentData?.platform||navigator.platform||\"\",mobile:Boolean(navigator.userAgentData?.mobile||/Android|iPhone|iPad|Mobile/i.test(navigator.userAgent)),browser:\"\"};try{if(navigator.userAgentData?.getHighEntropyValues){const v=await navigator.userAgentData.getHighEntropyValues([\"model\",\"platform\",\"platformVersion\",\"formFactors\"]);d.model=v.model||\"\";d.platform=v.platform||d.platform;d.mobile=Boolean(v.mobile??d.mobile);d.form_factors=Array.isArray(v.formFactors)?v.formFactors.slice(0,4):[]}}catch{}if(!d.model){const m=navigator.userAgent.match(/Android\\s[^;)]*;\\s*([^;)]+?)\\s+Build\\//i);if(m&&!/^(?:K|Mobile|Tablet|wv)$/i.test(m[1].trim()))d.model=m[1].trim()}try{if(await navigator.brave?.isBrave())d.browser=\"Brave\";else if(/Edg\\//.test(navigator.userAgent))d.browser=\"Microsoft Edge\";else if(/SamsungBrowser\\//.test(navigator.userAgent))d.browser=\"Samsung Internet\";else if(/Chrome\\//.test(navigator.userAgent))d.browser=\"Google Chrome\"}catch{}try{await fetch(\"/api/client/identify\",{method:\"POST\",headers:{\"Content-Type\":\"application/json\"},body:JSON.stringify(d)})}catch{}})();const f=document.querySelector(\"form\");f?.addEventListener(\"submit\",async e=>{e.preventDefault();await identify;f.submit()},{once:true})})()</script></body></html>""".encode("utf-8")
         self.send_response(HTTPStatus.FORBIDDEN)
@@ -1505,11 +1618,25 @@ class StudioHandler(BaseHTTPRequestHandler):
 
         requester_id = client_identity(self.request_address(), self.headers)
         requester_is_local = self.requester_is_local()
+        if path == "/api/diagnostic":
+            if not requester_is_local:
+                self.send_json({"error": "Hata raporu yalnızca bu cihazda açılabilir."}, HTTPStatus.FORBIDDEN)
+                return
+            query = parse_qs(parsed.query)
+            recent = next((row for row in list_job_history(requester_id, True, 100)
+                           if row["status"] == "error"), None)
+            job = JOBS / recent["job_id"] if recent else None
+            self.send_diagnostic(diagnostic_report(job, query.get("identifiers") == ["1"]),
+                                 query.get("download") == ["1"])
+            return
         if path == "/api/history":
             self.send_json({"jobs": list_job_history(requester_id, requester_is_local)})
             return
+        if path == "/api/storage":
+            self.send_json(list_job_storage(requester_id, requester_is_local))
+            return
 
-        match = re.fullmatch(r"/api/jobs/([a-f0-9]{32})/(state|download|report)", path)
+        match = re.fullmatch(r"/api/jobs/([a-f0-9]{32})/(state|download|report|source|diagnostic)", path)
         if match:
             job_id, action = match.groups()
             job = JOBS / job_id
@@ -1523,8 +1650,28 @@ class StudioHandler(BaseHTTPRequestHandler):
                 return
             if action == "state":
                 self.send_json(read_json(job / "state.json", {"status": "unknown"}))
+            elif action == "diagnostic":
+                if not requester_is_local:
+                    self.send_json({"error": "Hata raporu yalnızca bu cihazda açılabilir."}, HTTPStatus.FORBIDDEN)
+                    return
+                query = parse_qs(parsed.query)
+                self.send_diagnostic(diagnostic_report(job, query.get("identifiers") == ["1"]),
+                                     query.get("download") == ["1"])
             elif action == "report":
                 self.send_file(job / "output" / "report.txt", "apk-cleaner-report.txt")
+            elif action == "source":
+                if not requester_is_local:
+                    self.send_json({"error": "Özgün paket yalnızca yerel Android uygulamasından kurulabilir."}, HTTPStatus.FORBIDDEN)
+                    return
+                analysis = read_json(job / "analysis.json")
+                if analysis.get("source_type") not in {"apks", "apkm", "xapk"}:
+                    self.send_json({"error": "Doğrudan split kurulumu için APKS, APKM veya XAPK seç."}, 400)
+                    return
+                name = analysis.get("source_path")
+                if not isinstance(name, str) or Path(name).name != name:
+                    self.send_json({"error": "Özgün paket bulunamadı."}, 404)
+                    return
+                self.send_file(job / name, analysis.get("filename"), "application/zip")
             else:
                 result = read_json(job / "output" / "report.json")
                 name = result.get("output")
@@ -1833,7 +1980,7 @@ class StudioHandler(BaseHTTPRequestHandler):
                 payload = self.read_body_json()
                 job_id = str(payload.get("job_id", ""))
                 operation = str(payload.get("operation", "patch"))
-                if operation not in {"patch", "convert"}:
+                if operation not in {"patch", "convert", "clone"}:
                     raise ValueError("Bilinmeyen işlem türü.")
                 if not JOB_ID.fullmatch(job_id):
                     raise ValueError("Geçersiz iş kimliği.")

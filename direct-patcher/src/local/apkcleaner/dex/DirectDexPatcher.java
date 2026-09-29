@@ -13,9 +13,15 @@ import com.android.tools.smali.dexlib2.iface.debug.DebugItem;
 import com.android.tools.smali.dexlib2.iface.instruction.Instruction;
 import com.android.tools.smali.dexlib2.iface.instruction.OneRegisterInstruction;
 import com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction;
+import com.android.tools.smali.dexlib2.iface.reference.StringReference;
 import com.android.tools.smali.dexlib2.iface.reference.MethodReference;
 import com.android.tools.smali.dexlib2.immutable.ImmutableMethodImplementation;
+import com.android.tools.smali.dexlib2.immutable.instruction.ImmutableInstruction21c;
+import com.android.tools.smali.dexlib2.immutable.instruction.ImmutableInstruction31c;
+import com.android.tools.smali.dexlib2.immutable.reference.ImmutableStringReference;
 import com.android.tools.smali.dexlib2.rewriter.DexRewriter;
+import com.android.tools.smali.dexlib2.rewriter.InstructionRewriter;
+import com.android.tools.smali.dexlib2.rewriter.MethodImplementationRewriter;
 import com.android.tools.smali.dexlib2.rewriter.Rewriter;
 import com.android.tools.smali.dexlib2.rewriter.RewriterModule;
 import com.android.tools.smali.dexlib2.rewriter.Rewriters;
@@ -29,6 +35,8 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.EnumSet;
 import java.util.List;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.regex.Pattern;
@@ -92,6 +100,7 @@ public final class DirectDexPatcher {
         final List<String> descriptors = new ArrayList<>();
         final Set<String> messageTargets = new HashSet<>();
         final Set<String> startupTargets = new HashSet<>();
+        final Map<String, String> cloneStrings = new LinkedHashMap<>();
     }
 
     private static final class Stats {
@@ -100,6 +109,7 @@ public final class DirectDexPatcher {
         int callbackPatches;
         int debugItemsRemoved;
         int messagePatches;
+        int cloneStringsChanged;
         boolean changed;
         final List<String> riskyCalls = new ArrayList<>();
         final List<String> messageCalls = new ArrayList<>();
@@ -120,10 +130,27 @@ public final class DirectDexPatcher {
         byte[] dexBytes = Files.readAllBytes(options.input);
         DexBackedDexFile inputDex = new DexBackedDexFile(Opcodes.getDefault(), dexBytes);
         patchInstructionsInPlace(inputDex, dexBytes, options, stats);
+        if (!options.cloneStrings.isEmpty()) {
+            for (ClassDef cls : inputDex.getClasses()) {
+                for (Method method : cls.getMethods()) {
+                    MethodImplementation impl = method.getImplementation();
+                    if (impl == null) continue;
+                    for (Instruction instruction : impl.getInstructions()) {
+                        if ((instruction.getOpcode() == Opcode.CONST_STRING || instruction.getOpcode() == Opcode.CONST_STRING_JUMBO)
+                            && instruction instanceof ReferenceInstruction
+                            && ((ReferenceInstruction) instruction).getReference() instanceof StringReference
+                            && options.cloneStrings.containsKey(((StringReference) ((ReferenceInstruction) instruction).getReference()).getString())) {
+                            stats.cloneStringsChanged++;
+                        }
+                    }
+                }
+            }
+            if (stats.cloneStringsChanged > 0) stats.changed = true;
+        }
         if (!options.startupTargets.isEmpty()) throw new IllegalArgumentException("Seçilen başlangıç çağrısı artık eşleşmiyor; paketi yeniden tara.");
 
         Files.createDirectories(options.output.toAbsolutePath().getParent());
-        if (options.stripDebug || options.normalizeDex || dexVersion(dexBytes) >= 41) {
+        if (options.stripDebug || options.normalizeDex || stats.cloneStringsChanged > 0 || dexVersion(dexBytes) >= 41) {
             writeWithDebugRewrite(dexBytes, options, stats);
         } else {
             refreshDexHeader(dexBytes);
@@ -134,13 +161,14 @@ public final class DirectDexPatcher {
         for (String risky : stats.riskyCalls) output.append("RISKY\t").append(risky).append('\n');
         for (String message : stats.messageCalls) output.append("MESSAGE\t").append(message).append('\n');
         output.append(String.format(
-            "RESULT changed_files=%d void_patches=%d boolean_patches=%d callback_patches=%d message_patches=%d debug_directives_removed=%d%n",
+            "RESULT changed_files=%d void_patches=%d boolean_patches=%d callback_patches=%d message_patches=%d debug_directives_removed=%d clone_strings_changed=%d%n",
             stats.changed ? 1 : 0,
             stats.voidPatches,
             stats.booleanPatches,
             stats.callbackPatches,
             stats.messagePatches,
-            stats.debugItemsRemoved
+            stats.debugItemsRemoved,
+            stats.cloneStringsChanged
         ));
         return output.toString();
     }
@@ -338,10 +366,32 @@ public final class DirectDexPatcher {
         RewriterModule module = new RewriterModule() {
             @Override
             public Rewriter<MethodImplementation> getMethodImplementationRewriter(Rewriters rewriters) {
-                return new Rewriter<MethodImplementation>() {
+                return new MethodImplementationRewriter(rewriters) {
                     @Override
                     public MethodImplementation rewrite(MethodImplementation implementation) {
-                        return rewriteDebugItems(implementation, options, stats);
+                        return super.rewrite(rewriteDebugItems(implementation, options, stats));
+                    }
+                };
+            }
+            @Override
+            public Rewriter<Instruction> getInstructionRewriter(Rewriters rewriters) {
+                return new InstructionRewriter(rewriters) {
+                    @Override
+                    public Instruction rewrite(Instruction instruction) {
+                        if ((instruction.getOpcode() == Opcode.CONST_STRING || instruction.getOpcode() == Opcode.CONST_STRING_JUMBO)
+                            && instruction instanceof ReferenceInstruction
+                            && ((ReferenceInstruction) instruction).getReference() instanceof StringReference) {
+                            String original = ((StringReference) ((ReferenceInstruction) instruction).getReference()).getString();
+                            String replacement = options.cloneStrings.get(original);
+                            if (replacement != null && instruction instanceof OneRegisterInstruction) {
+                                int register = ((OneRegisterInstruction) instruction).getRegisterA();
+                                ImmutableStringReference reference = new ImmutableStringReference(replacement);
+                                return instruction.getOpcode() == Opcode.CONST_STRING
+                                    ? new ImmutableInstruction21c(Opcode.CONST_STRING, register, reference)
+                                    : new ImmutableInstruction31c(Opcode.CONST_STRING_JUMBO, register, reference);
+                            }
+                        }
+                        return super.rewrite(instruction);
                     }
                 };
             }
@@ -657,6 +707,12 @@ public final class DirectDexPatcher {
                     break;
                 case "--descriptor":
                     options.descriptors.add(requireValue(args, ++index, argument));
+                    break;
+                case "--clone-string":
+                    String original = requireValue(args, ++index, argument);
+                    String replacement = requireValue(args, ++index, argument);
+                    if (original.isEmpty() || replacement.isEmpty()) throw new IllegalArgumentException("Empty clone string mapping");
+                    options.cloneStrings.put(original, replacement);
                     break;
                 default:
                     throw new IllegalArgumentException("Bilinmeyen argüman: " + argument);

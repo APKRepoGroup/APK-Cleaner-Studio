@@ -47,7 +47,7 @@ class ReleaseIntegrityTests(unittest.TestCase):
 
     def test_development_version_uses_development_release_channel(self):
         server = (ROOT / "studio" / "server.py").read_text(encoding="utf-8")
-        self.assertIn('VERSION = "0.6.3-dev.1"', server)
+        self.assertIn('VERSION = "0.6.3-dev.2"', server)
         self.assertIn('RELEASE_CHANNEL = "dev"', server)
 
     def test_android_readme_matches_actual_package_identity_and_version(self):
@@ -102,7 +102,7 @@ class ReleaseIntegrityTests(unittest.TestCase):
             for name in ("README.md", "README-TR.md", "README-TERMUX.md", "VERSION.txt")
         )
         self.assertNotIn("0.5.3", docs)
-        self.assertIn("APK Cleaner Studio 0.6.3-dev.1", docs)
+        self.assertIn("APK Cleaner Studio 0.6.3-dev.2", docs)
         installer = (ROOT / "install-termux.sh").read_text(encoding="utf-8")
         self.assertIn("openjdk-25", installer)
         self.assertIn("openjdk-21", installer)

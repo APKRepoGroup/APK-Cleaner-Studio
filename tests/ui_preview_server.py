@@ -26,6 +26,12 @@ class Handler(SimpleHTTPRequestHandler):
         path = request_url.path
         if path == "/":
             capture = parse_qs(request_url.query).get("capture", [""])[0]
+            if capture == "mobile-result":
+                self.reply('''<!doctype html><html lang="tr"><head><meta charset="utf-8"><title>Mobil sonuç önizlemesi</title>
+                <style>body{margin:0;background:#151b19;display:flex;justify-content:center}
+                iframe{width:390px;height:1800px;border:0;background:#0d1515}</style></head>
+                <body><iframe title="Mobil sonuç" src="/?embedded=android&amp;capture=result"></iframe></body></html>''', "text/html")
+                return
             html = (WEB / "index.html").read_text(encoding="utf-8")
             marks = [dict(id=key, label=value["label"], references=4313 - i * 199) for i, (key, value) in enumerate(PROFILES.items())]
             bridge = '''<script>const qaApps=Array.from({length:100},(_,i)=>({package:'com.example.app'+i,label:'Test uygulaması '+(i+1),version:'1.2.0',splits:i%3,icon:'data:image/svg+xml,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48"><rect width="48" height="48" rx="12" fill="#239b84"/><circle cx="24" cy="24" r="12" fill="#d9ff43"/></svg>')})); globalThis.AndroidThemeBridge={setTheme(){},requestInstalledPackages(){onInstalledPackagesLoaded(JSON.stringify(qaApps));}};</script>'''
@@ -74,9 +80,16 @@ class Handler(SimpleHTTPRequestHandler):
         elif path == "/qa-motion.js":
             self.reply((ROOT / "tests" / "ui_motion_probe.js").read_text(encoding="utf-8"), "text/javascript")
         elif path == "/api/status":
-            self.reply(json.dumps(dict(toolchain=TOOLS, platform="android", clients=[], channel="dev", version="0.6.3-dev.1", engine_version="2.0")))
+            self.reply(json.dumps(dict(toolchain=TOOLS, platform="android", clients=[], channel="dev", version="0.6.3-dev.2", engine_version="2.0")))
         elif path == "/api/history":
             self.reply('{"jobs":[]}')
+        elif path == "/api/storage":
+            jobs = [
+                {"job_id": f"{index:032x}", "filename": f"Örnek paket {index}.apk", "can_delete": False,
+                 "sizes": {"source": 32_000_000, "output": 24_000_000, "working": 40_000_000}}
+                for index in range(1, 6)
+            ]
+            self.reply(json.dumps({"jobs": jobs, "totals": {"source": 160_000_000, "output": 120_000_000, "working": 200_000_000}}))
         elif path.endswith('/report'):
             self.reply("Görsel test raporu\nOrijinal paket korundu.\n" * 70, "text/plain")
         elif path.startswith('/api/'):

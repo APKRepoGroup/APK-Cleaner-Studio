@@ -128,6 +128,9 @@ The installer uses OpenJDK 25 when it is available in the Termux repository. If 
 ## Reports, history, and local data
 
 - The result screen displays **Open report**, **Share**, **Install APK**, and **Download APK** where supported by the platform.
+- Before an output is offered, the app verifies APK archive CRC integrity, manifest and DEX entries, native libraries, and its signature. Selected split modules are checked before merging.
+- The operation report shows before/after size and SHA-256 for changed DEX files, removed manifest entries, and previous/new XML field values.
+- Frequently used processing options can be saved as local presets. These store no source APK, filename, or user data; they remain in that device's browser storage.
 - Completed operations can be reopened; their reports and outputs can be viewed or downloaded when available.
 - Source packages, reports, and outputs are retained for 14 days on the local device only. Unwanted entries can be removed from the history list.
 - Local network sessions refresh every 10 seconds, and disconnected devices are removed from the list after 5 minutes. A custom display name is stored only on the device running the application.

@@ -20,6 +20,7 @@ from engine import (
     Toolchain,
     _process_one_dex,
     _temporary_directory,
+    _android_archive_package,
     inspect_apk,
     inspect_split_package,
     inspect_split_components,
@@ -30,11 +31,66 @@ from engine import (
     run_checked,
     sign_apk,
     terminate_active_tools,
+    validate_clone_package_name,
     validate_package_archive,
+    verify_output_apk,
 )
 
 
 class EngineTests(unittest.TestCase):
+    def test_android_archive_package_fallback_validates_native_result(self):
+        class FakeRunner:
+            @staticmethod
+            def inspectArchivePackage(_path):
+                return "com.example.split"
+
+        with mock.patch.dict(os.environ, {"APK_CLEANER_ANDROID": "1"}), mock.patch.dict(
+            sys.modules, {"java": types.SimpleNamespace(jclass=lambda _name: FakeRunner)}
+        ):
+            self.assertEqual(_android_archive_package(Path("base.apk")), "com.example.split")
+        with mock.patch.dict(os.environ, {"APK_CLEANER_ANDROID": "1"}), mock.patch.dict(
+            sys.modules, {"java": types.SimpleNamespace(jclass=lambda _name: types.SimpleNamespace(
+                inspectArchivePackage=lambda _path: "invalid package"
+            ))}
+        ):
+            self.assertEqual(_android_archive_package(Path("base.apk")), "")
+
+    def test_android_split_analysis_uses_archive_package_when_axml_inspection_fails(self):
+        with tempfile.TemporaryDirectory() as name:
+            source = Path(name) / "base.apk"
+            with zipfile.ZipFile(source, "w") as archive:
+                archive.writestr("classes.dex", b"dex\n035\x00")
+                archive.writestr("AndroidManifest.xml", b"binary-manifest")
+            with mock.patch("engine.inspect_manifest_package", return_value=""), mock.patch(
+                "engine._android_archive_package", return_value="com.example.split"
+            ):
+                report = inspect_apk(source)
+            self.assertEqual(report["package_name"], "com.example.split")
+            self.assertEqual(report["suggested_clone_package_name"], "com.example.split.clone")
+
+    def test_embedded_tool_failure_names_the_tool_and_keeps_diagnostics(self):
+        class FailingRunner:
+            @staticmethod
+            def run(_command, _cwd):
+                return types.SimpleNamespace(exitCode=1, output="Error: XML kaynakları okunamadı\n")
+
+        log = []
+        with mock.patch.dict(os.environ, {"APK_CLEANER_ANDROID": "1"}), \
+                mock.patch.dict(sys.modules, {"java": types.SimpleNamespace(jclass=lambda _name: FailingRunner)}):
+            with self.assertRaisesRegex(RuntimeError, "APKEditor d başarısız oldu \\(1\\): Error: XML kaynakları okunamadı"):
+                run_checked(["embedded-java", "-jar", "APKEditor.jar", "d", "-i", "sample.apk"], log)
+        self.assertIn("Error: XML kaynakları okunamadı", log)
+
+        class PlainFailure:
+            @staticmethod
+            def run(_command, _cwd):
+                return types.SimpleNamespace(exitCode=1, output="Kaynak tablosu okunamadı\n")
+
+        with mock.patch.dict(os.environ, {"APK_CLEANER_ANDROID": "1"}), \
+                mock.patch.dict(sys.modules, {"java": types.SimpleNamespace(jclass=lambda _name: PlainFailure)}):
+            with self.assertRaisesRegex(RuntimeError, "APKEditor m başarısız oldu \\(1\\): Kaynak tablosu okunamadı"):
+                run_checked(["embedded-java", "-jar", "APKEditor.jar", "m", "-i", "sample.apks"], [])
+
     def test_archive_validation_rejects_traversal_duplicate_and_decompression_bombs(self):
         with tempfile.TemporaryDirectory() as name:
             root = Path(name)
@@ -56,6 +112,28 @@ class EngineTests(unittest.TestCase):
                 archive.writestr("classes.dex", b"0" * (2 * 1024 * 1024))
             with self.assertRaisesRegex(ValueError, "sıkıştırma oranı"):
                 validate_package_archive(bomb)
+
+    def test_output_verification_rejects_missing_native_library(self):
+        with tempfile.TemporaryDirectory() as name:
+            root = Path(name)
+            source, output = root / "source.apk", root / "output.apk"
+            entries = {"AndroidManifest.xml": b"manifest", "classes.dex": b"dex", "lib/arm64-v8a/libsample.so": b"native"}
+            with zipfile.ZipFile(source, "w") as archive:
+                for entry, payload in entries.items():
+                    archive.writestr(entry, payload)
+            with zipfile.ZipFile(output, "w") as archive:
+                for entry, payload in entries.items():
+                    if not entry.startswith("lib/"):
+                        archive.writestr(entry, payload)
+            with self.assertRaisesRegex(RuntimeError, "native kütüphanesi eksik"):
+                verify_output_apk(source, output, mock.Mock(), [])
+
+    def test_clone_name_must_differ_and_keep_valid_package_shape(self):
+        self.assertEqual(validate_clone_package_name("com.example.app", "com.example.app.clone"), "com.example.app.clone")
+        with self.assertRaisesRegex(ValueError, "farklı olmalı"):
+            validate_clone_package_name("com.example.app", "com.example.app")
+        with self.assertRaisesRegex(ValueError, "geçerli bölüm"):
+            validate_clone_package_name("com.example.app", "bad name")
 
     def test_android_signer_failure_surfaces_the_real_error_without_fake_unsigned_output(self):
         with tempfile.TemporaryDirectory() as name:
@@ -108,7 +186,7 @@ class EngineTests(unittest.TestCase):
             inventory = inspect_split_components(package)
             with mock.patch("engine.run_checked") as run:
                 result = inspect_split_package(package, inventory, known_sha256="upload-hash")
-            run.assert_not_called()
+            self.assertTrue(all("--inspect-package" in call.args[0] for call in run.call_args_list))
             self.assertTrue(result["fast_split_scan"])
             self.assertEqual(result["sha256"], "upload-hash")
             self.assertEqual(result["network_count"], 1)
@@ -129,7 +207,9 @@ class EngineTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as name:
             root = Path(name)
             source = root / "source.apk"
-            source.write_bytes(b"fixture")
+            with zipfile.ZipFile(source, "w") as archive:
+                archive.writestr("AndroidManifest.xml", b"manifest")
+                archive.writestr("classes.dex", b"dex fixture")
             report = {
                 "filename": "source.apk", "size": 7, "sha256": "source-hash",
                 "dex": [], "dex_count": 0, "detections": [], "network_count": 0,
@@ -140,12 +220,14 @@ class EngineTests(unittest.TestCase):
             tools.status.return_value = {"clean_ready": True, "resource_tool": True, "manifest_tool": True, "signer": True}
             tools.zipalign = "zipalign"
             def fake_sign(_unsigned, output, _tools, _log, optimize=False):
-                output.write_bytes(b"signed")
+                shutil.copyfile(_unsigned, output)
                 return True, None
 
             with mock.patch("engine.inspect_apk") as inspect, mock.patch(
                 "engine.Toolchain.detect", return_value=tools
             ), mock.patch("engine.sign_apk", side_effect=fake_sign), mock.patch(
+                "engine.verify_output_apk", return_value={"passed": True, "signature_tool": "fixture"}
+            ), mock.patch(
                 "engine.sha256", return_value="output-hash"
             ):
                 result = __import__("engine").process_apk(
@@ -159,6 +241,7 @@ class EngineTests(unittest.TestCase):
             root = Path(name)
             source = root / "source.apk"
             with zipfile.ZipFile(source, "w") as archive:
+                archive.writestr("AndroidManifest.xml", b"manifest")
                 archive.writestr("classes.dex", b"dex fixture")
             report = {
                 "filename": "source.apk", "size": source.stat().st_size, "sha256": "source-hash",
@@ -176,16 +259,18 @@ class EngineTests(unittest.TestCase):
                 return name, patched, {
                     "changed_files": 1, "void_patches": 0, "boolean_patches": 0,
                     "callback_patches": 0, "message_patches": 1,
-                    "debug_directives_removed": 0, "risky_calls": [],
+                    "debug_directives_removed": 0, "clone_strings_changed": 0, "risky_calls": [],
                 }, ["RESULT message_patches=1"]
 
             def fake_sign(_unsigned, output, _tools, _log, optimize=False):
-                output.write_bytes(b"signed")
+                shutil.copyfile(_unsigned, output)
                 return True, None
 
             with mock.patch("engine.Toolchain.detect", return_value=tools), mock.patch(
                 "engine._process_one_dex", side_effect=fake_dex
             ), mock.patch("engine.sign_apk", side_effect=fake_sign), mock.patch(
+                "engine.verify_output_apk", return_value={"passed": True, "signature_tool": "fixture"}
+            ), mock.patch(
                 "engine.sha256", return_value="output-hash"
             ), mock.patch("engine.inspect_startup_calls", return_value=[{
                 "id": "classes.dex:lc-target", "dex": "classes.dex", "owner_class": "Ltest/MainActivity;",
@@ -273,11 +358,13 @@ class EngineTests(unittest.TestCase):
                 archive.writestr("classes.dex", b"dex\n035\x00")
 
             def fake_sign(_unsigned, output, _tools, _log, optimize=False):
-                output.write_bytes(b"signed")
+                shutil.copyfile(_unsigned, output)
                 return True, None
 
             with mock.patch("engine.Toolchain.detect") as detect, mock.patch(
                 "engine.sign_apk", side_effect=fake_sign
+            ), mock.patch("engine.verify_output_apk", return_value={"passed": True, "signature_tool": "fixture"}), mock.patch(
+                "engine.inspect_manifest_package", return_value=""
             ), mock.patch("engine.sha256", return_value="hash"):
                 detect.return_value.status.return_value = {
                     "clean_ready": True, "manifest_tool": True, "signer": True
@@ -333,12 +420,14 @@ class EngineTests(unittest.TestCase):
                     signed_input["manifest"] = archive.read("AndroidManifest.xml")
                     signed_input["resources"] = archive.read("resources.arsc")
                     signed_input["layout"] = archive.read("res/layout/main.xml")
-                output.write_bytes(b"signed")
+                shutil.copyfile(unsigned, output)
                 return True, None
 
             with mock.patch("engine.Toolchain.detect", return_value=tools), mock.patch(
                 "engine.run_checked", side_effect=fake_run
             ), mock.patch("engine.sign_apk", side_effect=fake_sign), mock.patch(
+                "engine.verify_output_apk", return_value={"passed": True, "signature_tool": "fixture"}
+            ), mock.patch(
                 "engine.sha256", return_value="hash"
             ):
                 result = __import__("engine").process_apk(

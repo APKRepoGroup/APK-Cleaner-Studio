@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import json
+import os
 import socket
 import ssl
 import statistics
 import subprocess
 import sys
+import tempfile
 import time
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
@@ -43,7 +45,14 @@ def main() -> int:
         "--no-open",
         "--no-trust-prompt",
     ]
-    process = subprocess.Popen(command, cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    audit_data = tempfile.TemporaryDirectory(prefix="apk-cleaner-load-audit-")
+    environment = os.environ.copy()
+    environment["APK_CLEANER_DATA_ROOT"] = audit_data.name
+    try:
+        process = subprocess.Popen(command, cwd=ROOT, env=environment, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    except Exception:
+        audit_data.cleanup()
+        raise
     urls = [f"http://127.0.0.1:{port}/api/status", f"https://127.0.0.1:{port}/api/status"]
     try:
         deadline = time.monotonic() + 20
@@ -61,7 +70,7 @@ def main() -> int:
         targets = [urls[index % 2] for index in range(400)]
         with ThreadPoolExecutor(max_workers=40) as pool:
             results = list(pool.map(fetch, targets))
-        failures = [row for row in results if row[0] != 200 or row[2].get("version") != "0.6.3-dev.1"]
+        failures = [row for row in results if row[0] != 200 or row[2].get("version") != "0.6.3-dev.2"]
         if failures:
             raise RuntimeError(f"Yük testinde {len(failures)} hatalı yanıt alındı.")
         latencies = sorted(row[1] for row in results)
@@ -88,6 +97,7 @@ def main() -> int:
             process.wait(timeout=5)
         if process.poll() is None:
             raise RuntimeError("Sunucu süreci kapanmadı.")
+        audit_data.cleanup()
     return 0
 
 

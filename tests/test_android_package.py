@@ -10,17 +10,39 @@ ROOT = Path(__file__).resolve().parents[1]
 ANDROID = ROOT / "android"
 APK = Path(os.environ.get(
     "APK_CLEANER_ANDROID_APK",
-    ROOT / "outputs" / "APK-Cleaner-Studio-v0.6.3-dev.1-Android.apk",
+    ROOT / "outputs" / "APK-Cleaner-Studio-v0.6.3-dev.2-Android.apk",
 ))
 
 
 class AndroidPackageTests(unittest.TestCase):
+    def test_direct_split_install_history_is_local_and_bounded(self):
+        native = (ANDROID / "app/src/main/java/com/apkcleaner/studio/InstallHistoryStore.java").read_text(encoding="utf-8")
+        installer = (ANDROID / "app/src/main/java/com/apkcleaner/studio/OriginalSplitInstaller.java").read_text(encoding="utf-8")
+        activity = (ANDROID / "app/src/main/java/com/apkcleaner/studio/MainActivity.java").read_text(encoding="utf-8")
+        self.assertIn('MAX_ENTRIES = 50', native)
+        self.assertIn('Context.MODE_PRIVATE', native)
+        self.assertIn('InstallHistoryStore.submitted', installer)
+        self.assertIn('InstallHistoryStore.completed', installer)
+        self.assertIn('getInstallHistory()', activity)
+        self.assertIn('getNativeCacheStorage()', activity)
+        self.assertIn('clearNativeCache()', activity)
+        self.assertIn('file.lastModified() >= cutoff', activity)
+        html = (ROOT / "studio/web/index.html").read_text(encoding="utf-8")
+        self.assertIn('id="storageCard"', html)
+        self.assertIn('id="installHistoryCard"', html)
+        for tester in ('@mrepomod', '@Seckkk', '@muharrem0001', '@ByTECHNO'):
+            self.assertIn(f'<b>{tester}</b><small>Tester</small>', html)
+        self.assertLess(html.index('<b>@mrepomod</b>'), html.index('<b>@Seckkk</b>'))
+        for asset in ('tester-mrepomod.png', 'tester-seckkk.png', 'tester-muharrem0001.png', 'tester-bytechno.png'):
+            self.assertIn(f'src="icons/{asset}', html)
+            self.assertTrue((ROOT / "studio/web/icons" / asset).is_file())
+
     def test_requested_android_matrix_and_version_are_declared(self):
         gradle = (ANDROID / "app" / "build.gradle").read_text(encoding="utf-8")
         self.assertIn('applicationId "com.apkrepo.apkcleanerstudio"', gradle)
         self.assertNotIn("applicationIdSuffix", gradle)
-        self.assertIn("versionCode 6301", gradle)
-        self.assertIn('versionName "0.6.3-dev.1"', gradle)
+        self.assertIn("versionCode 6302", gradle)
+        self.assertIn('versionName "0.6.3-dev.2"', gradle)
         self.assertGreaterEqual(gradle.count("signingConfig signingConfigs.studio"), 2)
         self.assertIn("enableV1Signing false", gradle)
         self.assertIn("enableV2Signing true", gradle)
@@ -81,6 +103,14 @@ class AndroidPackageTests(unittest.TestCase):
         self.assertIn("if (!awaitEngineReady(30000))", activity)
         self.assertIn("recoverEmbeddedEngine", script)
         self.assertIn("async function apiFetch", script)
+
+    def test_android_tool_output_and_dex_work_are_bounded(self):
+        runner = (ANDROID / "app/src/main/java/com/apkcleaner/studio/EmbeddedToolRunner.java").read_text(encoding="utf-8")
+        engine = (ROOT / "studio/engine.py").read_text(encoding="utf-8")
+        self.assertIn("TailOutputStream capture = new TailOutputStream()", runner)
+        self.assertIn("private static final int CAPACITY = 64 * 1024", runner)
+        self.assertIn("if (!CANCEL_REQUESTED.get()) Thread.interrupted();", runner)
+        self.assertIn("worker_limit = 1 if android", engine)
 
     def test_android_keeps_screen_awake_only_while_processing(self):
         activity = (ANDROID / "app/src/main/java/com/apkcleaner/studio/MainActivity.java").read_text(encoding="utf-8")

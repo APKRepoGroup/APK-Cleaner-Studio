@@ -1,7 +1,7 @@
 #!/data/data/com.termux/files/usr/bin/bash
 set -e
 
-echo "APK Cleaner Studio v0.6.3-dev.1 Termux kurulumu"
+echo "APK Cleaner Studio v0.6.3-dev.2 Termux kurulumu"
 pkg update -y
 pkg install -y python python-cryptography
 if pkg show openjdk-25 >/dev/null 2>&1; then

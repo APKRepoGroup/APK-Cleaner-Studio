@@ -6,12 +6,12 @@
   <meta name="theme-color" content="#0d1515">
   <meta http-equiv="Accept-CH" content="Sec-CH-UA-Model, Sec-CH-UA-Platform, Sec-CH-UA-Platform-Version, Sec-CH-UA-Mobile, Sec-CH-UA-Form-Factors">
   <title>APK Cleaner Studio</title>
-  <link rel="stylesheet" href="boot.css?v=0.6.3-dev.1-20260922.1">
+  <link rel="stylesheet" href="boot.css?v=0.6.3-dev.2-20260927.1">
   <link rel="icon" href="/favicon.ico" sizes="any">
   <link rel="icon" type="image/png" href="/favicon.png" sizes="512x512">
-  <script src="boot.js?v=0.6.3-dev.1-20260922.1"></script>
+  <script src="boot.js?v=0.6.3-dev.2-20260927.1"></script>
   <link rel="stylesheet" href="styles.css">
-  <link rel="stylesheet" href="theme.css?v=0.6.3-dev.1-20260922.1">
+  <link rel="stylesheet" href="theme.css?v=0.6.3-dev.2-20260929.1">
 </head>
 <body>
   <header class="topbar">
@@ -28,7 +28,7 @@
   </header>
 
   <section id="updateNotice" class="update-notice hidden" role="status" aria-live="polite">
-    <div class="update-mark">↗</div>
+    <div class="update-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M5 19 19 5M9 5h10v10"/></svg></div>
     <div><small>GÜNCELLEME HAZIR</small><b id="updateTitle">Yeni APK Cleaner Studio sürümü</b><p id="updateText"></p></div>
     <button id="updateDownload" type="button" class="update-action hidden">Yeni sürümü indir</button>
     <button id="updateDismiss" type="button" aria-label="Güncelleme bildirimini kapat">×</button>
@@ -42,7 +42,7 @@
         <span class="hero-rotator"><em id="heroPhrase">Temiz, tek APK olarak al.</em></span>
       </h1>
       <p>APK reklam izlerini temizle; APKS, APKM ve XAPK paketlerini tek kurulabilir APK’ya dönüştür. DEX, manifest ve XML işlemlerinin tamamı cihazında gerçekleşir.</p>
-      <div class="hero-metrics"><span><b>18</b> reklam ağı</span><span><b>4</b> paket türü</span><span><b>%100</b> cihazda işlem</span><span><b>v0.6.3-dev.1</b> test sürümü</span></div>
+      <div class="hero-metrics"><span><b>18</b> reklam ağı</span><span><b>4</b> paket türü</span><span><b>%100</b> cihazda işlem</span><span><b>v0.6.3-dev.2</b> test sürümü</span></div>
     </section>
 
     <section id="mobileHttpsBanner" class="mobile-https-banner" aria-labelledby="mobileHttpsTitle">
@@ -52,7 +52,7 @@
         <h2 id="mobileHttpsTitle">Güvenli yerel bağlantıyı etkinleştir</h2>
         <p>Uygulama yerel ağda HTTP ile doğrudan kullanılabilir. Sertifikayı cihazına tanıttığında bağlantı otomatik olarak HTTPS’e yükseltilir.</p>
       </div>
-      <a class="mobile-https-action" href="/local-ca.crt" download>CA sertifikasını indir <span>↓</span></a>
+      <a class="mobile-https-action" href="/local-ca.crt" download>CA sertifikasını indir <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v11m-4-4 4 4 4-4"/><path d="M4 17v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg></a>
       <a id="httpFallback" class="mobile-http-action" href="#">HTTP bağlantısıyla aç</a>
       <details>
         <summary>Kurulum ve tarayıcı notlarını göster</summary>
@@ -75,7 +75,7 @@
           <div id="dropzone" class="dropzone" tabindex="0" role="button" aria-label="Android paket dosyası seç">
             <input id="fileInput" type="file" accept=".apk,.apks,.apkm,.xapk,application/vnd.android.package-archive">
             <div class="local-badge"><i></i> Güvenli yerel işlem</div>
-            <div class="upload-icon">↑</div>
+            <div class="upload-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17V4m-4 4 4-4 4 4"/><path d="M4 17v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg></div>
             <h2>İşlenecek paketi buraya bırak</h2>
             <p>APK · APKS · APKM · XAPK</p>
             <button id="selectButton" class="primary">Dosya seç</button>
@@ -88,6 +88,22 @@
           <div id="fileCard" class="file-card"></div>
           <div id="scanProgress" class="scan-progress"><i></i><span>Paket hazırlanıyor ve güvenli biçimde taranıyor…</span></div>
           <div id="analysisContent" class="hidden">
+            <div id="directSplitInstall" class="direct-split-install hidden">
+              <div><b>Özgün split paketi doğrudan kur</b><p>APKS, APKM veya XAPK içindeki APK bileşenleri birleştirilmez, düzenlenmez ve yeniden imzalanmaz. Kurulumu Android onaylar. OBB içeren XAPK paketleri desteklenmez.</p></div>
+              <button id="directSplitInstallButton" class="secondary" type="button">Bileşenleri incele</button>
+            </div>
+            <section id="directSplitPlan" class="direct-split-plan hidden" aria-labelledby="directSplitPlanTitle">
+              <h3 id="directSplitPlanTitle">Doğrudan kurulum özeti</h3>
+              <p id="directSplitPackageSummary"></p>
+              <fieldset class="direct-split-mode"><legend>Bileşen seçimi</legend>
+                <label><input type="radio" name="directSplitMode" value="auto" checked> Cihaza uygun bileşenleri otomatik seç</label>
+                <label><input type="radio" name="directSplitMode" value="manual"> Bileşenleri kendim seçeyim</label>
+              </fieldset>
+              <div id="directSplitModules" class="direct-split-modules"></div>
+              <p id="directSplitSelectionSummary" class="direct-split-selection-summary"></p>
+              <p id="directSplitWarning" class="direct-split-warning hidden"></p>
+              <button id="directSplitConfirm" class="primary" type="button">Android kurulumuna geç</button>
+            </section>
             <div id="integrityNotice" class="integrity-notice hidden" role="note">
               <span>i</span><p><b>Play Store kaynak veya bütünlük denetimi riski algılandı.</b> Yeniden imzalanan paket, kurulumdan sonra Play Store’a yönlendirme yapabilir veya kullanımı sınırlayabilir. Doğrulama mekanizması değiştirilmez.</p>
             </div>
@@ -98,7 +114,17 @@
             <div class="operation-grid">
               <button class="operation selected" data-operation="patch" aria-pressed="true"><span>✦</span><div><b>Reklam izlerini temizle</b><p id="patchOperationDescription">Doğrulanmış DEX çağrılarını, manifest kayıtlarını ve XML reklam alanlarını düzenler. İstemiyorsan tekrar dokunarak kapatabilirsin.</p></div><i></i></button>
               <button id="convertOperation" class="operation" data-operation="convert" aria-pressed="false"><span>⇄</span><div><b>Tek APK oluştur</b><p>Split modülleri tek kurulabilir APK’da birleştirir; reklam yaması isteğe bağlıdır.</p></div><i></i></button>
+              <button id="cloneOperation" class="operation" data-operation="clone" aria-pressed="false"><span>⧉</span><div><b>APK’yı klonla</b><p>Paket kimliğini değiştirerek özgün uygulamanın yanına kurulabilen ayrı bir APK oluşturur.</p></div><i></i></button>
             </div>
+            <p id="patchAvailabilityNote" class="operation-availability hidden" role="status">Bu pakette desteklenen bir reklam SDK’sı bulunmadı. Reklam yaması uygulanamaz; split paketi yine tek APK’ya dönüştürebilirsin.</p>
+            <p id="cloneAvailabilityNote" class="operation-availability hidden" role="status">Paket adı okunamadığı için klonlama kullanılamıyor. Farklı bir kaynak paket deneyebilirsin.</p>
+            <section id="cloneOptions" class="clone-options hidden" aria-labelledby="cloneOptionsTitle">
+              <div class="section-title compact"><div><small>KLON KİMLİĞİ</small><h2 id="cloneOptionsTitle">Yeni paket adını belirle</h2></div></div>
+              <p>Özgün paket adı: <code id="originalPackageName">—</code></p>
+              <label for="clonePackageName">Klonun paket adı</label>
+              <input id="clonePackageName" type="text" maxlength="200" spellcheck="false" autocomplete="off" autocapitalize="off" aria-describedby="clonePackageWarning">
+              <p id="clonePackageWarning" class="clone-warning">Klonlama işleminin her uygulamada çalışacağı garanti edilemez. Paket adı uygulamanın iç bağlantılarında kullanılabilir; özgün addan uzaklaşan değişiklikler uyumluluk riskini artırır.</p>
+            </section>
 
             <section id="splitSelector" class="split-selector hidden" aria-labelledby="splitSelectorTitle">
               <div class="section-title compact"><div><small>SPLIT BİLEŞENLERİ</small><h2 id="splitSelectorTitle">Hedef cihaz yapılandırmasını seç</h2></div><span>DPI otomatik eşleştirilir</span></div>
@@ -119,15 +145,19 @@
 
             <div class="extras-title"><small>İSTEĞE BAĞLI İYİLEŞTİRMELER</small></div>
             <div class="option-grid">
-              <label id="convertPatchOption" class="option hidden"><input id="patchAds" type="checkbox"><span></span><div><b>Dönüştürme sırasında reklam yaması uygula</b><p>Seçilen kapsamı, manifest ve XML düzenlemeleriyle birlikte oluşturulan APK’ya uygular.</p></div></label>
+              <label id="convertPatchOption" class="option hidden"><input id="patchAds" type="checkbox"><span></span><div><b id="combinedPatchTitle">Dönüştürme sırasında reklam yaması uygula</b><p>Seçilen kapsamı, manifest ve XML düzenlemeleriyle birlikte oluşturulan APK’ya uygular.</p></div></label>
               <label class="option"><input id="stripDebug" type="checkbox"><span></span><div><b>DEX hata ayıklama verilerini kaldır</b><p>Kaynak dosya, satır ve yerel değişkenlere ait hata ayıklama kayıtlarını temizler.</p></div></label>
               <label class="option"><input id="normalizeDex" type="checkbox"><span></span><div><b>DEX yapısını yeniden düzenle</b><p>Standart DEX yapısını doğrulayıp yeniden yazar. Eşleme dosyası olmadan özgün yöntem adlarını geri getirmez; özel şifreleme algılanırsa işlem güvenle durdurulur.</p></div></label>
               <label class="option"><input id="optimizeApk" type="checkbox"><span></span><div><b>Yamalanan APK’yı optimize et</b><p>İmzalamadan önce standart ZIP hizalaması uygular; dosya içeriklerini yeniden derlemez.</p></div></label>
               <label class="option"><input id="deobfuscateResources" type="checkbox"><span></span><div><b>RES kaynak korumasını kaldır</b><p>APKEditor’ün yalın kaynak düzenleme işlemini doğrudan uygular ve üretilen paketle devam eder.</p></div></label>
             </div>
             <div class="manifest-note"><span>✓</span><p><b>Manifest ve XML denetimi etkin.</b> Dengeli ve Gelişmiş profiller doğrulanmış reklam servislerini, izinlerini ve metadata kayıtlarını temizler. Bilinen reklam görünümü bulunursa ilgili alan <code>0dp + gone</code> yapılır.</p></div>
+            <section class="saved-presets" aria-labelledby="savedPresetsTitle">
+              <div><b id="savedPresetsTitle">Kayıtlı işlem profilleri</b><p>Yalnızca işlem seçenekleri bu cihazda saklanır; APK ve dosya bilgileri kaydedilmez.</p></div>
+              <div class="saved-presets-controls"><select id="savedPresetSelect" aria-label="Kayıtlı işlem profili"><option value="">Profil seç</option></select><button id="applyPresetButton" class="secondary" type="button" disabled>Uygula</button><button id="savePresetButton" class="secondary" type="button">Seçenekleri kaydet</button><button id="deletePresetButton" class="secondary" type="button" disabled aria-label="Seçili profili sil">Sil</button></div>
+            </section>
             <div id="analysisSummary" class="analysis-summary"></div>
-            <div class="actions"><button id="resetButton" class="secondary">Geri</button><button id="cleanButton" class="primary wide">İşlemi başlat <span>→</span></button></div>
+            <div class="actions"><button id="resetButton" class="secondary">Geri</button><button id="diagnosticAfterFailure" class="secondary hidden" type="button">Hata raporunu incele</button><button id="cleanButton" class="primary wide">İşlemi başlat <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h15m-6-6 6 6-6 6"/></svg></button></div>
           </div>
         </section>
 
@@ -143,7 +173,7 @@
           <div class="success">✓</div><small>İŞLEM TAMAMLANDI</small>
           <h2 id="resultTitle">Çıktı başarıyla oluşturuldu.</h2><p>Tüm değişiklikler yeni dosyaya yazıldı; orijinal paket korunmaya devam ediyor.</p>
           <div id="resultStats" class="stats"></div>
-          <div class="actions center"><a id="downloadButton" class="primary wide" href="#">APK’yı indir <span>↓</span></a><button id="installButton" class="secondary native-android-action hidden" type="button">APK’yı yükle</button><button id="shareOutputButton" class="secondary native-android-action hidden" type="button">Paylaş</button><button id="reportButton" class="secondary" type="button">Raporu aç</button></div>
+          <div class="actions center"><a id="downloadButton" class="primary wide" href="#"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v11m-4-4 4 4 4-4"/><path d="M4 17v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg><span>APK’yı indir</span></a><button id="installButton" class="secondary install-action native-android-action hidden" type="button"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2.5"/><path d="M12 7v8m-3-3 3 3 3-3M10 19h4"/></svg><span>APK’yı kur</span></button><button id="shareOutputButton" class="secondary native-android-action hidden" type="button">Paylaş</button><button id="reportButton" class="secondary" type="button">Raporu aç</button></div>
           <button id="againButton" class="text-button">Başka bir paket işle</button>
         </section>
         </article>
@@ -162,8 +192,8 @@
             <li><span>04</span><div><b>Çıktıyı teslim al</b><p>Yeni APK, işlem raporu ve tekrar işleme seçeneğiyle hazırlanır.</p></div></li>
           </ol>
           <div class="overview-flow" aria-label="Yerel işlem güvenceleri">
-            <div><small>KAYNAK</small><b>Orijinal paket</b></div><i>→</i>
-            <div><small>YEREL MOTOR</small><b>Kontrollü işlem</b></div><i>→</i>
+            <div><small>KAYNAK</small><b>Orijinal paket</b></div><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h15m-6-6 6 6-6 6"/></svg>
+            <div><small>YEREL MOTOR</small><b>Kontrollü işlem</b></div><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h15m-6-6 6 6-6 6"/></svg>
             <div><small>SONUÇ</small><b>Raporlu çıktı</b></div>
           </div>
         </section>
@@ -174,38 +204,52 @@
         <section class="side-card side-data-card network-card"><small>ANALİZ SONUÇLARI</small><h3 id="networkTitle">İşlenecek paket bekleniyor</h3><div id="networkList" class="network-list auto-hide-scrollbar"><p>Paket seçildiğinde tespit edilen reklam ağları ve referans sayıları burada gösterilir.</p></div></section>
         <section id="toolCard" class="side-card side-data-card tools"><small>YEREL İŞLEM MOTORU</small><h3>Bileşen durumu</h3><div id="toolList" class="auto-hide-scrollbar" aria-live="polite"><div class="tools-row pending" data-tool="java"><span>Java çalışma ortamı</span><span>DENETLENİYOR</span></div><div class="tools-row pending" data-tool="dex_tools"><span>Doğrudan DEX motoru</span><span>DENETLENİYOR</span></div><div class="tools-row pending" data-tool="manifest_tool"><span>Manifest ve XML</span><span>DENETLENİYOR</span></div><div class="tools-row pending" data-tool="split_tool"><span>Split birleştirici</span><span>DENETLENİYOR</span></div><div class="tools-row pending" data-tool="signer"><span>APK imzalayıcı</span><span>DENETLENİYOR</span></div><div class="tools-row pending" data-tool="zipalign"><span>APK optimizasyonu</span><span>DENETLENİYOR</span></div></div><button id="setupButton" class="setup setup-pending" disabled aria-hidden="true">Eksik bileşenleri hazırla</button><p class="fineprint">Eksik Java çalışma ortamı ve gerekli işlem bileşenleri kullanıcı klasöründe otomatik olarak hazırlanır.</p><details class="mobile-cert auto-hide-scrollbar"><summary>Mobil HTTPS sertifikası</summary><div class="host-cert-copy"><p>Telefonun yerel HTTPS bağlantısına güvenmesi için bu bilgisayara özel CA sertifikasını Android’e bir kez tanıt.</p><a href="/local-ca.crt" download>CA sertifikasını indir</a><ol><li>Android güvenlik ayarlarından <b>CA sertifikası</b> olarak yükle.</li><li>Kullandığın tarayıcıyı tamamen kapatıp yeniden aç.</li></ol><small>Yalnızca kendi güvendiğin yerel bilgisayarın sertifikasını yükle.</small></div><div class="embedded-cert-copy"><p>Standalone Android uygulaması kendi güvenli uygulama alanında çalışır ve yerel HTTPS sertifikası gerektirmez.</p><small>Windows veya Termux sunucusuna başka bir cihazdan bağlanırken sertifikayı ilgili sunucunun bu kartından indirebilirsin.</small></div></details></section>
         <section id="clientCard" class="side-card side-data-card clients"><small>YEREL AĞ OTURUMLARI</small><h3 id="clientTitle">Bağlanan cihazlar denetleniyor</h3><div id="clientList" class="client-list auto-hide-scrollbar" aria-live="polite" aria-busy="true"><div class="client-row client-skeleton" aria-hidden="true"><span class="client-dot"></span><div><b>Cihaz bilgileri hazırlanıyor</b><small>Yerel oturum denetleniyor</small><nav class="client-actions"><span></span><span></span></nav></div><time><strong>DENETLENİYOR</strong><small>İLK —</small><b>SON —</b></time></div></div><p class="fineprint client-privacy">Durum 10 saniyede bir yenilenir. Bağlantısı kesilen cihaz 5 dakika sonra listeden kaldırılır; verdiğin görünen ad yalnızca bu cihazda saklanır. Dış ağ bağlantılarında mümkün olduğunda genel IPv4 adresi gösterilir.</p></section>
-        <section id="historyCard" class="side-card side-data-card history-card"><small>ESKİ İŞLEMLER</small><h3 id="historyTitle">İşlem geçmişi denetleniyor</h3><div id="historyList" class="history-list auto-hide-scrollbar" aria-live="polite" aria-busy="true"><article class="history-row history-skeleton" aria-hidden="true"><div><b>İşlem kayıtları hazırlanıyor</b><small>Yerel geçmiş denetleniyor</small></div><nav><span></span><span></span></nav></article><article class="history-row history-skeleton" aria-hidden="true"><div><b>Önceki paketler yükleniyor</b><small>Rapor ve çıktı bilgileri hazırlanıyor</small></div><nav><span></span><span></span><span></span></nav></article><article class="history-row history-skeleton" aria-hidden="true"><div><b>Yerel kayıtlar okunuyor</b><small>Bu işlem yalnızca cihazında gerçekleşir</small></div><nav><span></span><span></span></nav></article></div><p class="fineprint">Kaynak paketler, raporlar ve çıktılar 14 gün boyunca yalnızca bu yerel cihazda tutulur.</p></section>
+        <section id="historyCard" class="side-card side-data-card history-card"><small>ESKİ İŞLEMLER</small><h3 id="historyTitle">İşlem geçmişi denetleniyor</h3><div id="historyList" class="history-list auto-hide-scrollbar" aria-live="polite" aria-busy="true"><article class="history-row history-skeleton" aria-hidden="true"><div><b>İşlem kayıtları hazırlanıyor</b><small>Yerel geçmiş denetleniyor</small></div><nav><span></span><span></span></nav></article><article class="history-row history-skeleton" aria-hidden="true"><div><b>Önceki paketler yükleniyor</b><small>Rapor ve çıktı bilgileri hazırlanıyor</small></div><nav><span></span><span></span><span></span></nav></article><article class="history-row history-skeleton" aria-hidden="true"><div><b>Yerel kayıtlar okunuyor</b><small>Bu işlem yalnızca cihazında gerçekleşir</small></div><nav><span></span><span></span></nav></article></div><button id="diagnosticButton" class="secondary diagnostic-open" type="button">Hata raporu oluştur</button><p class="fineprint">Hata raporunu önce inceleyebilir, istersen indirebilirsin. Kayıtlar bu cihazda tutulur.</p></section>
+        <details id="storageCard" class="side-card side-data-card storage-card"><summary>DEPOLAMA YÖNETİMİ <span>Yerel dosyaları incele</span></summary><h3 id="storageTitle">Kullanılan alan hesaplanıyor</h3><p id="storageTotals" class="fineprint"></p><div id="storageList" class="storage-list auto-hide-scrollbar" aria-live="polite"></div><button id="storageCleanButton" class="secondary" type="button" disabled>Seçilen kayıtları temizle</button><div id="nativeCacheStorage" class="native-cache-storage hidden"><b>Android kurulum önbelleği</b><small id="nativeCacheTotals"></small><button id="nativeCacheCleanButton" class="secondary" type="button">Eski önbelleği temizle</button></div><p class="fineprint">Seçtiğin işlem kaydı, kaynağı, çıktısı ve çalışma dosyalarıyla birlikte silinir. Devam eden işlemler korunur.</p></details>
+        <details id="installHistoryCard" class="side-card side-data-card install-history-card hidden"><summary>KURULUM GEÇMİŞİ <span>Doğrudan split kurulumları</span></summary><h3>Android kurulum sonuçları</h3><div id="installHistoryList" class="install-history-list auto-hide-scrollbar" aria-live="polite"></div><p class="fineprint">Yalnızca doğrudan split kurulumları bu cihazda kaydedilir. Normal APK kurulum ekranının sonucu Android tarafından uygulamaya bildirilmez.</p></details>
         <section class="privacy"><span>⌾</span><div><b>Cihazında ve özel</b><p>Paket uzak bir sunucuya gönderilmez; analiz ve düzenleme işlemleri bu cihazda tamamlanır.</p></div></section>
       </aside>
     </section>
 
   </main>
 
-  <section class="special-thanks" aria-labelledby="specialThanksTitle">
+  <section id="specialThanks" class="special-thanks" aria-labelledby="specialThanksTitle">
     <div class="special-thanks-copy">
       <small>TOPLULUK</small>
       <h2 id="specialThanksTitle">Özel Teşekkürler</h2>
-      <p>APK Cleaner Studio’nun gelişimine katkı sunan değerli destekçilerimize teşekkür ederiz.</p>
+      <p>APK Cleaner Studio’nun gelişimine katkı sunan değerli destekçilerimize ve test ekibimize teşekkür ederiz.</p>
     </div>
-    <div id="supporterList" class="supporter-list" aria-label="Özel olarak teşekkür edilen destekçiler">
-      <span><b>Ahmet Göktekin</b><small>Destekçi</small></span>
-      <span><b>Ahmet Özesen</b><small>Destekçi</small></span>
-      <span><b>Ali Kandemir</b><small>Destekçi</small></span>
-      <span><b>Ali Meral</b><small>Destekçi</small></span>
-      <span><b>Arif Erkoç</b><small>Destekçi</small></span>
-      <span><b>Bekir Zengin</b><small>Destekçi</small></span>
-      <span><b>Cengiz Çoban</b><small>Destekçi</small></span>
-      <span><b>Doğan Demir</b><small>Destekçi</small></span>
-      <span><b>Erol Bilen</b><small>Destekçi</small></span>
-      <span class="permanent"><b>Zeki Kurt</b><small>Daimi Destekçi</small></span>
-      <span class="permanent"><b>Kasım Demiröz</b><small>Daimi Destekçi</small></span>
-      <span><b>Muhammet Hüseyin Apaydın</b><small>Destekçi</small></span>
-      <span><b>Mustafa Şengüler</b><small>Destekçi</small></span>
-      <span><b>SHADOW</b><small>Destekçi</small></span>
-      <span><b>Talip Karabulut</b><small>Destekçi</small></span>
-      <span><b>Tansu Özbey</b><small>Destekçi</small></span>
-      <span><b>Zafer Can Şenol</b><small>Destekçi</small></span>
-    </div>
+      <div class="tester-team" aria-labelledby="testerTeamTitle">
+        <small id="testerTeamTitle">TEST EKİBİ</small>
+        <div class="tester-list" aria-label="Özel olarak teşekkür edilen test kullanıcıları">
+          <span><img class="tester-avatar" src="icons/tester-mrepomod.png?v=20260928" alt="" width="34" height="34" loading="lazy" decoding="async"><span class="tester-label"><b>@mrepomod</b><small>Tester</small></span></span>
+          <span><img class="tester-avatar" src="icons/tester-seckkk.png" alt="" width="34" height="34" loading="lazy" decoding="async"><span class="tester-label"><b>@Seckkk</b><small>Tester</small></span></span>
+          <span><img class="tester-avatar" src="icons/tester-muharrem0001.png" alt="" width="34" height="34" loading="lazy" decoding="async"><span class="tester-label"><b>@muharrem0001</b><small>Tester</small></span></span>
+          <span><img class="tester-avatar" src="icons/tester-bytechno.png" alt="" width="34" height="34" loading="lazy" decoding="async"><span class="tester-label"><b>@ByTECHNO</b><small>Tester</small></span></span>
+        </div>
+      </div>
+      <details class="supporter-disclosure">
+        <summary><span><b>Destekçiler</b><small>17 isim · 2 daimi destekçi</small></span></summary>
+        <div id="supporterList" class="supporter-list" aria-label="Özel olarak teşekkür edilen destekçiler">
+          <span><b>Ahmet Göktekin</b><small>Destekçi</small></span>
+          <span><b>Ahmet Özesen</b><small>Destekçi</small></span>
+          <span><b>Ali Kandemir</b><small>Destekçi</small></span>
+          <span><b>Ali Meral</b><small>Destekçi</small></span>
+          <span><b>Arif Erkoç</b><small>Destekçi</small></span>
+          <span><b>Bekir Zengin</b><small>Destekçi</small></span>
+          <span><b>Cengiz Çoban</b><small>Destekçi</small></span>
+          <span><b>Doğan Demir</b><small>Destekçi</small></span>
+          <span><b>Erol Bilen</b><small>Destekçi</small></span>
+          <span class="permanent"><b>Zeki Kurt</b><small>Daimi Destekçi</small></span>
+          <span class="permanent"><b>Kasım Demiröz</b><small>Daimi Destekçi</small></span>
+          <span><b>Muhammet Hüseyin Apaydın</b><small>Destekçi</small></span>
+          <span><b>Mustafa Şengüler</b><small>Destekçi</small></span>
+          <span><b>SHADOW</b><small>Destekçi</small></span>
+          <span><b>Talip Karabulut</b><small>Destekçi</small></span>
+          <span><b>Tansu Özbey</b><small>Destekçi</small></span>
+          <span><b>Zafer Can Şenol</b><small>Destekçi</small></span>
+        </div>
+      </details>
     <p class="special-thanks-note"><strong>ʙʏᴛᴇᴄʜɴᴏ</strong>’ya bugüne kadar verdiği tüm destekler için ayrıca teşekkür ederiz.</p>
   </section>
 
@@ -252,7 +296,15 @@
         <button id="reportViewerClose" type="button" aria-label="Raporu kapat">×</button>
       </header>
       <pre id="reportViewerContent" tabindex="0">Rapor hazırlanıyor…</pre>
-      <div class="report-viewer-actions"><a id="reportViewerDownload" class="secondary" href="#" download>Raporu indir <span>↓</span></a><button id="reportViewerDone" type="button" class="primary">Kapat</button></div>
+      <div class="report-viewer-actions"><a id="reportViewerDownload" class="secondary" href="#" download><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v11m-4-4 4 4 4-4"/><path d="M4 17v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg>Raporu indir</a><button id="reportViewerDone" type="button" class="primary">Kapat</button></div>
+    </section>
+  </div>
+  <div id="diagnosticViewer" class="report-viewer hidden" role="presentation" aria-hidden="true">
+    <section class="report-viewer-card diagnostic-card" role="dialog" aria-modal="true" aria-labelledby="diagnosticViewerTitle">
+      <header><div><small>YEREL HATA KAYDI</small><h2 id="diagnosticViewerTitle">Hata raporunu incele</h2></div><button id="diagnosticViewerClose" type="button" aria-label="Pencereyi kapat">×</button></header>
+      <div class="diagnostic-options"><p>Rapor kendiliğinden gönderilmez. İçeriğini incelemeden paylaşma; yerel dosya yolları ve imzalama bilgileri rapora eklenmez.</p><label><input id="diagnosticIdentifiers" type="checkbox"> Paket ve dosya adını rapora ekle</label></div>
+      <pre id="diagnosticViewerContent" tabindex="0">Rapor hazırlanıyor…</pre>
+      <div class="report-viewer-actions"><a id="diagnosticViewerDownload" class="secondary" download="apk-cleaner-hata-raporu.txt" aria-disabled="true"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v11m-4-4 4 4 4-4"/><path d="M4 17v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg>Raporu indir</a><button id="diagnosticViewerDone" type="button" class="primary">Kapat</button></div>
     </section>
   </div>
   <div id="messageReview" class="report-viewer hidden" role="presentation" aria-hidden="true">
@@ -280,7 +332,7 @@
     </section>
   </div>
   <div id="toast" class="toast" role="status" aria-live="polite" aria-atomic="true"></div>
-  <script src="ui-runtime.js?v=0.6.3-dev.1-20260922.1"></script>
-  <script src="app.js?v=0.6.3-dev.1-20260922.1"></script>
+  <script src="ui-runtime.js?v=0.6.3-dev.2-20260927.1"></script>
+  <script src="app.js?v=0.6.3-dev.2-20260928.7"></script>
 </body>
 </html>

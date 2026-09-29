@@ -40,6 +40,7 @@ ABI_DENSITY_DEFAULTS = {
 KNOWN_ABIS = tuple(ABI_DENSITY_DEFAULTS)
 KNOWN_DENSITIES = ("ldpi", "mdpi", "tvdpi", "hdpi", "xhdpi", "xxhdpi", "xxxhdpi")
 SUPPORTED_SPLIT_LANGUAGES = {"en": "İngilizce", "tr": "Türkçe"}
+PACKAGE_NAME_PATTERN = re.compile(r"[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+")
 ET.register_namespace("android", ANDROID_NS)
 
 
@@ -175,6 +176,126 @@ def validate_package_archive(path: Path) -> None:
             raise ValueError("Paket olağandışı sıkıştırma oranı nedeniyle reddedildi.")
 
 
+def _entry_fingerprint(archive: zipfile.ZipFile, name: str) -> dict:
+    info = archive.getinfo(name)
+    digest = hashlib.sha256()
+    with archive.open(info) as source:
+        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return {"size": info.file_size, "sha256": digest.hexdigest()}
+
+
+def validate_clone_package_name(original: str, candidate: str) -> str:
+    if not PACKAGE_NAME_PATTERN.fullmatch(original):
+        raise ValueError("Özgün paket adı okunamadı; klonlamadan önce paketi yeniden analiz et.")
+    name = candidate.strip()
+    if len(name) > 200 or not PACKAGE_NAME_PATTERN.fullmatch(name):
+        raise ValueError("Klon paket adı en az iki geçerli bölüm içermeli; yalnızca harf, rakam, alt çizgi ve nokta kullanılabilir.")
+    if name == original:
+        raise ValueError("Klonun paket adı özgün uygulamanın paket adından farklı olmalı.")
+    return name
+
+
+def suggest_clone_package_name(original: str) -> str:
+    suggestion = original + ".clone"
+    return suggestion if len(suggestion) <= 200 else original[:-1] + "2"
+
+
+def inspect_manifest_package(manifest_bytes: bytes, tools: Toolchain) -> str:
+    if not tools.java or not tools.binary_manifest_patcher or not tools.apkeditor:
+        return ""
+    with _temporary_directory(prefix="apkcleaner-package-") as temp_name:
+        manifest = Path(temp_name) / "AndroidManifest.xml"
+        manifest.write_bytes(manifest_bytes)
+        log: list[str] = []
+        try:
+            run_checked([
+                tools.java, "-cp", os.pathsep.join((str(tools.apkeditor), str(tools.binary_manifest_patcher))),
+                "local.apkcleaner.xml.BinaryManifestPatcher", "--input", str(manifest), "--inspect-package",
+            ], log)
+        except (OSError, RuntimeError):
+            # Old, not-yet-rebuilt tool bundles may lack the inspection switch.
+            return ""
+        package = next((line.split("\t", 1)[1] for line in log if line.startswith("PACKAGE\t")), "")
+        return package if PACKAGE_NAME_PATTERN.fullmatch(package) else ""
+
+
+def _android_archive_package(apk_path: Path) -> str:
+    if os.environ.get("APK_CLEANER_ANDROID") != "1":
+        return ""
+    try:
+        from java import jclass
+        package = str(jclass("com.apkcleaner.studio.EmbeddedToolRunner").inspectArchivePackage(str(apk_path)) or "")
+        return package if PACKAGE_NAME_PATTERN.fullmatch(package) else ""
+    except Exception:
+        return ""
+
+
+def verify_output_apk(
+    source: Path,
+    output: Path,
+    tools: Toolchain,
+    log: list[str],
+    *,
+    removed_files: set[str] | None = None,
+    expected_package_name: str | None = None,
+) -> dict:
+    """Fail closed before a generated APK is offered for download/install."""
+    validate_package_archive(output)
+    with zipfile.ZipFile(source) as original, zipfile.ZipFile(output) as produced:
+        source_names = set(original.namelist())
+        output_names = set(produced.namelist())
+        if "AndroidManifest.xml" not in source_names:
+            raise RuntimeError("Kaynak APK'da AndroidManifest.xml bulunamadı.")
+        required = {"AndroidManifest.xml"} | {
+            name for name in source_names if re.fullmatch(r"classes(?:\d+)?\.dex", name)
+        }
+        required_libraries = {name for name in source_names if name.startswith("lib/") and name.endswith(".so")}
+        if len(required) == 1 or required - output_names:
+            raise RuntimeError("Çıktı doğrulanamadı: manifest veya beklenen DEX bileşeni eksik.")
+        if required_libraries - output_names:
+            raise RuntimeError("Çıktı doğrulanamadı: seçilen paketin native kütüphanesi eksik.")
+        if any(name in output_names for name in (removed_files or set())):
+            raise RuntimeError("Çıktı doğrulanamadı: kaldırılması istenen dosya pakette kaldı.")
+        for name in required:
+            if produced.getinfo(name).file_size == 0:
+                raise RuntimeError(f"Çıktı doğrulanamadı: {name} boş.")
+        corrupt = produced.testzip()
+        if corrupt is not None:
+            raise RuntimeError(f"Çıktı doğrulanamadı: ZIP bütünlük hatası ({corrupt}).")
+        if expected_package_name:
+            actual_package_name = inspect_manifest_package(produced.read("AndroidManifest.xml"), tools)
+            if actual_package_name != expected_package_name:
+                raise RuntimeError("Çıktı doğrulanamadı: klon paket adı manifestte korunmadı.")
+
+    if os.environ.get("APK_CLEANER_ANDROID") == "1":
+        try:
+            from java import jclass
+            jclass("com.apkcleaner.studio.EmbeddedToolRunner").verifyApk(str(output))
+        except Exception as exc:
+            raise RuntimeError(f"Çıktı imzası doğrulanamadı: {exc}") from exc
+        signature_tool = "Android apksig"
+    elif tools.apksigner:
+        run_checked([tools.apksigner, "verify", "--verbose", str(output)], log)
+        signature_tool = "apksigner"
+    elif tools.java and tools.uber_signer:
+        run_checked([tools.java, "-jar", str(tools.uber_signer), "--apks", str(output), "--onlyVerify", "--skipZipAlign"], log)
+        signature_tool = "uber-apk-signer"
+    else:
+        raise RuntimeError("Çıktı imzası için bağımsız doğrulayıcı bulunamadı.")
+    return {
+        "passed": True,
+        "archive_crc": "ok",
+        "manifest": "ok",
+        "dex_count": len(required) - 1,
+        "native_library_count": len(required_libraries),
+        "removed_files": "ok",
+        "signature": "ok",
+        "signature_tool": signature_tool,
+        "package_name": expected_package_name,
+    }
+
+
 def _which_any(names: Iterable[str]) -> str | None:
     for name in names:
         found = shutil.which(name)
@@ -296,6 +417,8 @@ def inspect_apk(apk_path: Path, known_sha256: str | None = None) -> dict:
     message_ui_candidates: dict[str, dict] = {}
     requires_splits = False
 
+    package_name = ""
+    tools = Toolchain.detect()
     with zipfile.ZipFile(apk_path) as archive:
         names = archive.namelist()
         dex_names = sorted(name for name in names if re.fullmatch(r"classes\d*\.dex", Path(name).name))
@@ -353,6 +476,9 @@ def inspect_apk(apk_path: Path, known_sha256: str | None = None) -> dict:
 
         if "AndroidManifest.xml" in names:
             manifest = archive.read("AndroidManifest.xml")
+            package_name = inspect_manifest_package(manifest, tools)
+            if not package_name:
+                package_name = _android_archive_package(apk_path)
             requires_splits = any(
                 marker.encode("utf-8") in manifest or marker.encode("utf-16le") in manifest
                 for marker in SPLIT_REQUIRED_MARKERS
@@ -371,6 +497,8 @@ def inspect_apk(apk_path: Path, known_sha256: str | None = None) -> dict:
         "filename": apk_path.name,
         "size": apk_path.stat().st_size,
         "sha256": known_sha256 or sha256(apk_path),
+        "package_name": package_name,
+        "suggested_clone_package_name": suggest_clone_package_name(package_name) if package_name else "",
         "dex": dex_rows,
         "dex_count": len(dex_rows),
         "detections": sorted(detections.values(), key=lambda item: item["references"], reverse=True),
@@ -385,7 +513,7 @@ def inspect_apk(apk_path: Path, known_sha256: str | None = None) -> dict:
         "message_ui_candidate_count": sum(item["references"] for item in message_ui_candidates.values()),
         "requires_splits": requires_splits,
         "suspicious_files": sorted(set(suspicious_files))[:500],
-        "toolchain": Toolchain.detect().status(),
+        "toolchain": tools.status(),
         "warnings": [
             "Otomatik tespit yüzde yüz kapsama garantisi vermez; özel ve gizlenmiş reklam yöneticileri ayrıca raporlanabilir.",
             "Yeniden imzalanan APK, mağaza sürümünün üzerine doğrudan kurulamayabilir.",
@@ -419,6 +547,7 @@ def inspect_split_package(
     message_ui_candidates: dict[str, dict] = {}
     suspicious_files: set[str] = set()
     warnings: list[str] = []
+    package_name = ""
     notify = progress or (lambda _message, _percent: None)
 
     with _temporary_directory(prefix="apkcleaner-split-scan-") as temp_name:
@@ -437,6 +566,10 @@ def inspect_split_package(
                 if not zipfile.is_zipfile(extracted):
                     continue
                 report = inspect_apk(extracted)
+                candidate_package = str(report.get("package_name") or "")
+                is_base = any(item.get("name") == name and item.get("kind") == "base" for item in inventory.get("modules", []))
+                if candidate_package and (not package_name or is_base):
+                    package_name = candidate_package
                 module_label = Path(name).name
                 for row in report["dex"]:
                     dex_rows.append({**row, "name": f"{module_label}:{row['name']}"})
@@ -470,6 +603,8 @@ def inspect_split_package(
         "filename": source.name,
         "size": source.stat().st_size,
         "sha256": known_sha256 or sha256(source),
+        "package_name": package_name,
+        "suggested_clone_package_name": suggest_clone_package_name(package_name) if package_name else "",
         "dex": dex_rows,
         "dex_count": len(dex_rows),
         "detections": sorted(detections.values(), key=lambda item: item["references"], reverse=True),
@@ -506,10 +641,28 @@ def run_checked(
             if output:
                 lines = output.rstrip().splitlines()
                 tail = lines[-80:]
-                log.extend(line for line in lines if line.startswith(("RESULT ", "MESSAGE\t", "STARTUP\t")) and line not in tail)
+                log.extend(line for line in lines if line.startswith(("RESULT ", "MESSAGE\t", "STARTUP\t", "AUTHORITY\t", "CLONE\t", "WARNING\t", "PACKAGE\t")) and line not in tail)
                 log.extend(tail)
             if int(result.exitCode) != 0:
-                raise RuntimeError(f"Gömülü Android aracı başarısız oldu ({result.exitCode}).")
+                tool, operation = "Android aracı", ""
+                if "-jar" in command:
+                    index = command.index("-jar")
+                    tool = Path(command[index + 1]).stem
+                    operation = command[index + 2] if len(command) > index + 2 else ""
+                elif "-cp" in command:
+                    tool = command[command.index("-cp") + 2].rsplit(".", 1)[-1]
+                diagnostics = [
+                    line.strip() for line in output.splitlines()
+                    if line.strip() and not line.lstrip().startswith(("at ", "... ", "$ "))
+                    and "APKEditor çıkış kodu" not in line
+                ]
+                reason = next((
+                    line for line in reversed(diagnostics)
+                    if line.startswith(("Caused by:", "Error:", "ERROR:", "Hata:", "Exception:"))
+                ), diagnostics[-1] if diagnostics else "")
+                label = f"{tool} {operation}".strip()
+                detail = f": {reason[:220]}" if reason else ""
+                raise RuntimeError(f"{label} başarısız oldu ({result.exitCode}){detail}.")
             return
         except RuntimeError:
             raise
@@ -672,6 +825,7 @@ def merge_split_package(
     output_dir: Path,
     progress: Callable[[str, int], None] | None = None,
     selection: dict | None = None,
+    details: dict | None = None,
 ) -> tuple[Path, list[str]]:
     if source.suffix.lower() not in SPLIT_PACKAGES:
         return source, []
@@ -689,6 +843,12 @@ def merge_split_package(
         selected = _selected_split_modules(inventory, selection)
         if inventory["abis"] and not selection.get("abis"):
             raise ValueError("En az bir işlemci mimarisi seçilmelidir.")
+        if not any(item["kind"] == "base" and item["name"] in selected for item in inventory["modules"]):
+            raise ValueError("Seçilen split bileşenlerinde temel APK bulunamadı.")
+        if set(selection.get("abis", [])) - set(inventory["abis"]):
+            raise ValueError("Seçilen işlemci mimarisi kaynak pakette bulunamadı.")
+        if set(selection.get("languages", [])) - {item["code"] for item in inventory["languages"]}:
+            raise ValueError("Seçilen dil bileşeni kaynak pakette bulunamadı.")
         filtered = output_dir / "selected-modules"
         filtered.mkdir(parents=True, exist_ok=True)
         with zipfile.ZipFile(source) as archive:
@@ -696,10 +856,16 @@ def merge_split_package(
                 target = filtered / f"{index:03d}-{Path(name).name}"
                 with archive.open(name) as source_stream, target.open("xb") as target_stream:
                     shutil.copyfileobj(source_stream, target_stream, length=1024 * 1024)
+                validate_package_archive(target)
+                with zipfile.ZipFile(target) as module:
+                    if "AndroidManifest.xml" not in module.namelist():
+                        raise ValueError(f"Split bileşeninde manifest bulunamadı: {Path(name).name}")
         if not any(filtered.glob("*.apk")):
             raise ValueError("Seçilen split bileşenlerinden bir APK oluşturulamadı.")
         merge_input = filtered
         log.append("SELECTED " + ", ".join(selected))
+        if details is not None:
+            details.update({"selected_modules": selected, "module_count": len(selected), "validated": True})
     run_checked(
         [tools.java, "-jar", str(tools.apkeditor), "m", "-i", str(merge_input), "-o", str(merged), "-clean-meta"],
         log,
@@ -750,6 +916,7 @@ def patch_manifest_binary(
     tools: Toolchain,
     detected_ids: set[str],
     log: list[str],
+    clone_package_name: str | None = None,
 ) -> dict:
     """Patch binary AXML without decoding or rebuilding its resource table."""
     if not tools.java or not tools.apkeditor or not tools.binary_manifest_patcher:
@@ -780,8 +947,11 @@ def patch_manifest_binary(
         command.extend(("--prefix", value))
     for value in metadata:
         command.extend(("--metadata", value))
-    for value in ad_permissions:
-        command.extend(("--permission", value))
+    if detected_ids:
+        for value in ad_permissions:
+            command.extend(("--permission", value))
+    if clone_package_name:
+        command.extend(("--clone-package", clone_package_name))
     manifest_log: list[str] = []
     run_checked(command, manifest_log)
     log.extend(manifest_log)
@@ -796,6 +966,12 @@ def patch_manifest_binary(
     return {
         "removed": removed,
         "count": count,
+        "clone_changes": [line.split("\t", 1)[1] for line in manifest_log if line.startswith("CLONE\t")],
+        "clone_warnings": [line.split("\t", 1)[1] for line in manifest_log if line.startswith("WARNING\t")],
+        "authority_changes": {
+            fields[1]: fields[2] for line in manifest_log if line.startswith("AUTHORITY\t")
+            if len(fields := line.split("\t", 2)) == 3
+        },
         "references_preserved": True,
         "engine": "binary-axml",
     }
@@ -869,6 +1045,7 @@ def patch_ad_layouts(decoded: Path, detected_ids: set[str], mode: str = "balance
     id_key = f"{{{ANDROID_NS}}}id"
     changed_files = 0
     hidden: list[str] = []
+    field_changes: list[dict] = []
     archive_entries: set[str] = set()
 
     for path in decoded.rglob("*.xml"):
@@ -900,6 +1077,11 @@ def patch_ad_layouts(decoded: Path, detected_ids: set[str], mode: str = "balance
             )
             if not (sdk_view or dynamic_ad_container):
                 continue
+            before = {
+                "width": element.get(width_key),
+                "height": element.get(height_key),
+                "visibility": element.get(visibility_key),
+            }
             element.set(width_key, "0dp")
             element.set(height_key, "0dp")
             element.set(visibility_key, "gone")
@@ -907,6 +1089,10 @@ def patch_ad_layouts(decoded: Path, detected_ids: set[str], mode: str = "balance
             if dynamic_ad_container and resource_id:
                 label = f"{label} (@id/{resource_id})"
             hidden.append(f"{relative}: {label}")
+            field_changes.append({
+                "file": relative, "view": label, "before": before,
+                "after": {"width": "0dp", "height": "0dp", "visibility": "gone"},
+            })
             changed = True
         if changed:
             tree.write(path, encoding="utf-8", xml_declaration=True)
@@ -915,6 +1101,7 @@ def patch_ad_layouts(decoded: Path, detected_ids: set[str], mode: str = "balance
             archive_entries.add("/".join(parts[res_index:]))
     return {
         "hidden": hidden,
+        "changes": field_changes,
         "count": len(hidden),
         "changed_files": changed_files,
         "archive_entries": sorted(archive_entries),
@@ -1057,6 +1244,7 @@ def _process_one_dex(
     strip_debug: bool,
     normalize_dex: bool = False,
     message_targets: set[str] | None = None,
+    clone_strings: dict[str, str] | None = None,
 ) -> tuple[str, Path, dict, list[str]]:
     log: list[str] = []
     dex_out = temp / f"patched-{Path(dex_name).name}"
@@ -1087,6 +1275,8 @@ def _process_one_dex(
         command.extend(("--descriptor", descriptor))
     for target in sorted(message_targets or set()):
         command.extend(("--startup-target", target))
+    for original, replacement in sorted((clone_strings or {}).items()):
+        command.extend(("--clone-string", original, replacement))
     run_checked(command, log)
     result_line = next((line for line in log if line.startswith("RESULT ")), None)
     if not result_line or not dex_out.is_file():
@@ -1102,6 +1292,7 @@ def _process_one_dex(
         "callback_patches": values.get("callback_patches", 0),
         "message_patches": values.get("message_patches", 0),
         "debug_directives_removed": values.get("debug_directives_removed", 0),
+        "clone_strings_changed": values.get("clone_strings_changed", 0),
         "risky_calls": [line.split("\t", 1)[1] for line in log if line.startswith("RISKY\t")],
     }
     return dex_name, dex_out, patch, log
@@ -1377,8 +1568,10 @@ def process_apk(
     deobfuscate_resources: bool = False,
     source_name: str | None = None,
     split_merged: bool = False,
+    split_details: dict | None = None,
     analysis_report: dict | None = None,
     message_targets: list[str] | None = None,
+    clone_package_name: str | None = None,
 ) -> dict:
     if mode not in {"safe", "balanced", "deep"}:
         raise ValueError("Bilinmeyen temizlik profili.")
@@ -1387,6 +1580,9 @@ def process_apk(
     # Split selections still receive a fresh report because their merged APK
     # can differ from the package inspected during upload.
     report = dict(analysis_report) if analysis_report is not None else inspect_apk(apk_path)
+    original_package_name = str(report.get("package_name") or "")
+    if clone_package_name is not None:
+        clone_package_name = validate_clone_package_name(original_package_name, clone_package_name)
     # `requires_splits` yalnızca manifest metadata'sından türetilen bir risk
     # işaretidir. Universal veya sonradan yeniden paketlenmiş APK'larda metadata
     # geride kalabilir; bu nedenle kullanıcı açıkça işlem istediğinde devam et.
@@ -1408,7 +1604,7 @@ def process_apk(
             continue
         dex_name, target_id = item.rsplit(":", 1)
         targets_by_dex.setdefault(dex_name, set()).add(target_id)
-    needs_dex = strip_debug or normalize_dex or bool(targets_by_dex) or (patch_ads and bool(detected_ids))
+    needs_dex = bool(clone_package_name) or strip_debug or normalize_dex or bool(targets_by_dex) or (patch_ads and bool(detected_ids))
     if needs_dex and not tool_status["clean_ready"]:
         raise RuntimeError("DEX bileşenleri hazır değil. ‘Eksik bileşenleri hazırla’ düğmesini kullan.")
     if deobfuscate_resources and not tool_status["resource_tool"]:
@@ -1416,7 +1612,7 @@ def process_apk(
     if optimize_apk and not tools.zipalign:
         raise RuntimeError("APK optimizasyonu için zipalign bileşeni hazır değil. ‘Eksik bileşenleri hazırla’ düğmesini kullan.")
     needs_manifest = bool(patch_ads and mode in {"balanced", "deep"} and report["manifest_hits"])
-    if needs_manifest and not tool_status["manifest_tool"]:
+    if (needs_manifest or clone_package_name) and not tool_status["manifest_tool"]:
         raise RuntimeError("Doğrudan manifest bileşeni hazır değil. ‘Eksik bileşenleri hazırla’ düğmesini kullan.")
     if not tool_status["signer"]:
         raise RuntimeError("APK imzalama bileşeni hazır değil. ‘Eksik bileşenleri hazırla’ düğmesini kullan.")
@@ -1426,6 +1622,7 @@ def process_apk(
     started = time.time()
     notify = progress or (lambda _message, _percent: None)
     dex_replacements: dict[str, Path] = {}
+    dex_changes: list[dict] = []
     totals: dict = {
         "changed_files": 0,
         "void_patches": 0,
@@ -1433,14 +1630,29 @@ def process_apk(
         "callback_patches": 0,
         "message_patches": 0,
         "debug_directives_removed": 0,
+        "clone_strings_changed": 0,
         "risky_calls": [],
     }
 
     with _temporary_directory(prefix="apkcleaner-") as temp_name:
         temp = Path(temp_name)
+        manifest_result = {"removed": [], "count": 0, "skipped": True, "clone_changes": [], "clone_warnings": [], "authority_changes": {}}
+        manifest_output = temp / "AndroidManifest-patched.bin"
+        clone_strings: dict[str, str] = {}
+        if clone_package_name:
+            notify("Klonun paket kimliği hazırlanıyor", 10)
+            manifest_source = temp / "AndroidManifest-original.bin"
+            with zipfile.ZipFile(apk_path) as archive:
+                manifest_source.write_bytes(archive.read("AndroidManifest.xml"))
+            manifest_result = patch_manifest_binary(
+                manifest_source, manifest_output, tools, detected_ids if needs_manifest else set(), log,
+                clone_package_name=clone_package_name,
+            )
+            manifest_result["skipped"] = False
+            clone_strings = {original_package_name: clone_package_name, **manifest_result["authority_changes"]}
         dex_names = [
             row["name"] for row in report["dex"]
-            if strip_debug or normalize_dex or row["name"] in targets_by_dex or (patch_ads and row["networks"])
+            if clone_package_name or strip_debug or normalize_dex or row["name"] in targets_by_dex or (patch_ads and row["networks"])
         ]
         if dex_names:
             notify("DEX dosyaları hazırlanıyor", 12)
@@ -1452,37 +1664,51 @@ def process_apk(
                     inputs[dex_name] = dex_in
             termux = "com.termux" in os.environ.get("PREFIX", "")
             android = os.environ.get("APK_CLEANER_ANDROID") == "1"
-            # Android doğrudan DEX motoru global stdout yakalamadan sonuç döndürür;
-            # iki işçi çok DEX'li paketleri hızlandırırken telefon belleğini korur.
-            worker_limit = 2 if android else (3 if termux else 4)
+            # Her DEX, hem Python hem DexLib2 tarafında belleğe alınır. Android'de
+            # iki büyük DEX'i aynı anda işlemek düşük bellekli cihazları düşürebilir.
+            worker_limit = 1 if android else (3 if termux else 4)
             worker_count = max(1, min(len(dex_names), worker_limit, max(1, (os.cpu_count() or 2) // 2)))
             with ThreadPoolExecutor(max_workers=worker_count, thread_name_prefix="dex") as pool:
                 futures = {
                     pool.submit(
                         _process_one_dex, name, inputs[name], temp, tools,
                         detected_ids if patch_ads else set(), mode, strip_debug, normalize_dex,
-                        targets_by_dex.get(name, set()),
+                        targets_by_dex.get(name, set()), clone_strings,
                     ): name
                     for name in dex_names
                 }
                 for completed, future in enumerate(as_completed(futures), 1):
                     dex_name, dex_out, patch, dex_log = future.result()
                     dex_replacements[dex_name] = dex_out
+                    before = {"size": inputs[dex_name].stat().st_size, "sha256": sha256(inputs[dex_name])}
+                    after = {"size": dex_out.stat().st_size, "sha256": sha256(dex_out)}
+                    dex_changes.append({
+                        "file": dex_name,
+                        "before": before,
+                        "after": after,
+                        "changed": before["sha256"] != after["sha256"],
+                        "operations": {key: patch[key] for key in (
+                            "void_patches", "boolean_patches", "callback_patches",
+                            "message_patches", "debug_directives_removed", "clone_strings_changed",
+                        )},
+                        "normalized": bool(normalize_dex),
+                    })
                     log.extend(dex_log)
-                    for key in ("changed_files", "void_patches", "boolean_patches", "callback_patches", "message_patches", "debug_directives_removed"):
+                    for key in ("changed_files", "void_patches", "boolean_patches", "callback_patches", "message_patches", "debug_directives_removed", "clone_strings_changed"):
                         totals[key] += patch[key]
                     totals["risky_calls"].extend(patch["risky_calls"])
                     notify(f"{dex_name} işlendi ({completed}/{len(dex_names)})", 20 + int(37 * completed / len(dex_names)))
 
         remove_files = deep_removals(apk_path, detected_ids) if patch_ads and mode == "deep" else set()
         archive_replacements = dict(dex_replacements)
+        if clone_package_name:
+            archive_replacements["AndroidManifest.xml"] = manifest_output
 
-        manifest_result = {"removed": [], "count": 0, "skipped": True}
-        layout_result = {"hidden": [], "count": 0, "changed_files": 0, "archive_entries": [], "skipped": True}
+        layout_result = {"hidden": [], "changes": [], "count": 0, "changed_files": 0, "archive_entries": [], "skipped": True}
         unsigned = apk_path
         # Yalnızca gerçekten aday kayıt taşıyan paketlerde XML katmanını aç.
         # DEX dosyaları bu aşamada ham kopyalanır; metin ara biçimine dönüştürülmez.
-        should_patch_manifest = needs_manifest
+        should_patch_manifest = needs_manifest and not clone_package_name
         # Binary AXML string havuzu, hızlı arşiv taramasında her zaman görünmez.
         # Doğrulanmış bir reklam SDK'sı varsa XML katmanını ilk çalıştırmada açıp
         # gerçek öğe ağacında denetle; ikinci yama gerektiren eski önkoşulu kaldır.
@@ -1605,7 +1831,9 @@ def process_apk(
             strip_debug or normalize_dex or optimize_apk or deobfuscate_resources
             or normalize_resources or selected_message_targets
         )
-        if split_merged and not patch_ads and not has_optional_changes:
+        if clone_package_name:
+            output_name = f"{stem}-clone{'-clean-' + mode if patch_ads else ''}.apk"
+        elif split_merged and not patch_ads and not has_optional_changes:
             output_name = f"{stem}-universal.apk"
         elif patch_ads:
             output_name = f"{stem}-clean-{mode}.apk"
@@ -1619,13 +1847,55 @@ def process_apk(
         if not actual_output.is_file():
             detail = sign_warning or "APK imzalama aşaması çıktı dosyası üretmedi."
             raise RuntimeError(detail)
+        if not signed:
+            raise RuntimeError(sign_warning or "İmzasız APK kullanıcıya sunulamaz.")
+        notify("Çıktının bütünlüğü ve imzası doğrulanıyor", 96)
+        verification = verify_output_apk(apk_path, actual_output, tools, log, removed_files=remove_files, expected_package_name=clone_package_name)
+
+    with zipfile.ZipFile(apk_path) as before_archive, zipfile.ZipFile(actual_output) as after_archive:
+        before_names = set(before_archive.namelist())
+        after_names = set(after_archive.namelist())
+        manifest_change = {
+            "file": "AndroidManifest.xml",
+            "before": _entry_fingerprint(before_archive, "AndroidManifest.xml"),
+            "after": _entry_fingerprint(after_archive, "AndroidManifest.xml"),
+            "removed": manifest_result["removed"],
+        }
+        manifest_change["changed"] = manifest_change["before"]["sha256"] != manifest_change["after"]["sha256"]
+        xml_changes = []
+        for name in layout_result.get("archive_entries", []):
+            if name not in after_names:
+                raise RuntimeError(f"Çıktı doğrulanamadı: düzenlenen XML dosyası eksik ({name}).")
+            xml_changes.append({
+                "file": name,
+                "before": _entry_fingerprint(before_archive, name) if name in before_names else None,
+                "after": _entry_fingerprint(after_archive, name),
+                "fields": [item for item in layout_result.get("changes", []) if item["file"] == name],
+            })
+        for row in dex_changes:
+            # The signed package, not a temporary intermediate, is the report's
+            # authoritative after-state (resource tools can rewrite ZIP entries).
+            row["after"] = _entry_fingerprint(after_archive, row["file"])
+            row["changed"] = row["before"]["sha256"] != row["after"]["sha256"]
+        changes = {
+            "baseline": "Birleştirilmiş APK" if split_merged else "Kaynak APK",
+            "dex": sorted(dex_changes, key=lambda row: row["file"]),
+            "manifest": manifest_change,
+            "xml": xml_changes,
+            "removed_files": sorted(remove_files),
+        }
 
     result = {
         **report,
         "filename": source_name or report["filename"],
         "mode": mode,
-        "operation": "patch" if patch_ads or has_optional_changes else "convert",
+        "operation": "clone" if clone_package_name else ("patch" if patch_ads or has_optional_changes else "convert"),
+        "clone": {"original_package": original_package_name, "new_package": clone_package_name,
+                  "changes": manifest_result.get("clone_changes", []),
+                  "warnings": manifest_result.get("clone_warnings", []),
+                  "dex_strings_changed": totals["clone_strings_changed"]} if clone_package_name else None,
         "split_merged": split_merged,
+        "split_components": split_details or {},
         "strip_debug": strip_debug,
         "normalize_dex": normalize_dex,
         "optimized": bool(optimize_apk and signed),
@@ -1636,6 +1906,8 @@ def process_apk(
         "manifest": manifest_result,
         "layouts": layout_result,
         "removed_files": sorted(remove_files),
+        "changes": changes,
+        "verification": verification,
         "signed": signed,
         "sign_warning": sign_warning,
         "output": actual_output.name,
@@ -1649,9 +1921,13 @@ def process_apk(
     lines = [
         "APK CLEANER STUDIO RAPORU",
         f"Dosya: {result['filename']}",
-        f"İşlem: {'reklam temizleme' if patch_ads else 'APK dönüştürme/iyileştirme'}",
+        f"İşlem: {'APK klonlama' if clone_package_name else 'reklam temizleme' if patch_ads else 'APK dönüştürme/iyileştirme'}",
+        *([f"Özgün paket adı: {original_package_name}", f"Klon paket adı: {clone_package_name}",
+           f"DEX paket/sağlayıcı sabiti: {totals['clone_strings_changed']}"] if clone_package_name else []),
         f"Temizlik profili: {profile_labels.get(mode, mode)}",
         f"Split paket birleştirildi: {'evet' if split_merged else 'hayır'}",
+        *([f"Doğrulanan split bileşeni: {split_details.get('module_count', 0)}"] if split_merged and split_details else []),
+        *[f"- Seçilen split modülü: {item}" for item in (split_details or {}).get("selected_modules", [])],
         f"Tespit edilen reklam ağı: {report['network_count']}",
         f"Sonuç döndürmeyen (void) çağrı yamaları: {totals['void_patches']}",
         f"Mantıksal (boolean) değer yamaları: {totals['boolean_patches']}",
@@ -1668,6 +1944,33 @@ def process_apk(
         f"RES kaynak koruması kaldırıldı: {'evet' if resource_result['applied'] else 'hayır'}",
         f"APK optimizasyonu (ZIP hizalaması): {'uygulandı' if result['optimized'] else 'uygulanmadı'}",
         f"İmzalı: {'evet' if signed else 'hayır'}",
+        f"Çıktı doğrulaması: {'geçti' if verification['passed'] else 'başarısız'} (ZIP CRC, manifest, DEX, imza)",
+        f"İmza doğrulayıcısı: {verification['signature_tool']}",
+        "",
+        f"ÖNCE / SONRA ({changes['baseline']})",
+        "DEX dosyaları:",
+        *[
+            f"- {item['file']}: {item['before']['size']} -> {item['after']['size']} bayt; "
+            f"SHA-256 {item['before']['sha256']} -> {item['after']['sha256']}; "
+            f"void={item['operations']['void_patches']}, boolean={item['operations']['boolean_patches']}, "
+            f"callback={item['operations']['callback_patches']}, başlangıç={item['operations']['message_patches']}, "
+            f"debug={item['operations']['debug_directives_removed']}"
+            for item in changes["dex"]
+        ],
+        f"Manifest SHA-256: {manifest_change['before']['sha256']} -> {manifest_change['after']['sha256']}",
+        *[f"- Kaldırılan manifest kaydı: {item}" for item in manifest_result["removed"]],
+        *[f"- Klon manifest değişikliği: {item}" for item in manifest_result.get("clone_changes", [])],
+        *[f"- Klon uyumluluk uyarısı: {item}" for item in manifest_result.get("clone_warnings", [])],
+        "XML alanları:",
+        *[
+            f"- {item['file']}: {item['view']} | "
+            f"genişlik {item['before']['width'] or 'belirtilmemiş'} -> 0dp, "
+            f"yükseklik {item['before']['height'] or 'belirtilmemiş'} -> 0dp, "
+            f"görünürlük {item['before']['visibility'] or 'varsayılan'} -> gone"
+            for item in layout_result.get("changes", [])
+        ],
+        *[f"- {item['file']}: SHA-256 {item['before']['sha256'] if item['before'] else 'yok'} -> {item['after']['sha256']}" for item in xml_changes],
+        *[f"- Kaldırılan dosya: {item}" for item in changes["removed_files"]],
         "",
         "Tespitler:",
         *[f"- {item['label']}: {item['references']} referans" for item in report["detections"]],

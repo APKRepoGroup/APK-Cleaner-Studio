@@ -10,7 +10,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "0.6.3-dev.1"
+VERSION = "0.6.3-dev.2"
 APK = ROOT / "outputs" / f"APK-Cleaner-Studio-v{VERSION}-Android.apk"
 SIGNING_DIR = Path(os.environ.get("LOCALAPPDATA", "")) / "APKCleanerStudio" / "release-signing"
 
@@ -93,8 +93,8 @@ def main() -> int:
     manifest = manifest_text()
     required = (
         'package="com.apkrepo.apkcleanerstudio"',
-        'versionCode(0x0101021b)=6301',
-        'versionName(0x0101021c)="0.6.3-dev.1"',
+        'versionCode(0x0101021b)=6302',
+        'versionName(0x0101021c)="0.6.3-dev.2"',
         'targetSdkVersion(0x01010270)=36',
         'allowBackup(0x01010280)=false',
         'usesCleartextTraffic(0x010104ec)=false',

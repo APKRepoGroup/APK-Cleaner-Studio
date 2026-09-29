@@ -54,6 +54,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
+import java.lang.ref.WeakReference;
 import java.nio.channels.FileChannel;
 import java.net.HttpURLConnection;
 import java.net.Proxy;
@@ -98,6 +99,8 @@ public final class MainActivity extends Activity {
     private static final String STATE_INSTALL_PACKAGE = "install_package";
     private static final String STATE_INSTALL_TOKEN = "install_token";
     private static final String STATE_INSTALL_ACTION = "install_action";
+    private static final String STATE_SPLIT_INSTALL_PATH = "split_install_path";
+    private static final String STATE_SPLIT_INSTALL_SELECTION = "split_install_selection";
     private static final String CLIENT_COOKIE_NAME = "apk_cleaner_client_id";
     private static final String TAG = "APKCleanerDownload";
     private WebView webView;
@@ -127,9 +130,14 @@ public final class MainActivity extends Activity {
     private volatile String pendingNativeInstallPackage;
     private volatile String pendingNativeInstallToken;
     private volatile String pendingNativeInstallAction = "install";
+    private volatile File pendingOriginalSplitArchive;
+    private volatile String pendingOriginalSplitSelection;
+    private static volatile WeakReference<MainActivity> activeInstance = new WeakReference<>(null);
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
+        DiagnosticRecorder.install(this);
+        activeInstance = new WeakReference<>(this);
         ((ThreadPoolExecutor) io).setKeepAliveTime(15, TimeUnit.SECONDS);
         ((ThreadPoolExecutor) io).allowCoreThreadTimeOut(true);
         if (state != null) {
@@ -142,6 +150,9 @@ public final class MainActivity extends Activity {
             pendingNativeInstallPackage = state.getString(STATE_INSTALL_PACKAGE);
             pendingNativeInstallToken = state.getString(STATE_INSTALL_TOKEN);
             pendingNativeInstallAction = state.getString(STATE_INSTALL_ACTION, "install");
+            String splitInstallPath = state.getString(STATE_SPLIT_INSTALL_PATH);
+            pendingOriginalSplitArchive = splitInstallPath == null ? null : new File(splitInstallPath);
+            pendingOriginalSplitSelection = state.getString(STATE_SPLIT_INSTALL_SELECTION);
         }
         try {
             // Paket listesini ekran ve yerel motor hazırlanırken paralel olarak
@@ -159,6 +170,7 @@ public final class MainActivity extends Activity {
             ensureEngineService();
             waitForEngine();
         } catch (Throwable error) {
+            DiagnosticRecorder.record(this, "startup", error);
             showStartupError(error);
         }
     }
@@ -204,6 +216,7 @@ public final class MainActivity extends Activity {
 
     private void showRendererRecovery(WebView failed, boolean crashed) {
         Log.w(TAG, "WebView çizim süreci sonlandı; crashed=" + crashed);
+        DiagnosticRecorder.record(this, crashed ? "renderer-crash" : "renderer-closed", null);
         if (failed != webView) {
             disposeWebView(failed);
             return;
@@ -324,6 +337,9 @@ public final class MainActivity extends Activity {
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
         settings.setCacheMode(WebSettings.LOAD_DEFAULT);
         settings.setTextZoom(100);
+        // The interface is already sized for the device. Repeated taps on a
+        // selectable card must not trigger WebView's persistent smart zoom.
+        settings.setSupportZoom(false);
         settings.setBuiltInZoomControls(false);
         settings.setDisplayZoomControls(false);
         settings.setUserAgentString(settings.getUserAgentString() + " APKCleanerStudio/Android");
@@ -669,6 +685,26 @@ public final class MainActivity extends Activity {
             executeIo(() -> prepareNativeInstall(url, filename));
         }
 
+        @JavascriptInterface public void inspectOriginalSplit(String url, String filename) {
+            executeIo(() -> prepareOriginalSplitInstall(url, filename));
+        }
+
+        @JavascriptInterface public void installOriginalSplit(String selectedModules) {
+            executeIo(() -> beginOriginalSplitInstall(selectedModules));
+        }
+
+        @JavascriptInterface public String getInstallHistory() {
+            return InstallHistoryStore.list(MainActivity.this);
+        }
+
+        @JavascriptInterface public String getNativeCacheStorage() {
+            return nativeCacheStorage(false);
+        }
+
+        @JavascriptInterface public String clearNativeCache() {
+            return nativeCacheStorage(true);
+        }
+
         @JavascriptInterface public void installUpdate(String url, String filename, String sha256) {
             executeIo(() -> prepareOfficialUpdate(url, filename, sha256));
         }
@@ -730,6 +766,27 @@ public final class MainActivity extends Activity {
                 catch (Exception error) { publishNativeAction("share", jsonError(messageOf(error, "Uygulama paketi paylaşılamadı."))); }
             });
         }
+    }
+
+    private String nativeCacheStorage(boolean clean) {
+        File directory = new File(getCacheDir(), "native-packages");
+        long cutoff = System.currentTimeMillis() - 24L * 60L * 60L * 1000L;
+        long bytes = 0;
+        int count = 0;
+        int removed = 0;
+        File[] files = directory.listFiles();
+        if (files != null) for (File file : files) {
+            try {
+                if (!file.isFile() || !file.getCanonicalFile().equals(file.getAbsoluteFile())
+                        || file.lastModified() >= cutoff || file.equals(pendingNativeInstall)
+                        || file.equals(pendingOriginalSplitArchive)) continue;
+                if (clean && file.delete()) { removed++; continue; }
+                count++;
+                bytes += file.length();
+            } catch (IOException ignored) {}
+        }
+        try { return new JSONObject().put("count", count).put("bytes", bytes).put("removed", removed).toString(); }
+        catch (Exception ignored) { return "{}"; }
     }
 
     private File nativePackageDirectory() throws IOException {
@@ -821,6 +878,84 @@ public final class MainActivity extends Activity {
             File apk = downloadNativePackage(url, filename, "install");
             prepareNativeInstallFile(apk, false, "install");
         } catch (Exception error) { publishNativeAction("install", jsonError(messageOf(error, "APK kuruluma hazırlanamadı."))); }
+    }
+
+    private void prepareOriginalSplitInstall(String url, String filename) {
+        File archive = null;
+        try {
+            String lower = filename == null ? "" : filename.toLowerCase(Locale.ROOT);
+            Uri source = Uri.parse(url);
+            if (!(lower.endsWith(".apks") || lower.endsWith(".apkm") || lower.endsWith(".xapk"))
+                    || !isTrustedJobUri(source) || !source.getPath().endsWith("/source")) {
+                throw new IOException("Doğrudan kurulum yalnızca özgün APKS, APKM veya XAPK paketiyle yapılır.");
+            }
+            archive = downloadNativePackage(url, filename, "original-split-install");
+            String plan = OriginalSplitInstaller.inspect(this, archive);
+            File previous = pendingOriginalSplitArchive;
+            pendingOriginalSplitArchive = archive;
+            pendingOriginalSplitSelection = null;
+            if (previous != null && !previous.equals(archive)) previous.delete();
+            publishNativeAction("split_install", plan);
+        } catch (Exception error) {
+            if (archive != null) archive.delete();
+            publishNativeAction("split_install", jsonError(messageOf(error, "Özgün split paketi kuruluma hazırlanamadı.")));
+        }
+    }
+
+    private void beginOriginalSplitInstall(String selectedModules) {
+        File archive = pendingOriginalSplitArchive;
+        if (archive == null || !archive.isFile()) {
+            publishNativeAction("split_install", jsonError("Hazırlanan split paketi bulunamadı; dosyayı yeniden seç."));
+            return;
+        }
+        try {
+            new JSONArray(selectedModules);
+            pendingOriginalSplitSelection = selectedModules;
+            if (Build.VERSION.SDK_INT >= 26 && !getPackageManager().canRequestPackageInstalls()) {
+                postToUi(() -> {
+                    try {
+                        startActivityForResult(new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                                Uri.parse("package:" + getPackageName())), UNKNOWN_SOURCE_PERMISSION);
+                        publishNativeAction("split_install", "{\"status\":\"permission_required\"}");
+                    } catch (ActivityNotFoundException | SecurityException error) {
+                        clearPendingOriginalSplitInstall();
+                        publishNativeAction("split_install", jsonError("Bu kaynaktan yükleme izni ekranı açılamadı."));
+                    }
+                });
+                return;
+            }
+            commitOriginalSplitInstall(archive, selectedModules);
+        } catch (Exception error) {
+            publishNativeAction("split_install", jsonError(messageOf(error, "Split bileşenleri okunamadı.")));
+        }
+    }
+
+    private void clearPendingOriginalSplitInstall() {
+        File archive = pendingOriginalSplitArchive;
+        pendingOriginalSplitArchive = null;
+        pendingOriginalSplitSelection = null;
+        if (archive != null) archive.delete();
+    }
+
+    private void commitOriginalSplitInstall(File archive, String selectedModules) {
+        try {
+            publishNativeAction("split_install", OriginalSplitInstaller.install(this, archive, selectedModules));
+        } catch (Exception error) {
+            publishNativeAction("split_install", jsonError(messageOf(error, "Split kurulumu başlatılamadı.")));
+        } finally {
+            if (archive.equals(pendingOriginalSplitArchive)) {
+                pendingOriginalSplitArchive = null;
+                pendingOriginalSplitSelection = null;
+            }
+            archive.delete();
+        }
+    }
+
+    static boolean publishOriginalSplitInstallResult(String payload) {
+        MainActivity activity = activeInstance.get();
+        if (activity == null || activity.closed || activity.webView == null) return false;
+        activity.publishNativeAction("split_install", payload);
+        return true;
     }
 
     private boolean isTrustedOfficialUpdateUrl(String address, String filename) {
@@ -1278,6 +1413,17 @@ public final class MainActivity extends Activity {
             return;
         }
         if (requestCode == UNKNOWN_SOURCE_PERMISSION) {
+            File splitArchive = pendingOriginalSplitArchive;
+            String splitSelection = pendingOriginalSplitSelection;
+            if (splitArchive != null && splitSelection != null) {
+                if (Build.VERSION.SDK_INT < 26 || getPackageManager().canRequestPackageInstalls()) {
+                    executeIo(() -> commitOriginalSplitInstall(splitArchive, splitSelection));
+                } else {
+                    clearPendingOriginalSplitInstall();
+                    publishNativeAction("split_install", jsonError("Bu kaynaktan uygulama yükleme izni verilmedi; kurulum durduruldu."));
+                }
+                return;
+            }
             File apk = pendingNativeInstall;
             String action = pendingNativeInstallAction;
             if (Build.VERSION.SDK_INT < 26 || getPackageManager().canRequestPackageInstalls()) {
@@ -1384,6 +1530,9 @@ public final class MainActivity extends Activity {
         state.putString(STATE_INSTALL_PACKAGE, pendingNativeInstallPackage);
         state.putString(STATE_INSTALL_TOKEN, pendingNativeInstallToken);
         state.putString(STATE_INSTALL_ACTION, pendingNativeInstallAction);
+        state.putString(STATE_SPLIT_INSTALL_PATH,
+                pendingOriginalSplitArchive == null ? null : pendingOriginalSplitArchive.getAbsolutePath());
+        state.putString(STATE_SPLIT_INSTALL_SELECTION, pendingOriginalSplitSelection);
     }
 
     private void openExternal(Uri uri) {
@@ -1442,6 +1591,7 @@ public final class MainActivity extends Activity {
 
     @Override protected void onDestroy() {
         closed = true;
+        if (activeInstance.get() == this) activeInstance = new WeakReference<>(null);
         getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         viewGeneration++;
         io.shutdownNow();
