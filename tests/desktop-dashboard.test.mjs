@@ -6,6 +6,13 @@ const theme = await readFile(new URL('../studio/web/theme.css', import.meta.url)
 const script = await readFile(new URL('../studio/web/app.js', import.meta.url), 'utf8');
 const html = await readFile(new URL('../studio/web/index.html', import.meta.url), 'utf8');
 
+test('cloning fills the second column only when APK conversion is hidden', () => {
+  assert.match(html, /id="convertOperation"[^>]*>[\s\S]*?<\/button>\s*<button id="cloneOperation"/);
+  assert.match(theme, /#cloneOperation\s*\{\s*grid-column: 1 \/ -1;/);
+  assert.match(theme, /#convertOperation\.hidden \+ #cloneOperation\s*\{\s*grid-column: auto;/);
+  assert.match(theme, /@media \(max-width: 720px\)[\s\S]*?\.operation-grid,\s*\.option-grid\s*\{\s*grid-template-columns: 1fr;/);
+});
+
 test('the certificate stays in the expanding engine card without shrinking its list', () => {
   const engine = html.match(/<section id="toolCard"[\s\S]*?<\/section>/)[0];
   assert.match(engine, /<details id="toolCertificate" class="mobile-cert">/);

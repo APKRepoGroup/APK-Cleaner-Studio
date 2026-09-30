@@ -125,6 +125,8 @@ html[data-theme="dark"] .update-notice { background: rgba(72,213,168,.08); }
   gap: 10px;
 }
 #cloneOperation { grid-column: 1 / -1; }
+/* A regular APK has no conversion choice; fill its empty second column. */
+#convertOperation.hidden + #cloneOperation { grid-column: auto; }
 .clone-options { margin-top: 14px; padding: 18px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); }
 .clone-options > p { color: var(--muted); font-size: 12px; line-height: 1.55; }
 .clone-options code { color: var(--ink); overflow-wrap: anywhere; }

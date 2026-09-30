@@ -52,7 +52,7 @@ class Handler(SimpleHTTPRequestHandler):
             <button onclick="setNativeVisibility(true)">QA Ön plan</button>
             <button onclick="applyTheme('light')">QA Açık</button><button onclick="applyTheme('dark')">QA Koyu</button>
             </nav>'''
-            if capture in {"analysis", "result"}:
+            if capture in {"analysis", "analysis-apk", "result"}:
                 html = html.replace(
                     "</head>",
                     "<style>.hero,#mobileHttpsBanner,.starter-content,footer{display:none!important}.workspace{margin-top:24px!important}</style></head>",
@@ -65,11 +65,12 @@ class Handler(SimpleHTTPRequestHandler):
                     1,
                 )
             html = html.replace('<script src="ui-runtime.js', bridge + '<script src="ui-runtime.js', 1)
-            setup = '''function qaAnalysis(ads,shouldScroll=true) { const analysis={filename:'Görsel test.apks',size:10240,dex_count:3,network_count:ads?18:0,detections:ads?qaMarks:[],split_merged:true,split_options:{abis:['arm64-v8a','armeabi-v7a'],languages:[{code:'tr',label:'Türkçe'},{code:'en',label:'İngilizce'}]}}; prepareAnalysisView(analysis.filename,analysis.size,true); applyAnalysisResult({job_id:'fixture',analysis}); if(shouldScroll)document.querySelector('#analysisView').scrollIntoView(); }'''
+            setup = '''function qaAnalysis(ads,shouldScroll=true,split=true) { const analysis={filename:split?'Görsel test.apks':'Görsel test.apk',package_name:'com.example.visualtest',size:10240,dex_count:3,network_count:ads?18:0,detections:ads?qaMarks:[],split_merged:split,split_options:split?{abis:['arm64-v8a','armeabi-v7a'],languages:[{code:'tr',label:'Türkçe'},{code:'en',label:'İngilizce'}]}:null}; prepareAnalysisView(analysis.filename,analysis.size,split); applyAnalysisResult({job_id:'fixture',analysis}); if(shouldScroll)document.querySelector('#analysisView').scrollIntoView(); }'''
             setup += '''function qaIconIdentity(){openInstalledApps();const images=[...document.querySelectorAll('.installed-app-icon')];const same=()=>images.every((image,i)=>image===document.querySelectorAll('.installed-app-icon')[i]);renderInstalledApps('Test uygulaması 2');renderInstalledApps();openInstalledApps();onInstalledPackagesLoaded(JSON.stringify(qaApps));const passed=images.length===100&&same();document.querySelector('#qaResult').textContent=passed?'PASS: 100 ikon düğümü korundu':'FAIL: ikon değişti';}'''
             capture_actions = {
                 "apps": "setTimeout(()=>openInstalledApps(),900);",
                 "analysis": "setTimeout(()=>qaAnalysis(true,false),1100);",
+                "analysis-apk": "setTimeout(()=>qaAnalysis(true,false,false),1100);",
                 "messages": "setTimeout(()=>{qaAnalysis(true,false);setTimeout(()=>openMessageReview(),450);},900);",
                 "working": "setTimeout(()=>{showView('#workingView');resetProgress();updateProgress(50,'Yerel işlem sürüyor');},1100);",
                 "result": "setTimeout(()=>showView('#resultView'),1100);",
