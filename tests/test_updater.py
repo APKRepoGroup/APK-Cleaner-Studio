@@ -64,6 +64,7 @@ class UpdaterTests(unittest.TestCase):
             "prerelease": False,
             "html_url": "https://github.com/APKRepoGroup/APK-Cleaner-Studio/releases/tag/v0.6.3",
             "published_at": "2026-09-22T10:00:00Z",
+            "body": "## 0.6.3\n\n### İyileştirmeler\n- Güncelleme düzeltildi.",
             "assets": [{
                 "name": "APK-Cleaner-Studio-v0.6.3-Android.apk",
                 "state": "uploaded",
@@ -80,6 +81,9 @@ class UpdaterTests(unittest.TestCase):
         self.assertEqual(update["sha256"], "a" * 64)
         self.assertEqual(update["install_mode"], "android")
         self.assertTrue(update["automatic"])
+        self.assertEqual(update["release_notes"], "## 0.6.3\n\n### İyileştirmeler\n- Güncelleme düzeltildi.")
+        self.assertNotIn("GitHub", update["notes"])
+        self.assertEqual(update["notes"], "Yeni sürüm kullanıma hazır. Güncelleme notlarına aşağıdan ulaşabilirsiniz.")
 
     def test_prerelease_is_never_offered_as_stable_update(self):
         payload = json.dumps({"tag_name": "v0.6.4-dev.1", "draft": False, "prerelease": True, "assets": []}).encode()
@@ -92,6 +96,7 @@ class UpdaterTests(unittest.TestCase):
             return {
                 "tag_name": f"v{version}", "draft": False, "prerelease": prerelease,
                 "html_url": f"https://github.com/APKRepoGroup/APK-Cleaner-Studio/releases/tag/v{version}",
+                "body": f"### {version}\n- Bu sürümün değişiklikleri.",
                 "assets": [{
                     "name": filename, "state": "uploaded", "size": 123456,
                     "digest": "sha256:" + "b" * 64,
@@ -109,6 +114,27 @@ class UpdaterTests(unittest.TestCase):
         self.assertEqual(update["latest_version"], "0.6.3-dev.7")
         self.assertEqual(update["release_channel"], "dev")
         self.assertTrue(update["automatic"])
+        self.assertIn("0.6.3-dev.7", update["release_notes"])
+        self.assertEqual(update["notes"], "Yeni test sürümü kullanıma hazır. Güncelleme notlarına aşağıdan ulaşabilirsiniz.")
+        self.assertNotIn("GitHub", update["notes"])
+
+    def test_legacy_release_notes_are_separate_from_notification_description(self):
+        payload = json.dumps({"version": "0.6.3", "notes": "### Yeni özellikler\n- Örnek özellik."}).encode()
+        with mock.patch("updater.urllib.request.urlopen", return_value=io.BytesIO(payload)):
+            update = fetch_remote_update("0.6.2", "https://example.test/update.json")
+        self.assertEqual(update["release_notes"], "### Yeni özellikler\n- Örnek özellik.")
+        self.assertNotIn("Örnek özellik", update["notes"])
+        self.assertEqual(update["notes"], "Yeni sürüm kullanıma hazır. Güncelleme notlarına aşağıdan ulaşabilirsiniz.")
+
+    def test_release_notes_missing_or_oversized_are_handled(self):
+        for body in (None, "x" * 40000):
+            with self.subTest(body_length=len(body or "")):
+                payload = json.dumps({
+                    "version": "0.6.3", "release_notes": body,
+                }).encode()
+                with mock.patch("updater.urllib.request.urlopen", return_value=io.BytesIO(payload)):
+                    update = fetch_remote_update("0.6.2", "https://example.test/update.json")
+                self.assertEqual(update["release_notes"], (body or "")[:32000])
 
     def test_dev_channel_prefers_same_numbered_stable_release(self):
         def release(version, prerelease):

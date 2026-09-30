@@ -83,6 +83,15 @@ class Handler(SimpleHTTPRequestHandler):
             self.reply(json.dumps(dict(toolchain=TOOLS, platform="android", clients=[], channel="dev", version="0.6.3-dev.2", engine_version="2.0")))
         elif path == "/api/history":
             self.reply('{"jobs":[]}')
+        elif path == "/api/update":
+            capture = parse_qs(urlsplit(self.headers.get("Referer", "")).query).get("capture", [""])[0]
+            update = {
+                "latest_version": "0.6.3-dev.2", "source": "github", "automatic": True,
+                "install_mode": "android", "notes": "Yeni test sürümü kullanıma hazır. Güncelleme notlarına aşağıdan ulaşabilirsiniz.",
+                "release_notes": (ROOT / "RELEASE-NOTES-v0.6.3-dev.2.md").read_text(encoding="utf-8"),
+                "release_url": "https://example.invalid/preview-only",
+            }
+            self.reply(json.dumps({"available": capture == "update", "update": update if capture == "update" else None}))
         elif path == "/api/storage":
             jobs = [
                 {"job_id": f"{index:032x}", "filename": f"Örnek paket {index}.apk", "can_delete": False,

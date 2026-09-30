@@ -11,7 +11,7 @@
   <link rel="icon" type="image/png" href="/favicon.png" sizes="512x512">
   <script src="boot.js?v=0.6.3-dev.2-20260927.1"></script>
   <link rel="stylesheet" href="styles.css">
-  <link rel="stylesheet" href="theme.css?v=0.6.3-dev.2-20260929.1">
+  <link rel="stylesheet" href="theme.css?v=0.6.3-dev.2-20260930.3">
 </head>
 <body>
   <header class="topbar">
@@ -27,11 +27,15 @@
     </div>
   </header>
 
-  <section id="updateNotice" class="update-notice hidden" role="status" aria-live="polite">
-    <div class="update-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M5 19 19 5M9 5h10v10"/></svg></div>
-    <div><small>GÜNCELLEME HAZIR</small><b id="updateTitle">Yeni APK Cleaner Studio sürümü</b><p id="updateText"></p></div>
+  <section id="updateNotice" class="update-notice hidden" aria-labelledby="updateTitle">
+    <div class="update-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M20 7a8 8 0 0 0-13-3L4 7m0-5v5h5M4 17a8 8 0 0 0 13 3l3-3m-5 0h5v5"/></svg></div>
+    <div class="update-copy"><small>YENİ SÜRÜM MEVCUT</small><b id="updateTitle" role="status" aria-live="polite">Yeni APK Cleaner Studio sürümü</b><p id="updateText"></p></div>
+    <details id="updateReleaseNotes" class="update-release-notes">
+      <summary>Bu sürümde neler değişti?<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></summary>
+      <div id="updateReleaseNotesBody" class="update-release-notes-body"></div>
+    </details>
     <button id="updateDownload" type="button" class="update-action hidden">Yeni sürümü indir</button>
-    <button id="updateDismiss" type="button" aria-label="Güncelleme bildirimini kapat">×</button>
+    <button id="updateDismiss" type="button" aria-label="Güncelleme bildirimini bu açılış için kapat" title="Bu açılış için kapat"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
   </section>
 
   <main>
@@ -333,6 +337,6 @@
   </div>
   <div id="toast" class="toast" role="status" aria-live="polite" aria-atomic="true"></div>
   <script src="ui-runtime.js?v=0.6.3-dev.2-20260927.1"></script>
-  <script src="app.js?v=0.6.3-dev.2-20260928.7"></script>
+  <script src="app.js?v=0.6.3-dev.2-20260930.4"></script>
 </body>
 </html>

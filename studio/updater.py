@@ -138,7 +138,8 @@ def find_local_update(current_version: str, search_dir: Path | None = None) -> d
         "latest_version": version,
         "source": "local",
         "filename": path.name,
-        "notes": "Yeni kararlı sürüm uygulama klasöründe hazır.",
+        "notes": "Yeni sürüm cihazınızda hazır. Güncellemeyi uygulamak için sürüm dosyasını açın.",
+        "release_notes": "",
         "download_url": None,
         "release_url": GITHUB_RELEASES_URL,
         "sha256": None,
@@ -221,9 +222,10 @@ def _github_update(payload: dict, current_version: str, *, allow_prerelease: boo
         "source": "github",
         "filename": filename,
         "notes": (
-            f"Geliştirme sürümü v{latest} GitHub üzerinde yayımlandı."
-            if is_dev else f"Kararlı v{latest} sürümü GitHub üzerinde yayımlandı."
+            "Yeni test sürümü kullanıma hazır. Güncelleme notlarına aşağıdan ulaşabilirsiniz."
+            if is_dev else "Yeni sürüm kullanıma hazır. Güncelleme notlarına aşağıdan ulaşabilirsiniz."
         ),
+        "release_notes": str(payload.get("body") or "")[:32000],
         "published_at": payload.get("published_at"),
         "download_url": download_url,
         "release_url": release_url,
@@ -272,7 +274,11 @@ def _legacy_update(payload: dict, current_version: str) -> dict | None:
         "latest_version": latest,
         "source": "remote",
         "filename": filename,
-        "notes": str(payload.get("notes") or "Yeni APK Cleaner Studio sürümü kullanıma hazır."),
+        "notes": (
+            "Yeni test sürümü kullanıma hazır. Güncelleme notlarına aşağıdan ulaşabilirsiniz."
+            if "-dev." in latest else "Yeni sürüm kullanıma hazır. Güncelleme notlarına aşağıdan ulaşabilirsiniz."
+        ),
+        "release_notes": str(payload.get("release_notes") or payload.get("notes") or "")[:32000],
         "published_at": payload.get("published_at"),
         "download_url": download_url or None,
         "release_url": GITHUB_RELEASES_URL,

@@ -9,13 +9,12 @@ const state = {
   installedApps: [], installedAppsLoading: false, installedAppsReady: false, selectedInstalledPackage: "", installedSharePackage: "",
   outputUrl: "", outputFilename: "", nativeInstallBusy: false, nativeShareBusy: false, nativeSplitInstallBusy: false,
   splitInstallPlan: null, splitInstallRequestJobId: null, splitInstallSubmitted: false,
-  update: null, updateBusy: false
+  update: null, updateBusy: false, updateCheckInFlight: false, updateCheckOnResume: false, dismissedUpdateVersion: ""
 };
 const MAX_UPLOAD_BYTES = 1024 ** 3;
 const PACKAGE_EXTENSIONS = [".apk", ".apks", ".apkm", ".xapk"];
 const SPLIT_EXTENSIONS = [".apks", ".apkm", ".xapk"];
 const THEME_KEY = "apk-cleaner-theme";
-const DISMISSED_UPDATE_KEY = "apk-cleaner-dismissed-update";
 const CLIENT_ID_KEY = "apk-cleaner-client-id";
 const CLIENT_COOKIE_NAME = "apk_cleaner_client_id";
 const SAVED_PRESETS_KEY = "apk-cleaner-processing-presets-v1";
@@ -128,12 +127,18 @@ function syncUiActivity() {
 }
 
 globalThis.setNativeVisibility = (visible) => {
+  const reopening = !nativeUiVisible && Boolean(visible);
   nativeUiVisible = Boolean(visible);
   syncUiActivity();
+  if (reopening) restoreUpdateNotice();
 };
 document.addEventListener("visibilitychange", syncUiActivity);
 window.addEventListener("pagehide", () => { nativeUiVisible = false; syncUiActivity(); });
-window.addEventListener("pageshow", () => { nativeUiVisible = true; syncUiActivity(); });
+window.addEventListener("pageshow", (event) => {
+  nativeUiVisible = true; syncUiActivity();
+  if (event.persisted) restoreUpdateNotice();
+  else focusUpdateNoticeOnLaunch();
+});
 let embeddedNativeTheme = (() => {
   const value = new URLSearchParams(location.search).get("nativeTheme");
   return ["light", "dark"].includes(value) ? value : "";
@@ -511,7 +516,7 @@ function animateInstalledAppReflow(list, positions) {
         { transform: `translate3d(0, ${delta}px, 0)` },
         { transform: "translate3d(0, 0, 0)" },
       ],
-      { duration: 360, easing: "cubic-bezier(.22,.61,.36,1)" },
+      INLINE_REFLOW_MOTION,
     );
   });
 }
@@ -1217,29 +1222,240 @@ async function refreshStatus() {
   finally { state.statusInFlight = false; }
 }
 
+// Match the installed-app action menu's expansion/collapse rhythm.
+const INLINE_REFLOW_MOTION = { duration: 360, easing: "cubic-bezier(.22,.61,.36,1)" };
+
+function appendReleaseNoteText(element, text) {
+  // Release bodies are external Markdown, never trusted HTML.
+  const tokens = /(`[^`]+`|\*\*[^*]+\*\*|\[[^\]]+\]\([^)]+\))/g;
+  let offset = 0;
+  for (const match of text.matchAll(tokens)) {
+    element.append(document.createTextNode(text.slice(offset, match.index)));
+    const token = match[0];
+    let part;
+    if (token.startsWith("`")) {
+      part = document.createElement("code"); part.textContent = token.slice(1, -1);
+    } else if (token.startsWith("**")) {
+      part = document.createElement("strong"); part.textContent = token.slice(2, -2);
+    } else {
+      const [, label, address] = token.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
+      let safe = false;
+      try { const url = new URL(address); safe = url.protocol === "https:" && !url.username && !url.password; } catch {}
+      part = document.createElement(safe ? "a" : "span"); part.textContent = label;
+      if (safe) { part.href = address; part.target = "_blank"; part.rel = "noopener noreferrer"; }
+    }
+    element.append(part);
+    offset = match.index + token.length;
+  }
+  element.append(document.createTextNode(text.slice(offset)));
+}
+
+function renderUpdateReleaseNotes(notes) {
+  const body = $("#updateReleaseNotesBody");
+  body.replaceChildren();
+  const text = String(notes || "").slice(0, 32000).trim();
+  if (!text) {
+    const empty = document.createElement("p");
+    empty.textContent = "Bu sürüm için sürüm notları bulunmuyor.";
+    body.append(empty); return;
+  }
+  let list = null;
+  let paragraph = [];
+  const flush = () => {
+    if (!paragraph.length) return;
+    const p = document.createElement("p");
+    appendReleaseNoteText(p, paragraph.join(" ")); body.append(p); paragraph = [];
+  };
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line || /^(?:---+|\*\*\*+)$/.test(line)) { flush(); list = null; continue; }
+    const heading = line.match(/^#{1,6}\s+(.+)$/);
+    const item = line.match(/^(?:[-*+]\s+|\d+[.)]\s+)(.+)$/);
+    if (heading) {
+      flush(); list = null;
+      const h = document.createElement("h3"); appendReleaseNoteText(h, heading[1]); body.append(h);
+    } else if (item) {
+      flush();
+      if (!list) { list = document.createElement("ul"); body.append(list); }
+      const li = document.createElement("li"); appendReleaseNoteText(li, item[1]); list.append(li);
+    } else if (line.startsWith(">")) {
+      flush(); list = null;
+      const p = document.createElement("p"); p.className = "release-note-callout";
+      appendReleaseNoteText(p, line.replace(/^>\s*/, "")); body.append(p);
+    } else {
+      list = null; paragraph.push(line);
+    }
+  }
+  flush();
+}
+
+let updateNoticeAnimation = null;
+let updateNotesAnimation = null;
+let updateNoticeFocusPending = true;
+
+function focusUpdateNoticeOnLaunch() {
+  if (!updateNoticeFocusPending || document.readyState !== "complete" || !state.update) return;
+  const notice = $("#updateNotice");
+  if (notice.classList.contains("hidden")) return;
+  updateNoticeFocusPending = false;
+  if (!isUiActive() || state.updateBusy || state.jobRunning || pageScrollLocks.size) return;
+  const version = notice.dataset.version;
+  // Wait for the browser's load-time scroll restoration and the new panel's
+  // layout. Ordinary polling must never interrupt the user's scroll position.
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    if (!isUiActive() || state.updateBusy || state.jobRunning || pageScrollLocks.size
+        || notice.classList.contains("hidden") || notice.dataset.version !== version
+        || state.dismissedUpdateVersion === version) return;
+    window.scrollTo({ top: 0, left: 0, behavior: "instant" });
+  }));
+}
+
+function cancelUpdateNoticeMotion() {
+  const animation = updateNoticeAnimation;
+  updateNoticeAnimation = null;
+  animation?.cancel();
+  const notice = $("#updateNotice");
+  notice.classList.remove("is-closing");
+  notice.inert = false;
+}
+
+function resetUpdateNotes() {
+  const animation = updateNotesAnimation;
+  updateNotesAnimation = null;
+  animation?.cancel();
+  const details = $("#updateReleaseNotes");
+  details.classList.remove("is-animating");
+  delete details.dataset.expanded;
+  details.open = false;
+  details.querySelector("summary").setAttribute("aria-expanded", "false");
+}
+
+function toggleUpdateNotes(event) {
+  event.preventDefault();
+  const details = $("#updateReleaseNotes");
+  const startHeight = details.getBoundingClientRect().height;
+  const expanded = updateNotesAnimation ? details.dataset.expanded !== "true" : !details.open;
+  const previous = updateNotesAnimation;
+  updateNotesAnimation = null;
+  previous?.cancel();
+  details.classList.remove("is-animating");
+  details.open = expanded;
+  details.dataset.expanded = String(expanded);
+  details.querySelector("summary").setAttribute("aria-expanded", String(expanded));
+  if (motionMedia.matches || !isUiActive() || typeof details.animate !== "function") return;
+  const endHeight = details.getBoundingClientRect().height;
+  // Keep the body rendered until the closing transition finishes. Reversals
+  // start at the current animated height, not at either full-size endpoint.
+  details.open = true;
+  details.classList.add("is-animating");
+  const animation = details.animate([
+    { height: `${startHeight}px` }, { height: `${endHeight}px` },
+  ], { ...INLINE_REFLOW_MOTION, fill: "both" });
+  updateNotesAnimation = animation;
+  animation.finished.then(() => {
+    if (updateNotesAnimation !== animation) return;
+    updateNotesAnimation = null;
+    details.open = expanded;
+    details.classList.remove("is-animating");
+    animation.cancel();
+  }, () => {});
+}
+
+function renderAvailableUpdate(update) {
+  state.update = update;
+  if (state.dismissedUpdateVersion === update.latest_version) return;
+  const notice = $("#updateNotice");
+  cancelUpdateNoticeMotion();
+  if (notice.dataset.version !== update.latest_version) resetUpdateNotes();
+  $("#updateTitle").textContent = `APK Cleaner Studio v${update.latest_version}`;
+  const isDev = update.release_channel === "dev" || update.latest_version.includes("-dev.");
+  $("#updateText").textContent = update.notes || (isDev
+    ? "Yeni test sürümü kullanıma hazır. Güncelleme notlarına aşağıdan ulaşabilirsiniz."
+    : "Yeni sürüm kullanıma hazır. Güncelleme notlarına aşağıdan ulaşabilirsiniz.");
+  renderUpdateReleaseNotes(update.release_notes);
+  const button = $("#updateDownload");
+  const target = update.download_url || update.release_url;
+  button.classList.toggle("hidden", !target);
+  const label = update.automatic
+    ? (update.install_mode === "android" ? "İndir ve yükle" : "Güncelle ve yeniden başlat")
+    : "Sürüm sayfasını aç";
+  button.dataset.defaultLabel = label;
+  button.textContent = label;
+  button.disabled = false;
+  notice.dataset.version = update.latest_version;
+  notice.classList.remove("hidden");
+  focusUpdateNoticeOnLaunch();
+}
+
+function dismissUpdateNotice() {
+  const notice = $("#updateNotice");
+  if (updateNoticeAnimation || notice.classList.contains("hidden")) return;
+  state.dismissedUpdateVersion = notice.dataset.version || "";
+  if (motionMedia.matches || !isUiActive() || typeof notice.animate !== "function") {
+    notice.classList.add("hidden");
+    resetUpdateNotes();
+    return;
+  }
+  const style = getComputedStyle(notice);
+  notice.classList.add("is-closing");
+  notice.inert = true;
+  const animation = notice.animate([
+    { height: `${notice.getBoundingClientRect().height}px`, opacity: 1, transform: "translateY(0)",
+      paddingTop: style.paddingTop, paddingBottom: style.paddingBottom,
+      marginTop: style.marginTop, marginBottom: style.marginBottom,
+      borderTopWidth: style.borderTopWidth, borderBottomWidth: style.borderBottomWidth },
+    { height: "0px", opacity: 0, transform: "translateY(-6px)", paddingTop: "0px", paddingBottom: "0px",
+      marginTop: "0px", marginBottom: "0px", borderTopWidth: "0px", borderBottomWidth: "0px" },
+  ], { ...INLINE_REFLOW_MOTION, fill: "both" });
+  updateNoticeAnimation = animation;
+  animation.finished.then(() => {
+    if (updateNoticeAnimation !== animation) return;
+    notice.classList.add("hidden");
+    resetUpdateNotes();
+    cancelUpdateNoticeMotion();
+  }, () => {});
+}
+
+function restoreUpdateNotice() {
+  if (state.updateBusy) return;
+  state.dismissedUpdateVersion = "";
+  updateNoticeFocusPending = true;
+  cancelUpdateNoticeMotion();
+  resetUpdateNotes();
+  if (state.update) renderAvailableUpdate(state.update);
+  // A suspended read may still be unwinding its abort when Android resumes.
+  if (state.updateCheckInFlight) state.updateCheckOnResume = true;
+  else checkForUpdates();
+}
+
 async function checkForUpdates() {
+  if (state.updateBusy || state.updateCheckInFlight) return;
+  state.updateCheckInFlight = true;
   try {
     const response = await apiFetch("/api/update", { cache: "no-store", headers: clientHeaders() });
     const data = await response.json();
     const update = data.update;
-    if (!response.ok || !data.available || !update) return;
-    if (localStorage.getItem(DISMISSED_UPDATE_KEY) === update.latest_version) return;
-    state.update = update;
-    $("#updateTitle").textContent = `APK Cleaner Studio v${update.latest_version} hazır`;
-    const localHint = update.source === "local" && update.filename ? ` Dosya: ${update.filename}` : "";
-    $("#updateText").textContent = `${update.notes || "Yeni sürüm kullanıma hazır."}${localHint}`;
-    const button = $("#updateDownload");
-    const target = update.download_url || update.release_url;
-    button.classList.toggle("hidden", !target);
-    const label = update.automatic
-      ? (update.install_mode === "android" ? "İndir ve yükle" : "Güncelle ve yeniden başlat")
-      : "Sürüm sayfasını aç";
-    button.dataset.defaultLabel = label;
-    button.textContent = label;
-    button.disabled = false;
-    $("#updateNotice").dataset.version = update.latest_version;
-    $("#updateNotice").classList.remove("hidden");
-  } catch {}
+    if (!response.ok) { updateNoticeFocusPending = false; return; }
+    if (state.updateBusy) return;
+    if (!data.available || !update) {
+      state.update = null;
+      updateNoticeFocusPending = false;
+      cancelUpdateNoticeMotion();
+      resetUpdateNotes();
+      $("#updateNotice").classList.add("hidden");
+      return;
+    }
+    renderAvailableUpdate(update);
+  } catch {
+    if (!state.updateCheckOnResume) updateNoticeFocusPending = false;
+  }
+  finally {
+    state.updateCheckInFlight = false;
+    if (state.updateCheckOnResume) {
+      state.updateCheckOnResume = false;
+      if (isUiActive() && !state.updateBusy) checkForUpdates();
+    }
+  }
 }
 
 function openUpdateLink(address) {
@@ -1982,11 +2198,8 @@ document.addEventListener("keydown", (event) => {
 });
 $("#toolsButton").addEventListener("click", () => $("#toolCard").scrollIntoView({ behavior: "smooth", block: "center" }));
 $("#updateDownload").addEventListener("click", applyAvailableUpdate);
-$("#updateDismiss").addEventListener("click", () => {
-  const notice = $("#updateNotice");
-  if (notice.dataset.version) localStorage.setItem(DISMISSED_UPDATE_KEY, notice.dataset.version);
-  notice.classList.add("hidden");
-});
+$("#updateDismiss").addEventListener("click", dismissUpdateNotice);
+$("#updateReleaseNotes summary").addEventListener("click", toggleUpdateNotes);
 $("#setupButton").addEventListener("click", async () => {
   const button = $("#setupButton"); button.disabled = true; button.textContent = "Bileşenler hazırlanıyor…";
   try {
