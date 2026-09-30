@@ -7,6 +7,7 @@ import stat
 import threading
 import time
 import unittest
+import zipfile
 from concurrent.futures import ThreadPoolExecutor
 from unittest import mock
 from pathlib import Path
@@ -14,7 +15,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "studio"))
 
-from server import StudioHandler, _ACTIVE_JOBS, _ACTIVE_JOBS_LOCK, _BLOCKED_CLIENTS, _CLIENTS, _CLIENTS_LOCK, _JOB_CANCEL_EVENTS, _JOB_THREADS, cancel_clean_job, cleanup_stale_jobs, client_identity, clone_job_for_reuse, delete_job_history, diagnostic_report, direct_https_target, effective_client_address, failure_diagnostic, lan_https_target, list_job_history, list_job_storage, manage_client, observe_public_origin, preferred_browser_url, public_https_target, read_json, record_blocked_client_details, record_client, request_client_access, start_clean_job, write_json
+from server import StudioHandler, _ACTIVE_JOBS, _ACTIVE_JOBS_LOCK, _BLOCKED_CLIENTS, _CLIENTS, _CLIENTS_LOCK, _JOB_CANCEL_EVENTS, _JOB_THREADS, _execute_clean_job, cancel_clean_job, cleanup_stale_jobs, client_identity, clone_job_for_reuse, delete_job_history, diagnostic_report, direct_https_target, effective_client_address, failure_diagnostic, lan_https_target, list_job_history, list_job_storage, manage_client, observe_public_origin, preferred_browser_url, public_https_target, read_json, record_blocked_client_details, record_client, request_client_access, start_clean_job, write_json
 
 
 class LocalRequestSecurityTests(unittest.TestCase):
@@ -71,6 +72,73 @@ class LocalRequestSecurityTests(unittest.TestCase):
             handler.do_GET()
         self.assertEqual(send_json.call_args.args[1], 403)
         send_diagnostic.assert_not_called()
+
+    def test_missing_native_library_reason_survives_diagnostic_export(self):
+        from engine import verify_output_apk
+        with tempfile.TemporaryDirectory() as name, mock.patch("server.ANDROID_RUNTIME", False):
+            job = Path(name)
+            source, output = job / "source.apk", job / "output.apk"
+            for path in (source, output):
+                with zipfile.ZipFile(path, "w") as archive:
+                    archive.writestr("AndroidManifest.xml", b"manifest")
+                    archive.writestr("classes.dex", b"dex")
+                    if path == source:
+                        archive.writestr("lib/arm64-v8a/libexample.so", b"native")
+            try:
+                verify_output_apk(source, output, None, [])
+            except RuntimeError as error:
+                details = failure_diagnostic(error, payload={"profile": "deep", "operation": "patch"})
+            else:
+                self.fail("Missing native library must still reject the output")
+            write_json(job / "state.json", {"status": "error"})
+            write_json(job / "diagnostic.json", details)
+            report = diagnostic_report(job)
+            self.assertIn("Açıklama: Çıktı doğrulanamadı: seçilen paketin native kütüphanesi eksik.", report)
+            self.assertIn("verify_output_apk", report)
+            self.assertIn("İşlem türü: Yama", report)
+            self.assertIn("Temizlik profili: Derin / Gelişmiş (deep)", report)
+            self.assertNotIn(name, report)
+
+    def test_diagnostic_keeps_reason_but_removes_credentials_paths_and_log(self):
+        cases = (
+            (r'''Manifest okunamadı: "C:\Users\Private Person\secret.apk" --ks-pass pass:"hidden password"''', ("Private Person", "secret.apk", "hidden password")),
+            ("Manifest okunamadı: /data/user/0/private.app/files/source.apk token=hidden-token", ("/data/user/0", "private.app", "hidden-token")),
+            (r"Manifest okunamadı: \\private-server\share\secret.apk password='hidden value'", ("private-server", "secret.apk", "hidden value")),
+            ("Manifest okunamadı: https://private.example/download?token=hidden Authorization: Bearer hidden-auth", ("private.example", "hidden", "hidden-auth")),
+        )
+        for message, hidden in cases:
+            with self.subTest(message=message):
+                summary = failure_diagnostic(RuntimeError(message + "\nRAW TOOL LOG secret-extra"))["message"]
+                self.assertIn("Manifest okunamadı", summary)
+                for value in (*hidden, "RAW TOOL LOG", "secret-extra"):
+                    self.assertNotIn(value, summary)
+
+    def test_clean_job_persists_failure_reason_and_profile_without_identifiers(self):
+        with tempfile.TemporaryDirectory() as name, mock.patch("server.JOBS", Path(name)), mock.patch("server.ANDROID_RUNTIME", False):
+            job_id = "f" * 32
+            job = Path(name) / job_id
+            job.mkdir()
+            (job / "prepared.apk").write_bytes(b"test")
+            analysis = {"filename": "Private App 1.0.apk", "package_name": "test.private.app", "prepared_path": "prepared.apk"}
+            write_json(job / "analysis.json", analysis)
+            error = RuntimeError("Manifest okunamadı: Private App 1.0.apk (test.private.app)")
+            with mock.patch("server.process_apk", side_effect=error):
+                _execute_clean_job(job_id, {"profile": "balanced", "operation": "patch"})
+            self.assertEqual(read_json(job / "state.json")["status"], "error")
+            report = diagnostic_report(job)
+            self.assertIn("Açıklama: Manifest okunamadı:", report)
+            self.assertIn("Temizlik profili: Dengeli (balanced)", report)
+            self.assertNotIn("Private App", report)
+            self.assertNotIn("test.private.app", report)
+            opted_in = diagnostic_report(job, include_identifiers=True)
+            self.assertIn("Dosya adı: Private App 1.0.apk", opted_in)
+            self.assertIn("Paket adı: test.private.app", opted_in)
+
+    def test_diagnostic_invalid_profile_does_not_mask_original_failure(self):
+        details = failure_diagnostic(ValueError("Bilinmeyen temizlik profili."), payload={"profile": [], "operation": {}})
+        self.assertEqual(details["message"], "Bilinmeyen temizlik profili.")
+        self.assertEqual(details["profile"], "unknown")
+        self.assertEqual(details["operation"], "unknown")
 
     def handler(self, host: str, origin: str | None = None):
         instance = StudioHandler.__new__(StudioHandler)

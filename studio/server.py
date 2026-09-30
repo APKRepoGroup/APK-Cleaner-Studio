@@ -115,19 +115,50 @@ def public_error(error: BaseException) -> str:
     return message[:1000] or "İşlem güvenli biçimde tamamlanamadı."
 
 
-def diagnostic_error(error: BaseException) -> str:
-    """Export only an exit code, not untrusted tool output or arbitrary error text."""
-    match = re.search(r"başarısız oldu \((\d{1,3})\)", str(error))
+def diagnostic_error(error: BaseException, *, identifiers: tuple[str, ...] = ()) -> str:
+    """Keep the error summary, not raw logs, credentials or private identifiers."""
+    raw = str(error or "")
+    # Extra lines can contain a tool's command, log or Java traceback.
+    message = next((line.strip() for line in raw.splitlines() if line.strip()), "")[:4096]
+    for identifier in sorted(set(identifiers), key=len, reverse=True):
+        if identifier:
+            message = re.sub(re.escape(identifier), "[paket-bilgisi]", message, flags=re.IGNORECASE)
+    # Remove secrets before path/URL cleanup, including quoted values with spaces.
+    value = r'''(?:pass:)?(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s,;]+)'''
+    message = re.sub(
+        r"(?i)(--(?:ks-pass|key-pass|password|token|secret|api-key)\s+|"
+        r"\b(?:password|passwd|token|secret|api[_-]?key|authorization|ks-pass|key-pass)\s*[:=]\s*)"
+        + r"(?:Bearer\s+)?" + value,
+        r"\1[gizli-bilgi]", message,
+    )
+    message = re.sub(r"(?i)\bpass:" + value, "[gizli-bilgi]", message)
+    message = re.sub(r"(?i)https?://[^\s<>\"']+", "[adres]", message)
+    # Quoted paths can contain spaces; unquoted paths stop at whitespace.
+    message = re.sub(r'''(["'])(?:[A-Za-z]:[\\/]|/|\\\\)[^"'\r\n]*\1''', "[yerel-dosya]", message)
+    message = re.sub(r'''(?<![\w])(?:[A-Za-z]:[\\/]|\\\\)[^\s<>"']+''', "[yerel-dosya]", message)
+    message = re.sub(r'''(?<![\w])/(?:[^\s<>"']+)''', "[yerel-dosya]", message)
+    message = re.sub(r"(?i)\b[\w.-]+\.(?:apk|apks|apkm|xapk|jks|keystore|p12|pfx)\b", "[paket-dosyası]", message)
+    message = public_error(RuntimeError(message))
+    match = re.search(r"başarısız oldu \((-?\d{1,3})\)", raw)
     if match:
-        return f"Gömülü araç çıkış kodu: {match.group(1)}"
-    return "Ayrıntılı hata metni gizlilik nedeniyle rapora eklenmedi."
+        message += f" · Gömülü araç çıkış kodu: {match.group(1)}"
+    return message[:1200]
 
 
-def failure_diagnostic(error: BaseException) -> dict:
+def failure_diagnostic(error: BaseException, *, analysis: dict | None = None, payload: dict | None = None) -> dict:
     frames = traceback.extract_tb(error.__traceback__)[-12:]
+    analysis = analysis or {}
+    payload = payload or {}
+    operation = str(payload.get("operation", "patch"))
+    profile = str(payload.get("profile", "balanced"))
     return {
         "kind": type(error).__name__[:80],
-        "message": diagnostic_error(error),
+        "message": diagnostic_error(error, identifiers=tuple(
+            value for value in (analysis.get("filename"), analysis.get("package_name"), payload.get("clone_package_name"))
+            if isinstance(value, str) and value
+        )),
+        "operation": operation if operation in {"patch", "convert", "clone"} else "unknown",
+        "profile": profile if profile in {"safe", "balanced", "deep"} else "unknown",
         "frames": [f"{Path(frame.filename).name}:{frame.lineno} · {frame.name[:80]}" for frame in frames],
     }
 
@@ -148,6 +179,12 @@ def diagnostic_report(job: Path | None, include_identifiers: bool = False) -> st
             lines.append(f"Dosya adı: {str(analysis.get('filename') or 'bilinmiyor')[:160]}")
             lines.append(f"Paket adı: {str(analysis.get('package_name') or 'bilinmiyor')[:160]}")
         if details:
+            operations = {"patch": "Yama", "convert": "Dönüştürme / iyileştirme", "clone": "Klonlama"}
+            profiles = {"safe": "Güvenli (safe)", "balanced": "Dengeli (balanced)", "deep": "Derin / Gelişmiş (deep)"}
+            if "operation" in details:
+                lines.append(f"İşlem türü: {operations.get(details['operation'], 'bilinmiyor')}")
+            if "profile" in details:
+                lines.append(f"Temizlik profili: {profiles.get(details['profile'], 'bilinmiyor')}")
             lines.extend([f"Hata türü: {details.get('kind', 'bilinmiyor')}",
                           f"Açıklama: {details.get('message', 'bilinmiyor')}"])
             frames = details.get("frames")
@@ -1339,7 +1376,7 @@ def _execute_clean_job(job_id: str, payload: dict) -> None:
             })
             return
         try:
-            write_json(job / "diagnostic.json", failure_diagnostic(exc))
+            write_json(job / "diagnostic.json", failure_diagnostic(exc, analysis=analysis, payload=payload))
         except OSError:
             pass  # Reporting must never mask the original job failure.
         write_json(job / "state.json", {
