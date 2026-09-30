@@ -12,7 +12,6 @@
     <string name="renderer_retry">Arayüzü yeniden aç</string>
     <string name="renderer_restart_error">Arayüz açılamadı. Android System WebView güncellemesini kontrol et.</string>
     <string name="startup_failed">APK Cleaner Studio başlatılamadı</string>
-    <string name="retry">Yeniden dene</string>
     <string name="save_output">Çıktı kaydedildi</string>
     <string name="save_failed">Çıktı kaydedilemedi.</string>
     <string name="splash_tagline">Yerel Android paket stüdyosu</string>
