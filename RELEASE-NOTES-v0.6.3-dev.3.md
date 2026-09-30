@@ -13,6 +13,8 @@
 
 ### 🐛 Hata Düzeltmeleri
 
+- Gelişmiş temizlikte reklam klasöründeki DEX dosyaları kaldırıldığında işlem raporunun hata vermesi düzeltildi. Aynı adlı DEX dosyalarının farklı klasörlerde bulunması artık işlem dosyalarını çakıştırmaz. ([5325836](https://github.com/APKRepoGroup/APK-Cleaner-Studio/commit/5325836e8803e8187b43b52ec6c1d93e9e3196d2))
+- Arşiv, bağlantı, depolama, erişim ve Android işlem hataları için Türkçe kullanıcı açıklamaları eklendi; İngilizce araç hataları doğrudan kullanıcıya gösterilmez. ([e88bbfb](https://github.com/APKRepoGroup/APK-Cleaner-Studio/commit/e88bbfbe0ff4d2013372dd3dd00e6df2a826d906))
 - BlueStacks üzerinde otomatik güncellemede görülen paket imzası karşılaştırma sorunu giderildi; APK doğrulama ve imza eşleştirme kontrolleri korunuyor. ([97d3a48](https://github.com/APKRepoGroup/APK-Cleaner-Studio/commit/97d3a483ded775706064389b4edfafbb33737201))
 - Gelişmiş temizlikte bilinçli kaldırılan reklam SDK kütüphanelerinin, çıktı doğrulamasında eksik native kütüphane hatası oluşturması düzeltildi. Beklenmeyen dosya kayıpları hâlâ reddedilir. ([46474e3](https://github.com/APKRepoGroup/APK-Cleaner-Studio/commit/46474e301f2e8025a95e7cd41da7c516e3ae246c))
 - Hata raporlarında güvenli hata açıklamaları artık korunuyor; hassas yollar ve imzalama bilgileri ayıklanmaya devam ediyor. ([faf8e1d](https://github.com/APKRepoGroup/APK-Cleaner-Studio/commit/faf8e1dcfdc9405c85ef9d1800195680f6d3de55))
