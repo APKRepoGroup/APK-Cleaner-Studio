@@ -1,19 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">APK Cleaner Studio</string>
-    <string name="engine_channel_name">APK processing engine</string>
-    <string name="engine_channel_description">Keeps local package operations reliable while the app is open.</string>
-    <string name="engine_ready">Local engine is ready</string>
-    <string name="engine_starting">Local engine is starting…</string>
-    <string name="engine_stop">Stop</string>
-    <string name="loading">Preparing APK Cleaner Studio…</string>
-    <string name="load_error">The local engine couldn’t be started.</string>
-    <string name="renderer_closed">The interface closed. You can reopen it; package jobs remain available in history.</string>
-    <string name="renderer_retry">Reopen interface</string>
-    <string name="renderer_restart_error">The interface could not be reopened. Check for Android System WebView updates.</string>
-    <string name="startup_failed">APK Cleaner Studio could not start</string>
-    <string name="retry">Try again</string>
-    <string name="save_output">Output saved</string>
-    <string name="save_failed">The output couldn’t be saved.</string>
-    <string name="splash_tagline">Local Android package studio</string>
+    <string name="engine_channel_name">APK işlem motoru</string>
+    <string name="engine_channel_description">Uygulama açıkken yerel paket işlemlerini güvenilir biçimde sürdürür.</string>
+    <string name="engine_ready">Yerel motor hazır</string>
+    <string name="engine_starting">Yerel motor başlatılıyor…</string>
+    <string name="engine_stop">Durdur</string>
+    <string name="loading">APK Cleaner Studio hazırlanıyor…</string>
+    <string name="load_error">Yerel motor başlatılamadı.</string>
+    <string name="renderer_closed">Arayüz kapandı. Yeniden açabilirsin; paket işlemlerine geçmişten ulaşabilirsin.</string>
+    <string name="renderer_retry">Arayüzü yeniden aç</string>
+    <string name="renderer_restart_error">Arayüz açılamadı. Android System WebView güncellemesini kontrol et.</string>
+    <string name="startup_failed">APK Cleaner Studio başlatılamadı</string>
+    <string name="retry">Yeniden dene</string>
+    <string name="save_output">Çıktı kaydedildi</string>
+    <string name="save_failed">Çıktı kaydedilemedi.</string>
+    <string name="splash_tagline">Yerel Android paket stüdyosu</string>
 </resources>

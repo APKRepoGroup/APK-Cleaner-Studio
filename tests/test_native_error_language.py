@@ -8,6 +8,15 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class NativeErrorLanguageTests(unittest.TestCase):
+    def test_android_default_language_keeps_native_messages_turkish(self):
+        import xml.etree.ElementTree as ET
+        resources = ROOT / "android/app/src/main/res"
+        default = {node.attrib["name"]: node.text for node in ET.parse(resources / "values/strings.xml").getroot()}
+        turkish = {node.attrib["name"]: node.text for node in ET.parse(resources / "values-tr/strings.xml").getroot()}
+        self.assertEqual(default, turkish)
+        self.assertEqual(default["load_error"], "Yerel motor başlatılamadı.")
+        self.assertEqual(default["save_failed"], "Çıktı kaydedilemedi.")
+
     def test_real_java_error_messages_do_not_expose_english_exceptions(self):
         java, javac = shutil.which("java"), shutil.which("javac")
         if not java or not javac:
