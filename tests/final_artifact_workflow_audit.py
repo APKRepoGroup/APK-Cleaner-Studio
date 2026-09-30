@@ -6,6 +6,7 @@ All input/output APKs and server state are disposable local test data.
 from __future__ import annotations
 
 import hashlib
+import argparse
 import json
 import os
 import signal
@@ -49,7 +50,7 @@ def wait_job(base, job_id):
     raise RuntimeError("Packaged workflow timed out")
 
 
-def packaged_server(label, command, folder, asset_fixture):
+def packaged_server(label, command, folder, asset_fixture, user_fixture=None):
     with socket.socket() as probe:
         probe.bind(("127.0.0.1", 0))
         port = probe.getsockname()[1]
@@ -90,12 +91,16 @@ def packaged_server(label, command, folder, asset_fixture):
                 ("deep_asset_clone_and_version", {"_asset_fixture": True, "patch_ads": True, "profile": "deep", "operation": "clone", "clone_package_name": "com.example.finalaudit.clone"}),
                 ("deep_asset_res_and_version", {"_asset_fixture": True, "patch_ads": True, "profile": "deep", "deobfuscate_resources": True, "optimize_apk": True}),
             )
+            if user_fixture:
+                cases += (("original_user_deep_apk", {"_user_fixture": True, "patch_ads": True, "profile": "deep", "restrict_store_updates": False}),)
             results = []
             job_ids = []
             for name, options in cases:
                 # Completed jobs are deliberately idempotent. Each choice needs a fresh analysis.
                 options = dict(options)
                 source = asset_fixture if options.pop("_asset_fixture", False) else FIXTURE
+                if options.pop("_user_fixture", False):
+                    source = user_fixture
                 job_id = upload_job(source)
                 job_ids.append(job_id)
                 payload = {"job_id": job_id, "operation": "patch", "profile": "balanced", "restrict_store_updates": True, **options}
@@ -129,10 +134,14 @@ def packaged_server(label, command, folder, asset_fixture):
                             else:
                                 assert entry in archive.namelist()
                                 assert not rows[entry].get("removed", False)
+                    if source == user_fixture:
+                        assert AD_DEX not in archive.namelist()
+                        removed = next(row for row in result["changes"]["dex"] if row["file"] == AD_DEX)
+                        assert removed["removed"] and removed["after"] is None
                 report = http(base, f"/api/jobs/{job_id}/report").decode("utf-8")
                 if payload["restrict_store_updates"]:
                     assert "2100000000" in report and "Play Store" in report, report
-                if source == asset_fixture and payload["profile"] == "deep":
+                if (source == asset_fixture or source == user_fixture) and payload["profile"] == "deep":
                     assert f"{AD_DEX}: kaldırıldı" in report, report
                 if payload["operation"] == "clone":
                     assert result["clone"]["new_package"] == options["clone_package_name"]
@@ -170,6 +179,10 @@ def packaged_server(label, command, folder, asset_fixture):
 
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--user-apk", type=Path)
+    user_fixture = parser.parse_args().user_apk
+    user_digest = digest(user_fixture) if user_fixture else None
     artifacts = [OUTPUTS / f"APK-Cleaner-Studio-v{VERSION}-{platform}.{extension}"
                  for platform, extension in (("Android", "apk"), ("Windows", "exe"), ("Termux", "zip"))]
     before = {str(path): digest(path) for path in artifacts}
@@ -181,7 +194,7 @@ def main():
         asset_digest = digest(asset_fixture)
         windows = root / "windows"
         windows.mkdir()
-        summaries = [packaged_server("Windows EXE", [str(artifacts[1])], windows, asset_fixture)]
+        summaries = [packaged_server("Windows EXE", [str(artifacts[1])], windows, asset_fixture, user_fixture)]
         termux = root / "termux"
         termux.mkdir()
         with zipfile.ZipFile(artifacts[2]) as archive:
@@ -190,9 +203,10 @@ def main():
                 resolved = (termux / entry).resolve()
                 assert resolved.is_relative_to(termux.resolve()), entry
             archive.extractall(termux)
-        summaries.append(packaged_server("Extracted Termux engine on Windows host", [sys.executable, str(termux / "studio/server.py")], termux, asset_fixture))
+        summaries.append(packaged_server("Extracted Termux engine on Windows host", [sys.executable, str(termux / "studio/server.py")], termux, asset_fixture, user_fixture))
         assert digest(asset_fixture) == asset_digest, "Asset DEX fixture changed"
     assert digest(FIXTURE) == fixture_digest, "Original APK fixture changed"
+    assert not user_fixture or digest(user_fixture) == user_digest, "Original user APK changed"
     assert {str(path): digest(path) for path in artifacts} == before, "Distribution artifacts changed during testing"
     print(json.dumps({"artifacts_unchanged": True, "source_unchanged": True, "results": summaries}, ensure_ascii=False, indent=2))
 
