@@ -9,6 +9,7 @@ import hashlib
 import json
 import os
 import signal
+import shutil
 import socket
 import subprocess
 import sys
@@ -18,6 +19,7 @@ import urllib.request
 import uuid
 import zipfile
 from pathlib import Path
+from deep_asset_fixture import AD_DEX, NESTED_AD_DEX, RETAINED_DEX, build_asset_fixture
 
 ROOT = Path(__file__).resolve().parents[1]
 VERSION = "0.6.3-dev.3"
@@ -47,7 +49,7 @@ def wait_job(base, job_id):
     raise RuntimeError("Packaged workflow timed out")
 
 
-def packaged_server(label, command, folder):
+def packaged_server(label, command, folder, asset_fixture):
     with socket.socket() as probe:
         probe.bind(("127.0.0.1", 0))
         port = probe.getsockname()[1]
@@ -72,10 +74,10 @@ def packaged_server(label, command, folder):
             assert status["version"] == VERSION, status
             assert status["toolchain"]["fully_ready"], status
             boundary = "----FinalArtifactAudit" + uuid.uuid4().hex
-            body = (f'--{boundary}\r\nContent-Disposition: form-data; name="package"; filename="final-audit.apk"\r\n'
+            prefix = (f'--{boundary}\r\nContent-Disposition: form-data; name="package"; filename="final-audit.apk"\r\n'
                     'Content-Type: application/vnd.android.package-archive\r\n\r\n').encode()
-            body += FIXTURE.read_bytes() + f"\r\n--{boundary}--\r\n".encode()
-            def upload_job():
+            def upload_job(source=FIXTURE):
+                body = prefix + source.read_bytes() + f"\r\n--{boundary}--\r\n".encode()
                 uploaded = json.loads(http(base, "/api/analyze", body, f"multipart/form-data; boundary={boundary}"))
                 return uploaded["job_id"]
             cases = (
@@ -83,12 +85,18 @@ def packaged_server(label, command, folder):
                 ("deep_clean_and_version", {"patch_ads": True, "profile": "deep"}),
                 ("clone_clean_and_version", {"patch_ads": True, "operation": "clone", "clone_package_name": "com.example.finalaudit.clone"}),
                 ("res_normalization_and_version", {"patch_ads": False, "normalize_dex": True, "deobfuscate_resources": True, "optimize_apk": True}),
+                ("deep_asset_dex", {"_asset_fixture": True, "patch_ads": True, "profile": "deep", "restrict_store_updates": False}),
+                ("balanced_asset_dex", {"_asset_fixture": True, "patch_ads": True, "profile": "balanced", "restrict_store_updates": False, "normalize_dex": True}),
+                ("deep_asset_clone_and_version", {"_asset_fixture": True, "patch_ads": True, "profile": "deep", "operation": "clone", "clone_package_name": "com.example.finalaudit.clone"}),
+                ("deep_asset_res_and_version", {"_asset_fixture": True, "patch_ads": True, "profile": "deep", "deobfuscate_resources": True, "optimize_apk": True}),
             )
             results = []
             job_ids = []
             for name, options in cases:
                 # Completed jobs are deliberately idempotent. Each choice needs a fresh analysis.
-                job_id = upload_job()
+                options = dict(options)
+                source = asset_fixture if options.pop("_asset_fixture", False) else FIXTURE
+                job_id = upload_job(source)
                 job_ids.append(job_id)
                 payload = {"job_id": job_id, "operation": "patch", "profile": "balanced", "restrict_store_updates": True, **options}
                 accepted = json.loads(http(base, "/api/clean", json.dumps(payload).encode()))
@@ -97,8 +105,11 @@ def packaged_server(label, command, folder):
                 assert finished["status"] == "done", finished
                 result = finished["result"]
                 assert result["signed"] and result["verification"]["passed"], result
-                assert result["store_updates"]["version_code_after"] >= 2100000000, result
-                assert result["source_size_bytes"] == FIXTURE.stat().st_size, result
+                if payload["restrict_store_updates"]:
+                    assert result["store_updates"]["version_code_after"] >= 2100000000, result
+                else:
+                    assert result["store_updates"] is None, result
+                assert result["source_size_bytes"] == source.stat().st_size, result
                 apk_bytes = http(base, f"/api/jobs/{job_id}/download")
                 assert len(apk_bytes) == result["output_size_bytes"], result
                 target = folder / (name + ".apk")
@@ -107,15 +118,30 @@ def packaged_server(label, command, folder):
                     assert archive.testzip() is None
                     assert "AndroidManifest.xml" in archive.namelist()
                     assert "classes.dex" in archive.namelist()
+                    if source == asset_fixture:
+                        assert b"AssetKept" in archive.read(RETAINED_DEX)
+                        assert b"AssetOne" not in archive.read("classes.dex")
+                        rows = {row["file"]: row for row in result["changes"]["dex"]}
+                        for entry in (AD_DEX, NESTED_AD_DEX):
+                            if payload["profile"] == "deep":
+                                assert entry not in archive.namelist()
+                                assert rows[entry]["removed"] and rows[entry]["after"] is None
+                            else:
+                                assert entry in archive.namelist()
+                                assert not rows[entry].get("removed", False)
                 report = http(base, f"/api/jobs/{job_id}/report").decode("utf-8")
-                assert "2100000000" in report and "Play Store" in report, report
-                if name == "clone_clean_and_version":
+                if payload["restrict_store_updates"]:
+                    assert "2100000000" in report and "Play Store" in report, report
+                if source == asset_fixture and payload["profile"] == "deep":
+                    assert f"{AD_DEX}: kaldırıldı" in report, report
+                if payload["operation"] == "clone":
                     assert result["clone"]["new_package"] == options["clone_package_name"]
                 if name == "version_only":
                     with zipfile.ZipFile(FIXTURE) as source, zipfile.ZipFile(target) as output:
                         assert source.read("classes.dex") == output.read("classes.dex")
                 results.append({"case": name, "signed": True, "verified": True, "report": True,
-                                "download_size_matches": True, "version_code": result["store_updates"]["version_code_after"]})
+                                "download_size_matches": True, "asset_dex_fixture": source == asset_fixture,
+                                "version_code": result["store_updates"]["version_code_after"] if result["store_updates"] else None})
             # A malformed opt-in must produce a useful diagnostic, not a silent success.
             job_id = upload_job()
             job_ids.append(job_id)
@@ -150,9 +176,12 @@ def main():
     fixture_digest = digest(FIXTURE)
     with tempfile.TemporaryDirectory(prefix="apkcleaner-final-artifacts-") as temporary:
         root = Path(temporary)
+        fixture_folder = root / "fixture"
+        asset_fixture = build_asset_fixture(fixture_folder, shutil.which("java"))
+        asset_digest = digest(asset_fixture)
         windows = root / "windows"
         windows.mkdir()
-        summaries = [packaged_server("Windows EXE", [str(artifacts[1])], windows)]
+        summaries = [packaged_server("Windows EXE", [str(artifacts[1])], windows, asset_fixture)]
         termux = root / "termux"
         termux.mkdir()
         with zipfile.ZipFile(artifacts[2]) as archive:
@@ -161,7 +190,8 @@ def main():
                 resolved = (termux / entry).resolve()
                 assert resolved.is_relative_to(termux.resolve()), entry
             archive.extractall(termux)
-        summaries.append(packaged_server("Extracted Termux engine on Windows host", [sys.executable, str(termux / "studio/server.py")], termux))
+        summaries.append(packaged_server("Extracted Termux engine on Windows host", [sys.executable, str(termux / "studio/server.py")], termux, asset_fixture))
+        assert digest(asset_fixture) == asset_digest, "Asset DEX fixture changed"
     assert digest(FIXTURE) == fixture_digest, "Original APK fixture changed"
     assert {str(path): digest(path) for path in artifacts} == before, "Distribution artifacts changed during testing"
     print(json.dumps({"artifacts_unchanged": True, "source_unchanged": True, "results": summaries}, ensure_ascii=False, indent=2))

@@ -177,12 +177,21 @@ def validate_package_archive(path: Path) -> None:
 
 
 def _entry_fingerprint(archive: zipfile.ZipFile, name: str) -> dict:
-    info = archive.getinfo(name)
+    try:
+        info = archive.getinfo(name)
+    except KeyError as exc:
+        raise RuntimeError(f"APK arşivinde beklenen dosya bulunamadı: {name}.") from exc
     digest = hashlib.sha256()
     with archive.open(info) as source:
         for chunk in iter(lambda: source.read(1024 * 1024), b""):
             digest.update(chunk)
     return {"size": info.file_size, "sha256": digest.hexdigest()}
+
+
+def _dex_work_path(temp: Path, kind: str, dex_name: str) -> Path:
+    # Root and asset DEX entries may share a basename. Never share worker files.
+    identity = hashlib.sha256(dex_name.encode("utf-8")).hexdigest()
+    return temp / f"{kind}-{identity}-{Path(dex_name).name}"
 
 
 def validate_clone_package_name(original: str, candidate: str) -> str:
@@ -268,16 +277,20 @@ def verify_output_apk(
         output_names = set(produced.namelist())
         if "AndroidManifest.xml" not in source_names:
             raise RuntimeError("Kaynak APK'da AndroidManifest.xml bulunamadı.")
-        required = {"AndroidManifest.xml"} | {
+        root_dex = {
             name for name in source_names if re.fullmatch(r"classes(?:\d+)?\.dex", name)
         }
         planned_removals = removed_files or set()
+        retained_dex = {
+            name for name in source_names if re.fullmatch(r"classes\d*\.dex", Path(name).name)
+        } - planned_removals
+        required = {"AndroidManifest.xml"} | root_dex | retained_dex
         # Deep cleaning deliberately removes matched ad SDK libraries. Only those
         # exact planned entries are exempt; unexpected native losses still fail.
         required_libraries = {
             name for name in source_names if name.startswith("lib/") and name.endswith(".so")
         } - planned_removals
-        if len(required) == 1 or required - output_names:
+        if not root_dex or required - output_names:
             raise RuntimeError("Çıktı doğrulanamadı: manifest veya beklenen DEX bileşeni eksik.")
         if required_libraries - output_names:
             raise RuntimeError("Çıktı doğrulanamadı: seçilen paketin native kütüphanesi eksik.")
@@ -1293,7 +1306,7 @@ def _process_one_dex(
     clone_strings: dict[str, str] | None = None,
 ) -> tuple[str, Path, dict, list[str]]:
     log: list[str] = []
-    dex_out = temp / f"patched-{Path(dex_name).name}"
+    dex_out = _dex_work_path(temp, "patched", dex_name)
     profiles = load_profiles()
     descriptors = sorted({
         marker
@@ -1346,7 +1359,7 @@ def _process_one_dex(
 
 def _list_message_calls_in_dex(dex_name: str, dex_in: Path, temp: Path, tools: Toolchain) -> list[dict]:
     log: list[str] = []
-    dex_out = temp / f"scanned-{Path(dex_name).name}"
+    dex_out = _dex_work_path(temp, "scanned", dex_name)
     classpath = os.pathsep.join((str(tools.direct_patcher), str(tools.dexlib2)))
     run_checked([
         tools.java, "-cp", classpath, "local.apkcleaner.dex.DirectDexPatcher",
@@ -1544,7 +1557,7 @@ def inspect_message_calls(apk_path: Path) -> list[dict]:
         with zipfile.ZipFile(apk_path) as archive:
             dex_names = sorted(name for name in archive.namelist() if re.fullmatch(r"classes\d*\.dex", Path(name).name))
             for dex_name in dex_names:
-                dex_in = temp / f"input-{Path(dex_name).name}"
+                dex_in = _dex_work_path(temp, "input", dex_name)
                 dex_in.write_bytes(archive.read(dex_name))
                 calls.extend(_list_message_calls_in_dex(dex_name, dex_in, temp, tools))
         return calls
@@ -1702,16 +1715,19 @@ def process_apk(
             manifest_result["skipped"] = False
             if clone_package_name:
                 clone_strings = {original_package_name: clone_package_name, **manifest_result["authority_changes"]}
+        remove_files = deep_removals(apk_path, detected_ids) if patch_ads and mode == "deep" else set()
         dex_names = [
             row["name"] for row in report["dex"]
-            if clone_package_name or strip_debug or normalize_dex or row["name"] in targets_by_dex or (patch_ads and row["networks"])
+            if row["name"] not in remove_files and (
+                clone_package_name or strip_debug or normalize_dex or row["name"] in targets_by_dex or (patch_ads and row["networks"])
+            )
         ]
         if dex_names:
             notify("DEX dosyaları hazırlanıyor", 12)
             inputs: dict[str, Path] = {}
             with zipfile.ZipFile(apk_path) as archive:
                 for dex_name in dex_names:
-                    dex_in = temp / f"input-{Path(dex_name).name}"
+                    dex_in = _dex_work_path(temp, "input", dex_name)
                     dex_in.write_bytes(archive.read(dex_name))
                     inputs[dex_name] = dex_in
             termux = "com.termux" in os.environ.get("PREFIX", "")
@@ -1751,7 +1767,6 @@ def process_apk(
                     totals["risky_calls"].extend(patch["risky_calls"])
                     notify(f"{dex_name} işlendi ({completed}/{len(dex_names)})", 20 + int(37 * completed / len(dex_names)))
 
-        remove_files = deep_removals(apk_path, detected_ids) if patch_ads and mode == "deep" else set()
         archive_replacements = dict(dex_replacements)
         if clone_package_name or restrict_store_updates:
             archive_replacements["AndroidManifest.xml"] = manifest_output
@@ -1932,6 +1947,16 @@ def process_apk(
             # authoritative after-state (resource tools can rewrite ZIP entries).
             row["after"] = _entry_fingerprint(after_archive, row["file"])
             row["changed"] = row["before"]["sha256"] != row["after"]["sha256"]
+        for row in report["dex"]:
+            if row["name"] in remove_files:
+                dex_changes.append({
+                    "file": row["name"], "before": _entry_fingerprint(before_archive, row["name"]),
+                    "after": None, "changed": True, "removed": True, "normalized": False,
+                    "operations": {key: 0 for key in (
+                        "void_patches", "boolean_patches", "callback_patches", "message_patches",
+                        "debug_directives_removed", "clone_strings_changed",
+                    )},
+                })
         changes = {
             "baseline": "Birleştirilmiş APK" if split_merged else "Kaynak APK",
             "dex": sorted(dex_changes, key=lambda row: row["file"]),
@@ -2011,11 +2036,14 @@ def process_apk(
         f"ÖNCE / SONRA ({changes['baseline']})",
         "DEX dosyaları:",
         *[
+            (f"- {item['file']}: kaldırıldı (planlı reklam kalıntısı); "
+             f"kaynak {item['before']['size']} bayt, SHA-256 {item['before']['sha256']}"
+             if item.get("removed") else
             f"- {item['file']}: {item['before']['size']} -> {item['after']['size']} bayt; "
             f"SHA-256 {item['before']['sha256']} -> {item['after']['sha256']}; "
             f"void={item['operations']['void_patches']}, boolean={item['operations']['boolean_patches']}, "
             f"callback={item['operations']['callback_patches']}, başlangıç={item['operations']['message_patches']}, "
-            f"debug={item['operations']['debug_directives_removed']}"
+            f"debug={item['operations']['debug_directives_removed']}")
             for item in changes["dex"]
         ],
         f"Manifest SHA-256: {manifest_change['before']['sha256']} -> {manifest_change['after']['sha256']}",
