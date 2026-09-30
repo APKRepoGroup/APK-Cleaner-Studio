@@ -73,7 +73,7 @@ class Handler(SimpleHTTPRequestHandler):
                 "analysis-apk": "setTimeout(()=>qaAnalysis(true,false,false),1100);",
                 "messages": "setTimeout(()=>{qaAnalysis(true,false);setTimeout(()=>openMessageReview(),450);},900);",
                 "working": "setTimeout(()=>{showView('#workingView');resetProgress();updateProgress(50,'Yerel işlem sürüyor');},1100);",
-                "result": "setTimeout(()=>showView('#resultView'),1100);",
+                "result": "setTimeout(()=>{qaAnalysis(true,false,false);runJob();},1100);",
                 "failure": "setTimeout(()=>{qaAnalysis(true,false,false);runJob();},1100);",
             }
             capture_action = capture_actions.get(capture, "")
@@ -105,6 +105,8 @@ class Handler(SimpleHTTPRequestHandler):
                 for index in range(1, 6)
             ]
             self.reply(json.dumps({"jobs": jobs, "totals": {"source": 160_000_000, "output": 120_000_000, "working": 200_000_000}}))
+        elif path.endswith('/diagnostic'):
+            self.reply("APK Cleaner Studio · Örnek hata raporu\n\nAçıklama: Çıktı doğrulanamadı: seçilen paketin native kütüphanesi eksik.\nTemizlik profili: Dengeli\n\nBu yalnızca yerel önizleme verisidir.", "text/plain")
         elif path.endswith('/report'):
             self.reply("Görsel test raporu\nOrijinal paket korundu.\n" * 70, "text/plain")
         elif path.startswith('/api/'):
@@ -113,9 +115,20 @@ class Handler(SimpleHTTPRequestHandler):
             super().do_GET()
 
     def do_POST(self):
-        self.rfile.read(int(self.headers.get("Content-Length", "0")))
+        raw = self.rfile.read(int(self.headers.get("Content-Length", "0")))
         if urlsplit(self.path).path == "/api/clean":
-            self.reply('{"status":"working"}')
+            capture = parse_qs(urlsplit(self.headers.get("Referer", "")).query).get("capture", [""])[0]
+            if capture == "result":
+                payload = json.loads(raw or b"{}")
+                result = {"operation": payload.get("operation", "patch"), "output": "Ornek-sonuc.apk", "signed": True,
+                    "source_size_bytes": 52_428_800, "output_size_bytes": 48_234_496, "duration_seconds": 74.2,
+                    "cleaning_profile_applied": payload.get("profile", "balanced") if payload.get("patch_ads") else None,
+                    "patches": {"void_patches": 14, "boolean_patches": 3, "debug_directives_removed": 28},
+                    "manifest": {"count": 6}, "layouts": {"count": 2}, "removed_files": ["assets/example-ad.json"],
+                    "verification": {"passed": True, "archive_crc": "ok", "manifest": "ok", "signature": "ok"}}
+                self.reply(json.dumps({"status": "done", "result": result}))
+            else:
+                self.reply('{"status":"working"}')
         elif urlsplit(self.path).path.endswith("/message-candidates"):
             candidates = [dict(id="classes.dex:lc-fixture", dex="classes.dex", kind="Diyalog",
                 owner_class="Lexample/MainActivity;", owner_method="onCreate", target_class="Lxpk8a;",

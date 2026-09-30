@@ -2000,6 +2000,60 @@ function renderJobFailure(error) {
   panel.classList.remove("hidden");
 }
 
+function formatJobDuration(seconds) {
+  if (typeof seconds !== "number" || !Number.isFinite(seconds) || seconds < 0) return "—";
+  if (seconds < 1) return "1 sn’den kısa";
+  const rounded = Math.round(seconds);
+  if (rounded < 60) return `${rounded} sn`;
+  const hours = Math.floor(rounded / 3600);
+  const minutes = Math.floor((rounded % 3600) / 60);
+  return `${hours ? `${hours} sa ` : ""}${minutes} dk ${rounded % 60} sn`;
+}
+
+function jobResultSummary(result) {
+  const validSize = value => typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+  const source = result.source_size_bytes, output = result.output_size_bytes;
+  const profiles = { safe: "Güvenli", balanced: "Dengeli", deep: "Gelişmiş" };
+  const verification = result.verification;
+  const verified = result.signed === true && verification?.passed === true
+    && verification.archive_crc === "ok" && verification.manifest === "ok" && verification.signature === "ok";
+  let sizeChange = "Boyut karşılaştırması için yeterli bilgi yok.";
+  if (validSize(source) && validSize(output)) {
+    const difference = Math.abs(source - output);
+    const ratio = source > 0 ? ` (%${(difference / source * 100).toLocaleString("tr-TR", { maximumFractionDigits: 1 })})` : "";
+    sizeChange = source === output ? "Dosya boyutu değişmedi."
+      : `${humanSize(difference)}${ratio} ${output < source ? "daha küçük" : "daha büyük"}.`;
+    if (result.split_merged) sizeChange += " Karşılaştırma, içe aktarılan split paketi ile üretilen tek APK arasındadır.";
+  }
+  return {
+    rows: [["Kaynak boyutu", validSize(source) ? humanSize(source) : "—"],
+      ["Çıktı boyutu", validSize(output) ? humanSize(output) : "—"],
+      ["İşlem süresi", formatJobDuration(result.duration_seconds)],
+      ["Temizlik profili", result.cleaning_profile_applied === null ? "Reklam temizliği uygulanmadı"
+        : Object.hasOwn(profiles, result.cleaning_profile_applied) ? profiles[result.cleaning_profile_applied] : "Bilgi kaydedilmedi"]],
+    sizeChange, verified,
+    verification: verified ? "APK yapısı ve imzası doğrulandı."
+      : verification?.passed === false || result.signed === false ? "Çıktı doğrulaması tamamlanmadı. Ayrıntılar için işlem raporunu incele."
+      : "Doğrulama bilgisi kaydedilmedi.",
+    removed: Array.isArray(result.removed_files) ? `${result.removed_files.length} dosya kaldırıldı. Dosya ayrıntıları işlem raporunda yer alır.` : "Kaldırılan dosya bilgisi kaydedilmedi."
+  };
+}
+
+function renderResultSummary(result) {
+  const summary = jobResultSummary(result);
+  $("#resultOverview").replaceChildren(...summary.rows.map(([label, value]) => {
+    const row = document.createElement("div");
+    const term = document.createElement("dt"), description = document.createElement("dd");
+    term.textContent = label; description.textContent = value; row.append(term, description); return row;
+  }));
+  $("#resultSizeChange").textContent = summary.sizeChange;
+  $("#resultVerification").textContent = summary.verification;
+  $("#resultVerification").classList.toggle("verified", summary.verified);
+  $("#resultRemovedFiles").textContent = summary.removed;
+  const details = $("#resultDetails");
+  setInlineDisclosureOpen(details, false);
+}
+
 async function pollJob() {
   if (!isUiActive() || !state.jobId || state.pollInFlight) return null;
   state.pollInFlight = true;
@@ -2076,6 +2130,7 @@ async function runJob() {
     const result = await waitForJobResult(data.result || null);
     updateProgress(100, "Tamamlandı"); await waitForProgress(100);
     const patchCount = result.patches.void_patches + result.patches.boolean_patches;
+    renderResultSummary(result);
     $("#resultTitle").textContent = result.operation === "clone" ? "Klon APK oluşturuldu." : result.operation === "convert" ? "Tek APK başarıyla oluşturuldu." : "Temizlenmiş APK kullanıma hazır.";
     $("#resultStats").innerHTML = result.operation === "clone"
       ? `<div><b>${result.clone?.dex_strings_changed || 0}</b><span>DEX kimliği</span></div><div><b>${result.clone?.changes?.length || 0}</b><span>Manifest alanı</span></div><div><b>${patchCount}</b><span>Reklam yaması</span></div><div><b>${result.layouts?.count || 0}</b><span>XML alanı</span></div>`

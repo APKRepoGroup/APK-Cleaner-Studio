@@ -11,7 +11,7 @@
   <link rel="icon" type="image/png" href="/favicon.png" sizes="512x512">
   <script src="boot.js?v=0.6.3-dev.2-20260930.8"></script>
   <link rel="stylesheet" href="styles.css">
-  <link rel="stylesheet" href="theme.css?v=0.6.3-dev.2-20260930.9">
+  <link rel="stylesheet" href="theme.css?v=0.6.3-dev.2-20260930.10">
 </head>
 <body>
   <header class="topbar">
@@ -182,7 +182,14 @@
         <section id="resultView" class="view result hidden">
           <div class="success">✓</div><small>İŞLEM TAMAMLANDI</small>
           <h2 id="resultTitle">Çıktı başarıyla oluşturuldu.</h2><p>Tüm değişiklikler yeni dosyaya yazıldı; orijinal paket korunmaya devam ediyor.</p>
-          <div id="resultStats" class="stats"></div>
+          <section class="result-summary" aria-label="İşlem özeti">
+            <dl id="resultOverview"></dl><p id="resultSizeChange" class="fineprint"></p>
+            <p id="resultVerification" class="result-verification"></p>
+          </section>
+          <details id="resultDetails" class="result-details"><summary>İşlem ayrıntıları</summary>
+            <div id="resultStats" class="stats"></div><p id="resultRemovedFiles" class="fineprint"></p>
+            <p class="fineprint">Doğrulama, APK yapısını ve imzasını denetler; uygulamanın cihazında sorunsuz çalışacağını garanti etmez.</p>
+          </details>
           <div class="actions center"><a id="downloadButton" class="primary wide" href="#"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v11m-4-4 4 4 4-4"/><path d="M4 17v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg><span>APK’yı indir</span></a><button id="installButton" class="secondary install-action native-android-action hidden" type="button"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2.5"/><path d="M12 7v8m-3-3 3 3 3-3M10 19h4"/></svg><span>APK’yı kur</span></button><button id="shareOutputButton" class="secondary native-android-action hidden" type="button">Paylaş</button><button id="reportButton" class="secondary" type="button">Raporu aç</button></div>
           <button id="againButton" class="text-button">Başka bir paket işle</button>
         </section>
@@ -353,6 +360,6 @@
   </div>
   <div id="toast" class="toast" role="status" aria-live="polite" aria-atomic="true"></div>
   <script src="ui-runtime.js?v=0.6.3-dev.2-20260927.1"></script>
-  <script src="app.js?v=0.6.3-dev.2-20260930.9"></script>
+  <script src="app.js?v=0.6.3-dev.2-20260930.10"></script>
 </body>
 </html>

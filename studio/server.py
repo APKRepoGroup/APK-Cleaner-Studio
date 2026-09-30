@@ -1330,6 +1330,7 @@ def _execute_clean_job(job_id: str, payload: dict) -> None:
             raise ValueError("Hazırlanan APK bulunamadı.")
 
         progress("Yerel işlem motoru hazırlanıyor", 4)
+        original_source = job / analysis.get("source_path", prepared_path or "missing")
         result = process_apk(
             prepared,
             job / "output",
@@ -1342,6 +1343,7 @@ def _execute_clean_job(job_id: str, payload: dict) -> None:
             deobfuscate_resources=deobfuscate_resources,
             normalize_resources=normalize_resources,
             source_name=filename,
+            source_size_bytes=original_source.stat().st_size if original_source.is_file() else None,
             split_merged=bool(analysis.get("split_merged")),
             split_details=split_details,
             analysis_report=None if selected_split_rebuilt else {

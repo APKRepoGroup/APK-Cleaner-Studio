@@ -1310,6 +1310,16 @@ html[data-theme="dark"] .result .install-action {
   box-shadow: 0 12px 30px color-mix(in srgb, var(--green) 18%, transparent);
 }
 .stats { border-radius: 15px; background: var(--surface-soft); }
+.result-summary, .result-details { width: 100%; min-width: 0; margin: 20px 0 0; padding: 18px; border: 1px solid var(--line); border-radius: 15px; background: var(--surface-soft); text-align: start; }
+.result-summary dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px 24px; margin: 0; }
+.result-summary dt { color: var(--muted); font-size: 12px; }
+.result-summary dd { margin: 5px 0 0; font-size: 14px; font-weight: 750; overflow-wrap: anywhere; }
+.result-summary .fineprint, .result-details .fineprint { font-size: 12px; line-height: 1.65; margin: 14px 0 0; }
+.result-verification { font-size: 12px; line-height: 1.65; margin: 14px 0 0; padding-top: 12px; border-top: 1px solid var(--line); }
+.result-verification.verified { color: var(--green); }
+.result-details summary { cursor: pointer; font-size: 13px; font-weight: 750; }
+.result-details .stats { width: 100%; min-width: 0; margin: 16px 0 0; }
+@media (max-width: 420px) { .result-summary, .result-details { padding: 14px; } .result-summary dl { gap: 16px 12px; } }
 
 .tools-row { padding: 8px 0; border-bottom: 1px solid color-mix(in srgb, var(--line) 72%, transparent); }
 .tools-row:last-child { border-bottom: 0; }

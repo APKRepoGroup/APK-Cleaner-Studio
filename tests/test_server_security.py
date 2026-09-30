@@ -19,6 +19,24 @@ from server import StudioHandler, _ACTIVE_JOBS, _ACTIVE_JOBS_LOCK, _BLOCKED_CLIE
 
 
 class LocalRequestSecurityTests(unittest.TestCase):
+    def test_job_reports_original_split_archive_size_not_merged_apk_size(self):
+        with tempfile.TemporaryDirectory() as name, mock.patch("server.JOBS", Path(name)):
+            job_id = "e" * 32
+            job = Path(name) / job_id
+            job.mkdir()
+            source = job / "source.apks"
+            source.write_bytes(b"original split archive")
+            prepared = job / "selected.apk"
+            prepared.write_bytes(b"merged apk")
+            write_json(job / "analysis.json", {"filename": "source.apks", "source_path": "source.apks", "split_merged": True})
+            with mock.patch("server.merge_split_package", return_value=(prepared, [])), mock.patch(
+                "server.process_apk", return_value={"signed": True}
+            ) as process:
+                _execute_clean_job(job_id, {"operation": "convert", "patch_ads": False})
+            self.assertEqual(process.call_args.kwargs["source_size_bytes"], source.stat().st_size)
+            self.assertNotEqual(source.stat().st_size, prepared.stat().st_size)
+            self.assertEqual(read_json(job / "state.json")["status"], "done")
+
     def test_storage_summary_counts_only_visible_job_files_and_protects_active_jobs(self):
         with tempfile.TemporaryDirectory() as name, mock.patch("server.JOBS", Path(name)):
             owner = "owner-123"

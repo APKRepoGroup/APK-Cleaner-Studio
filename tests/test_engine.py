@@ -286,10 +286,13 @@ class EngineTests(unittest.TestCase):
                 "engine.sha256", return_value="output-hash"
             ):
                 result = __import__("engine").process_apk(
-                    source, root / "output", patch_ads=False, analysis_report=report
+                    source, root / "output", patch_ads=False, analysis_report=report, source_size_bytes=1234
                 )
             inspect.assert_not_called()
             self.assertTrue(result["analysis_reused"])
+            self.assertEqual(result["source_size_bytes"], 1234)
+            self.assertEqual(result["output_size_bytes"], (root / "output" / result["output"]).stat().st_size)
+            self.assertIsNone(result["cleaning_profile_applied"])
 
     def test_message_only_processing_is_reported_as_patch(self):
         with tempfile.TemporaryDirectory() as name:
