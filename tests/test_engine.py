@@ -21,6 +21,7 @@ from engine import (
     _process_one_dex,
     _temporary_directory,
     _android_archive_package,
+    deep_removals,
     inspect_apk,
     inspect_split_package,
     inspect_split_components,
@@ -127,6 +128,60 @@ class EngineTests(unittest.TestCase):
                         archive.writestr(entry, payload)
             with self.assertRaisesRegex(RuntimeError, "native kütüphanesi eksik"):
                 verify_output_apk(source, output, mock.Mock(), [])
+
+    def test_deep_removal_plan_only_exempts_intentionally_removed_native_entries(self):
+        with tempfile.TemporaryDirectory() as name, mock.patch.dict(os.environ, {"APK_CLEANER_ANDROID": "0"}):
+            root = Path(name)
+            source = root / "source.apk"
+            ad_library = "lib/arm64-v8a/libfixtureads.so"
+            core_library = "lib/arm64-v8a/libcore.so"
+            with zipfile.ZipFile(source, "w") as archive:
+                for entry, data in {
+                    "AndroidManifest.xml": b"manifest", "classes.dex": b"dex",
+                    ad_library: b"ads", core_library: b"core",
+                }.items():
+                    archive.writestr(entry, data)
+            with mock.patch("engine.load_profiles", return_value={
+                "fixture": {"assets": [], "libraries": ["libfixtureads.so"]},
+            }):
+                planned = deep_removals(source, {"fixture"})
+            self.assertEqual(planned, {ad_library})
+            tools = types.SimpleNamespace(apksigner="fixture-apksigner")
+            cases = (
+                ("balanced", set(), set(), None, 2),
+                ("deep", planned, planned, None, 1),
+                ("unplanned_native_loss", planned | {core_library}, planned, "native kütüphanesi eksik", None),
+                ("ad_library_not_removed", set(), planned, "kaldırılması istenen dosya", None),
+                ("dex_removal_not_exempt", planned | {"classes.dex"}, planned | {"classes.dex"}, "DEX bileşeni eksik", None),
+            )
+            for label, actual_removals, removal_plan, error, native_count in cases:
+                with self.subTest(case=label), mock.patch("engine.run_checked") as signature_check:
+                    output = root / f"{label}.apk"
+                    rewrite_apk(source, output, {}, actual_removals)
+                    if error:
+                        with self.assertRaisesRegex(RuntimeError, error):
+                            verify_output_apk(source, output, tools, [], removed_files=removal_plan)
+                        signature_check.assert_not_called()
+                    else:
+                        result = verify_output_apk(source, output, tools, [], removed_files=removal_plan)
+                        self.assertTrue(result["passed"])
+                        self.assertEqual(result["native_library_count"], native_count)
+                        signature_check.assert_called_once_with(
+                            ["fixture-apksigner", "verify", "--verbose", str(output)], [],
+                        )
+
+    def test_planned_native_removal_does_not_bypass_signature_verification(self):
+        with tempfile.TemporaryDirectory() as name, mock.patch.dict(os.environ, {"APK_CLEANER_ANDROID": "0"}):
+            source, output = Path(name) / "source.apk", Path(name) / "output.apk"
+            removed = {"lib/arm64-v8a/libfixtureads.so"}
+            with zipfile.ZipFile(source, "w") as archive:
+                archive.writestr("AndroidManifest.xml", b"manifest")
+                archive.writestr("classes.dex", b"dex")
+                archive.writestr(next(iter(removed)), b"ads")
+            rewrite_apk(source, output, {}, removed)
+            with mock.patch("engine.run_checked", side_effect=RuntimeError("fixture signature rejected")):
+                with self.assertRaisesRegex(RuntimeError, "fixture signature rejected"):
+                    verify_output_apk(source, output, types.SimpleNamespace(apksigner="fixture-apksigner"), [], removed_files=removed)
 
     def test_clone_name_must_differ_and_keep_valid_package_shape(self):
         self.assertEqual(validate_clone_package_name("com.example.app", "com.example.app.clone"), "com.example.app.clone")

@@ -250,12 +250,17 @@ def verify_output_apk(
         required = {"AndroidManifest.xml"} | {
             name for name in source_names if re.fullmatch(r"classes(?:\d+)?\.dex", name)
         }
-        required_libraries = {name for name in source_names if name.startswith("lib/") and name.endswith(".so")}
+        planned_removals = removed_files or set()
+        # Deep cleaning deliberately removes matched ad SDK libraries. Only those
+        # exact planned entries are exempt; unexpected native losses still fail.
+        required_libraries = {
+            name for name in source_names if name.startswith("lib/") and name.endswith(".so")
+        } - planned_removals
         if len(required) == 1 or required - output_names:
             raise RuntimeError("Çıktı doğrulanamadı: manifest veya beklenen DEX bileşeni eksik.")
         if required_libraries - output_names:
             raise RuntimeError("Çıktı doğrulanamadı: seçilen paketin native kütüphanesi eksik.")
-        if any(name in output_names for name in (removed_files or set())):
+        if any(name in output_names for name in planned_removals):
             raise RuntimeError("Çıktı doğrulanamadı: kaldırılması istenen dosya pakette kaldı.")
         for name in required:
             if produced.getinfo(name).file_size == 0:
