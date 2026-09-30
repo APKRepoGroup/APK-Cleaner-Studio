@@ -1268,13 +1268,16 @@ def _execute_clean_job(job_id: str, payload: dict) -> None:
     job = JOBS / job_id
     analysis = read_json(job / "analysis.json")
     filename = analysis.get("filename", "paket.apk")
+    last_stage = "İşlem seçenekleri denetleniyor"
     with _ACTIVE_JOBS_LOCK:
         cancel_event = _JOB_CANCEL_EVENTS.setdefault(job_id, threading.Event())
         _JOB_THREADS[job_id] = threading.get_ident()
 
     def progress(message: str, percent: int) -> None:
+        nonlocal last_stage
         if cancel_event.is_set():
             raise JobCancelled("İşlem kullanıcı tarafından iptal edildi.")
+        last_stage = message
         write_json(job / "state.json", {
             "status": "working", "message": message,
             "progress": min(99, max(0, int(percent))), "filename": filename,
@@ -1375,12 +1378,15 @@ def _execute_clean_job(job_id: str, payload: dict) -> None:
                 "progress": 0, "filename": filename,
             })
             return
+        details = failure_diagnostic(exc, analysis=analysis, payload=payload)
+        details["stage"] = diagnostic_error(RuntimeError(last_stage))
         try:
-            write_json(job / "diagnostic.json", failure_diagnostic(exc, analysis=analysis, payload=payload))
+            write_json(job / "diagnostic.json", details)
         except OSError:
             pass  # Reporting must never mask the original job failure.
         write_json(job / "state.json", {
-            "status": "error", "message": public_error(exc), "progress": 0, "filename": filename,
+            "status": "error", "message": details["message"], "progress": 0, "filename": filename,
+            "failure": {key: details[key] for key in ("message", "stage", "operation", "profile")},
         })
     finally:
         with _ACTIVE_JOBS_LOCK:

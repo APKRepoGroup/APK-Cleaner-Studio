@@ -124,6 +124,11 @@ class LocalRequestSecurityTests(unittest.TestCase):
             error = RuntimeError("Manifest okunamadı: Private App 1.0.apk (test.private.app)")
             with mock.patch("server.process_apk", side_effect=error):
                 _execute_clean_job(job_id, {"profile": "balanced", "operation": "patch"})
+            failure = read_json(job / "state.json")["failure"]
+            self.assertEqual(failure["stage"], "Yerel işlem motoru hazırlanıyor")
+            self.assertEqual(failure["profile"], "balanced")
+            self.assertNotIn("Private App", failure["message"])
+            self.assertNotIn("test.private.app", failure["message"])
             self.assertEqual(read_json(job / "state.json")["status"], "error")
             report = diagnostic_report(job)
             self.assertIn("Açıklama: Manifest okunamadı:", report)

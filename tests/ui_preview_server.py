@@ -52,7 +52,7 @@ class Handler(SimpleHTTPRequestHandler):
             <button onclick="setNativeVisibility(true)">QA Ön plan</button>
             <button onclick="applyTheme('light')">QA Açık</button><button onclick="applyTheme('dark')">QA Koyu</button>
             </nav>'''
-            if capture in {"analysis", "analysis-apk", "result"}:
+            if capture in {"analysis", "analysis-apk", "result", "failure"}:
                 html = html.replace(
                     "</head>",
                     "<style>.hero,#mobileHttpsBanner,.starter-content,footer{display:none!important}.workspace{margin-top:24px!important}</style></head>",
@@ -74,6 +74,7 @@ class Handler(SimpleHTTPRequestHandler):
                 "messages": "setTimeout(()=>{qaAnalysis(true,false);setTimeout(()=>openMessageReview(),450);},900);",
                 "working": "setTimeout(()=>{showView('#workingView');resetProgress();updateProgress(50,'Yerel işlem sürüyor');},1100);",
                 "result": "setTimeout(()=>showView('#resultView'),1100);",
+                "failure": "setTimeout(()=>{qaAnalysis(true,false,false);runJob();},1100);",
             }
             capture_action = capture_actions.get(capture, "")
             html = html.replace('</body>', controls + '<script>const qaMarks=' + json.dumps(marks) + ';' + setup + 'renderNetworks({detections:qaMarks,network_count:18,dex_count:3});' + capture_action + '</script><script src="/qa-motion.js"></script></body>')
@@ -93,6 +94,10 @@ class Handler(SimpleHTTPRequestHandler):
                 "release_url": "https://example.invalid/preview-only",
             }
             self.reply(json.dumps({"available": capture == "update", "update": update if capture == "update" else None}))
+        elif path.endswith("/state"):
+            self.reply(json.dumps({"status": "error", "message": "Çıktı doğrulanamadı: seçilen paketin native kütüphanesi eksik.",
+                "failure": {"message": "Çıktı doğrulanamadı: seçilen paketin native kütüphanesi eksik.",
+                            "stage": "Çıktı APK doğrulanıyor", "operation": "patch", "profile": "balanced"}}))
         elif path == "/api/storage":
             jobs = [
                 {"job_id": f"{index:032x}", "filename": f"Örnek paket {index}.apk", "can_delete": False,
@@ -109,7 +114,9 @@ class Handler(SimpleHTTPRequestHandler):
 
     def do_POST(self):
         self.rfile.read(int(self.headers.get("Content-Length", "0")))
-        if urlsplit(self.path).path.endswith("/message-candidates"):
+        if urlsplit(self.path).path == "/api/clean":
+            self.reply('{"status":"working"}')
+        elif urlsplit(self.path).path.endswith("/message-candidates"):
             candidates = [dict(id="classes.dex:lc-fixture", dex="classes.dex", kind="Diyalog",
                 owner_class="Lexample/MainActivity;", owner_method="onCreate", target_class="Lxpk8a;",
                 target_method="StartGame", location="before_super", confidence="candidate", focus="priority", deferred=False,

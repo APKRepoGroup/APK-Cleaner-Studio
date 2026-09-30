@@ -11,7 +11,7 @@
   <link rel="icon" type="image/png" href="/favicon.png" sizes="512x512">
   <script src="boot.js?v=0.6.3-dev.2-20260930.8"></script>
   <link rel="stylesheet" href="styles.css">
-  <link rel="stylesheet" href="theme.css?v=0.6.3-dev.2-20260930.7">
+  <link rel="stylesheet" href="theme.css?v=0.6.3-dev.2-20260930.9">
 </head>
 <body>
   <header class="topbar">
@@ -161,7 +161,13 @@
               <div class="saved-presets-controls"><select id="savedPresetSelect" aria-label="Kayıtlı işlem profili"><option value="">Profil seç</option></select><button id="applyPresetButton" class="secondary" type="button" disabled>Uygula</button><button id="savePresetButton" class="secondary" type="button">Seçenekleri kaydet</button><button id="deletePresetButton" class="secondary" type="button" disabled aria-label="Seçili profili sil">Sil</button></div>
             </section>
             <div id="analysisSummary" class="analysis-summary"></div>
-            <div class="actions"><button id="resetButton" class="secondary">Geri</button><button id="diagnosticAfterFailure" class="secondary hidden" type="button">Hata raporunu incele</button><button id="cleanButton" class="primary wide">İşlemi başlat <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h15m-6-6 6 6-6 6"/></svg></button></div>
+            <section id="jobFailure" class="job-failure hidden" role="alert" aria-labelledby="jobFailureTitle" tabindex="-1">
+              <small>İŞLEM BİLGİSİ</small><h3 id="jobFailureTitle">İşlem tamamlanamadı</h3>
+              <p id="jobFailureStage" class="failure-stage"></p><p id="jobFailureMessage"></p>
+              <p class="fineprint">Orijinal paket değiştirilmedi.</p><p id="jobFailureAdvice" class="fineprint"></p>
+              <button id="diagnosticAfterFailure" class="secondary hidden" type="button">Hata raporunu incele</button>
+            </section>
+            <div class="actions"><button id="resetButton" class="secondary">Geri</button><button id="cleanButton" class="primary wide">İşlemi başlat <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h15m-6-6 6 6-6 6"/></svg></button></div>
           </div>
         </section>
 
@@ -347,6 +353,6 @@
   </div>
   <div id="toast" class="toast" role="status" aria-live="polite" aria-atomic="true"></div>
   <script src="ui-runtime.js?v=0.6.3-dev.2-20260927.1"></script>
-  <script src="app.js?v=0.6.3-dev.2-20260930.8"></script>
+  <script src="app.js?v=0.6.3-dev.2-20260930.9"></script>
 </body>
 </html>

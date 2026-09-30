@@ -721,6 +721,11 @@ html[data-theme="dark"] .footer-link-icon::before { background: var(--green); }
 .profile small { font-size: 10px; }
 .profile p { font-size: 12px; }
 .analysis-summary { font-size: 12px; }
+.job-failure { margin-top: 24px; padding: 20px; border: 1px solid var(--line); border-inline-start: 3px solid var(--orange, #e79754); border-radius: 14px; background: var(--surface-soft); overflow-wrap: anywhere; scroll-margin-top: calc(96px + var(--android-status-inset, 0px)); }
+.job-failure h3 { margin: 8px 0 12px; }
+.job-failure p { margin: 10px 0; line-height: 1.65; }
+.job-failure .failure-stage { font-size: 12px; color: var(--muted); }
+.job-failure button { margin-top: 8px; max-width: 100%; }
 .working p,
 .result > p { font-size: 13px; }
 .working pre { font-size: 11px; }

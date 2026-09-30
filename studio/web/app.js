@@ -1189,7 +1189,7 @@ async function loadHistoryJob(jobId) {
     if (!response.ok) throw new Error(data.error || "Eski işlem açılamadı.");
     const analysis = data.analysis;
     state.file = null; state.jobId = data.job_id; state.analysis = analysis; state.operation = "patch";
-    $("#diagnosticAfterFailure").classList.add("hidden");
+    clearJobFailure();
     const badge = String(analysis.source_type || "apk").toUpperCase();
     $("#fileCard").innerHTML = `<div class="apk">${escapeHTML(badge)}</div><div><b>${escapeHTML(analysis.filename)}</b><span>${humanSize(analysis.size || 0)} · Geçmiş işlem yeniden açıldı</span></div>`;
     renderNetworks(analysis); renderSplitOptions(analysis.split_options);
@@ -1872,6 +1872,7 @@ async function deleteSavedPreset() {
 }
 
 function prepareAnalysisView(name, size, split = false) {
+  clearJobFailure();
   state.operation = "patch"; setStep(2); showView("#analysisView");
   const ext = extension(name) || ".apk";
   $("#fileCard").innerHTML = `<div class="apk">${escapeHTML(ext.slice(1).toUpperCase())}</div><div><b>${escapeHTML(name)}</b><span>${humanSize(size)} · ${split ? "Split modüller birleştirilecek" : "Yerel analiz"}</span></div>`;
@@ -1881,7 +1882,7 @@ function prepareAnalysisView(name, size, split = false) {
 function applyAnalysisResult(data) {
   state.messageTargets = []; state.messageCandidates = [];
   state.jobId = data.job_id; state.analysis = data.analysis; renderNetworks(data.analysis); renderSplitOptions(data.analysis.split_options);
-  $("#diagnosticAfterFailure").classList.add("hidden");
+  clearJobFailure();
   updateDirectSplitInstall(data.analysis);
   prepareCloneOption(data.analysis);
   $("#convertOperation").classList.toggle("hidden", !data.analysis.split_merged);
@@ -1967,6 +1968,38 @@ function waitForProgress(target, timeout = 2600) {
   });
 }
 
+function clearJobFailure() {
+  $("#jobFailure").classList.add("hidden");
+  $("#diagnosticAfterFailure").classList.add("hidden");
+}
+
+function jobFailureAdvice(message, cancelled = false) {
+  if (cancelled) return "Seçenekleri gözden geçirip işlemi yeniden başlatabilirsin.";
+  if (/Yerel işlem alanı dolu|yeterli (?:boş )?alan|No space left on device/i.test(message)) {
+    return "Depolama Yönetimi bölümünden gereksiz işlem dosyalarını temizle; yeterli boş alan olduğunda yeniden dene.";
+  }
+  if (/bileşen.*hazır değil|bileşenleri hazırla/i.test(message)) {
+    return "Yerel İşlem Motoru bölümündeki bileşen durumunu kontrol et ve eksik bileşenleri hazırla.";
+  }
+  if (/Çıktı.*doğrulanamadı|Çıktı.*imzası.*doğrulanamadı/i.test(message)) {
+    return "Çıktı güvenlik kontrolünü geçemedi. Nedeni incelemek için hata raporunu aç; tekrar denemeden önce seçilen işlem ve ek seçenekleri gözden geçir.";
+  }
+  return "Hata raporundaki açıklamayı incele. Sorun sürerse raporu, seçtiğin işlem ve temizlik profiliyle birlikte destek için paylaşabilirsin.";
+}
+
+function renderJobFailure(error) {
+  const cancelled = error.jobStatus === "cancelled";
+  const message = error.jobFailure?.message || error.message || "İşlem tamamlanamadı. Nedeni belirlenemedi.";
+  const panel = $("#jobFailure");
+  panel.setAttribute("role", cancelled ? "status" : "alert");
+  $("#jobFailureTitle").textContent = cancelled ? "İşlem iptal edildi" : "İşlem tamamlanamadı";
+  $("#jobFailureStage").textContent = cancelled ? "" : `Son işlem aşaması: ${error.jobFailure?.stage || "İşlemi başlatma"}`;
+  $("#jobFailureMessage").textContent = message;
+  $("#jobFailureAdvice").textContent = jobFailureAdvice(message, cancelled);
+  $("#diagnosticAfterFailure").classList.toggle("hidden", cancelled || !state.jobId);
+  panel.classList.remove("hidden");
+}
+
 async function pollJob() {
   if (!isUiActive() || !state.jobId || state.pollInFlight) return null;
   state.pollInFlight = true;
@@ -2003,8 +2036,12 @@ async function waitForJobResult(initialResult = null) {
     if (!job) { connectionFailures += 1; continue; }
     connectionFailures = 0;
     if (job.status === "done" && job.result) return job.result;
-    if (job.status === "cancelled") throw new Error(job.message || "İşlem iptal edildi.");
-    if (job.status === "error") throw new Error(job.message || "İşlem tamamlanamadı.");
+    if (["cancelled", "error"].includes(job.status)) {
+      const error = new Error(job.message || "İşlem tamamlanamadı.");
+      error.jobStatus = job.status;
+      error.jobFailure = job.failure || { message: error.message, stage: "Aşama bilgisi kaydedilmedi" };
+      throw error;
+    }
   }
   throw new Error("İşlem oturumu sonlandırıldı.");
 }
@@ -2020,7 +2057,7 @@ async function runJob() {
     toast("İşlem için önce eksik bileşenleri hazırla."); $("#toolCard").scrollIntoView({ behavior: "smooth", block: "center" }); return;
   }
   setJobRunning(true);
-  $("#diagnosticAfterFailure").classList.add("hidden");
+  clearJobFailure();
   const cancelButton = $("#cancelJobButton");
   cancelButton.disabled = false; cancelButton.textContent = "İşlemi iptal et";
   resetProgress(); setStep(3); showView("#workingView"); updateProgress(4, "Yerel işlem motoru hazırlanıyor");
@@ -2054,9 +2091,10 @@ async function runJob() {
     refreshHistory();
     if (!result.signed) toast(result.sign_warning || "Çıktı imzalanamadı.");
   } catch (error) {
-    toast(error.message);
     setStep(2); showView("#analysisView");
-    $("#diagnosticAfterFailure").classList.toggle("hidden", !state.jobId);
+    renderJobFailure(error);
+    $("#jobFailure").focus({ preventScroll: true });
+    focusProcessingView("#jobFailure");
     refreshHistory();
   }
   finally { setJobRunning(false); state.pollInFlight = false; }
