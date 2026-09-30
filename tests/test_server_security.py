@@ -773,6 +773,43 @@ class LocalRequestSecurityTests(unittest.TestCase):
             self.assertEqual(final["payload"], "x" * 2048)
             self.assertEqual(list(Path(name).glob("*.tmp")), [])
 
+    def test_concurrent_state_readers_and_writers_share_file_access_lock(self):
+        with tempfile.TemporaryDirectory() as name:
+            state = Path(name) / "state.json"
+            write_json(state, {"writer": -1, "payload": "x" * 2048})
+            original_read = Path.read_text
+            original_replace = Path.replace
+            reading = threading.Event()
+            collisions = []
+
+            def tracked_read(path, *args, **kwargs):
+                if path != state:
+                    return original_read(path, *args, **kwargs)
+                reading.set()
+                try:
+                    time.sleep(0.001)
+                    return original_read(path, *args, **kwargs)
+                finally:
+                    reading.clear()
+
+            def tracked_replace(path, target):
+                if target == state and reading.is_set():
+                    collisions.append(True)
+                    raise PermissionError("Simulated Windows open-reader conflict")
+                return original_replace(path, target)
+
+            def access(index):
+                if index % 2:
+                    write_json(state, {"writer": index, "payload": "x" * 2048})
+                else:
+                    self.assertEqual(read_json(state)["payload"], "x" * 2048)
+
+            with mock.patch.object(Path, "read_text", tracked_read), mock.patch.object(Path, "replace", tracked_replace):
+                with ThreadPoolExecutor(max_workers=12) as pool:
+                    list(pool.map(access, range(480)))
+            self.assertEqual(collisions, [])
+            self.assertEqual(list(Path(name).glob("*.tmp")), [])
+
     def test_cancelled_browser_download_does_not_escape_as_server_error(self):
         with tempfile.TemporaryDirectory() as name:
             payload = Path(name) / "output.apk"

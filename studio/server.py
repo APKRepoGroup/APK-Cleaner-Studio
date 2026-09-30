@@ -719,8 +719,8 @@ class StudioServer(ThreadingHTTPServer):
 
 
 def write_json(path: Path, payload: dict) -> None:
-    # Windows aynı hedefe eşzamanlı replace çağrılarını reddedebildiği için
-    # yalnızca kısa yazma/değiştirme bölümünü sıraya al. Okuyucular kilitsizdir.
+    # Windows, başka bir iş parçacığı hedef dosyayı okurken replace çağrısını
+    # reddedebilir. Okuma ve atomik yazma aynı kısa erişim kilidini paylaşır.
     with _JSON_WRITE_LOCK:
         path.parent.mkdir(parents=True, exist_ok=True)
         try:
@@ -745,9 +745,14 @@ def write_json(path: Path, payload: dict) -> None:
 
 
 def read_json(path: Path, fallback: dict | None = None) -> dict:
+    with _JSON_WRITE_LOCK:
+        try:
+            content = path.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            return fallback or {}
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (FileNotFoundError, json.JSONDecodeError):
+        return json.loads(content)
+    except json.JSONDecodeError:
         return fallback or {}
 
 
