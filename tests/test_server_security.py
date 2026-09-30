@@ -32,6 +32,25 @@ class LocalRequestSecurityTests(unittest.TestCase):
         self.assertNotIn("Private Person", message)
         self.assertNotIn("Person/private.dex", message)
 
+    def test_system_and_unknown_tool_errors_are_turkish_but_diagnosable_locally(self):
+        from server import public_error
+        cases = (
+            ("No space left on device", "depolama alanı"),
+            ("Permission denied", "erişim izni"),
+            ("Connection refused", "Bağlantı"),
+            ("File is not a zip file", "Paket arşivi"),
+            ("java.lang.OutOfMemoryError", "bellek"),
+            ("unexpected token in JSON", "yanıtı okunamadı"),
+            ("unrecognized library failure", "beklenmeyen"),
+        )
+        for raw, expected in cases:
+            with self.subTest(raw=raw):
+                self.assertIn(expected, public_error(RuntimeError(raw)))
+                details = failure_diagnostic(RuntimeError(raw + "\nRAW TOOL LOG secret-extra"))
+                self.assertIn(expected, details["message"])
+                self.assertNotIn("RAW TOOL LOG", details["technical_message"])
+                self.assertEqual(details["technical_message"], raw)
+
     def test_job_reports_original_split_archive_size_not_merged_apk_size(self):
         with tempfile.TemporaryDirectory() as name, mock.patch("server.JOBS", Path(name)):
             job_id = "e" * 32

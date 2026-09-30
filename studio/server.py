@@ -105,12 +105,42 @@ CLIENT_COOKIE_NAME = "apk_cleaner_client_id"
 def localized_error_message(error: BaseException) -> str:
     raw = str(error.args[0]) if isinstance(error, KeyError) and error.args else str(error or "")
     match = re.fullmatch(r"There is no item named (['\"])(.+)\1 in the archive", raw)
-    return f'APK arşivinde beklenen dosya bulunamadı: "{match.group(2)}".' if match else str(error or "")
+    if match:
+        return f'APK arşivinde beklenen dosya bulunamadı: "{match.group(2)}".'
+    translations = (
+        (r"no space left|disk (?:is )?full|not enough space", "İşlem için yeterli boş depolama alanı yok."),
+        (r"outofmemory|out of memory|cannot allocate memory|memoryerror", "İşlem için yeterli kullanılabilir bellek yok."),
+        (r"permission denied|access.*denied|operation not permitted", "İşlem için gereken dosyaya erişim izni yok."),
+        (r"no such file|file not found|cannot find.*file", "İşlem için gereken dosya bulunamadı."),
+        (r"not a zip file|badzipfile|bad crc|corrupt.*archive|invalid.*zip", "Paket arşivi bozuk veya desteklenen biçimde değil."),
+        (r"certificate verify failed|ssl.*error|tls.*error", "Güvenli bağlantının sertifikası doğrulanamadı."),
+        (r"timed? out|timeout|time.?out", "İşlem zaman aşımına uğradı. Bağlantıyı ve işlem durumunu kontrol et."),
+        (r"connection refused|connection reset|failed to fetch|network.*error|urlopen error|name.*not known", "Bağlantı kurulamadı. Ağ bağlantısını ve yerel işlem motorunu kontrol et."),
+        (r"unexpected token|json.*(?:decode|parse)|invalid json", "İşlem yanıtı okunamadı veya geçerli biçimde değil."),
+    )
+    for pattern, translated in translations:
+        if re.search(pattern, raw, re.IGNORECASE):
+            return translated
+    if isinstance(error, MemoryError):
+        return "İşlem için yeterli kullanılabilir bellek yok."
+    if isinstance(error, PermissionError):
+        return "İşlem için gereken dosyaya erişim izni yok."
+    if isinstance(error, FileNotFoundError):
+        return "İşlem için gereken dosya bulunamadı."
+    # Do not expose an English tool suffix after an authored Turkish explanation.
+    message = raw.splitlines()[0].strip() if raw else ""
+    def is_turkish(text):
+        return bool(re.search(r"[çğıöşüÇĞİÖŞÜ]", text) or re.search(
+            r"\b(?:bilinmeyen|temizlik|paket|dosya|yerel|hata|kurulum|profil|rapor|klon|kaynak|iptal)\b", text.lower()))
+    if re.search(r"(?:^|\s)(?:error|exception|failed|unable|cannot|invalid|unsupported|unexpected)\b|java\.[\w.]+", message, re.IGNORECASE):
+        prefix = message.split(":", 1)[0].strip()
+        return prefix + "." if is_turkish(prefix) else "İşlem bileşeni beklenmeyen bir hata nedeniyle tamamlanamadı."
+    return message if is_turkish(message) else "İşlem beklenmeyen bir hata nedeniyle tamamlanamadı."
 
 
-def public_error(error: BaseException) -> str:
+def public_error(error: BaseException, *, translate: bool = True) -> str:
     """Return a useful API error without disclosing local filesystem layout."""
-    message = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]+", " ", localized_error_message(error)).strip()
+    message = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]+", " ", localized_error_message(error) if translate else str(error or "")).strip()
     for sensitive in sorted(
         {str(DATA_ROOT), str(ROOT.parent), str(Path.home()), tempfile.gettempdir()},
         key=len,
@@ -121,9 +151,9 @@ def public_error(error: BaseException) -> str:
     return message[:1000] or "İşlem güvenli biçimde tamamlanamadı."
 
 
-def diagnostic_error(error: BaseException, *, identifiers: tuple[str, ...] = ()) -> str:
+def diagnostic_error(error: BaseException, *, identifiers: tuple[str, ...] = (), translate: bool = True) -> str:
     """Keep the error summary, not raw logs, credentials or private identifiers."""
-    raw = localized_error_message(error)
+    raw = localized_error_message(error) if translate else str(error or "")
     # Extra lines can contain a tool's command, log or Java traceback.
     message = next((line.strip() for line in raw.splitlines() if line.strip()), "")[:4096]
     for identifier in sorted(set(identifiers), key=len, reverse=True):
@@ -144,7 +174,7 @@ def diagnostic_error(error: BaseException, *, identifiers: tuple[str, ...] = ())
     message = re.sub(r'''(?<![\w])(?:[A-Za-z]:[\\/]|\\\\)[^\s<>"']+''', "[yerel-dosya]", message)
     message = re.sub(r'''(?<![\w])/(?:[^\s<>"']+)''', "[yerel-dosya]", message)
     message = re.sub(r"(?i)\b[\w.-]+\.(?:apk|apks|apkm|xapk|jks|keystore|p12|pfx)\b", "[paket-dosyası]", message)
-    message = public_error(RuntimeError(message))
+    message = public_error(RuntimeError(message), translate=translate)
     match = re.search(r"başarısız oldu \((-?\d{1,3})\)", raw)
     if match:
         message += f" · Gömülü araç çıkış kodu: {match.group(1)}"
@@ -159,6 +189,10 @@ def failure_diagnostic(error: BaseException, *, analysis: dict | None = None, pa
     profile = str(payload.get("profile", "balanced"))
     return {
         "kind": type(error).__name__[:80],
+        "technical_message": diagnostic_error(error, identifiers=tuple(
+            value for value in (analysis.get("filename"), analysis.get("package_name"), payload.get("clone_package_name"))
+            if isinstance(value, str) and value
+        ), translate=False),
         "message": diagnostic_error(error, identifiers=tuple(
             value for value in (analysis.get("filename"), analysis.get("package_name"), payload.get("clone_package_name"))
             if isinstance(value, str) and value
@@ -191,7 +225,10 @@ def diagnostic_report(job: Path | None, include_identifiers: bool = False) -> st
                 lines.append(f"İşlem türü: {operations.get(details['operation'], 'bilinmiyor')}")
             if "profile" in details:
                 lines.append(f"Temizlik profili: {profiles.get(details['profile'], 'bilinmiyor')}")
-            lines.extend([f"Hata türü: {details.get('kind', 'bilinmiyor')}",
+            kinds = {"KeyError": "Eksik kayıt", "RuntimeError": "İşlem hatası", "ValueError": "Geçersiz işlem verisi",
+                     "OSError": "Dosya veya sistem hatası", "FileNotFoundError": "Eksik dosya", "PermissionError": "Erişim izni hatası",
+                     "MemoryError": "Yetersiz bellek", "TimeoutError": "Zaman aşımı", "BadZipFile": "Bozuk paket arşivi"}
+            lines.extend([f"Hata türü: {kinds.get(details.get('kind'), 'İşlem hatası')}",
                           f"Açıklama: {details.get('message', 'bilinmiyor')}"])
             frames = details.get("frames")
             if isinstance(frames, list) and frames:
@@ -559,7 +596,7 @@ def print_startup_panel(url: str, browser_will_open: bool, network_url: str | No
 
 def print_startup_error(port: int, error: OSError) -> None:
     occupied = getattr(error, "winerror", None) == 10048 or getattr(error, "errno", None) in {48, 98}
-    reason = f"{port} numaralı bağlantı noktası başka bir program tarafından kullanılıyor." if occupied else str(error)
+    reason = f"{port} numaralı bağlantı noktası başka bir program tarafından kullanılıyor." if occupied else public_error(error)
     if is_termux_console():
         width = compact_console_width()
         rule = "━" * (width - 2)

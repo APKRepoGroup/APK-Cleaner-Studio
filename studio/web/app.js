@@ -258,7 +258,7 @@ globalThis.setNativeTheme = (theme) => {
 };
 
 function toast(message) {
-  const element = $("#toast"); element.textContent = message; element.classList.add("show");
+  const element = $("#toast"); element.textContent = userErrorMessage(message); element.classList.add("show");
   clearTimeout(toast.timer); toast.timer = setTimeout(() => element.classList.remove("show"), 5200);
 }
 
@@ -398,7 +398,7 @@ async function refreshDiagnosticPreview(stabilizeSize = false) {
     download.setAttribute("aria-disabled", "false");
   } catch (error) {
     if (generation === diagnosticGeneration) {
-      content.textContent = `Hata raporu açılamadı.\n\n${error.message || "Bilinmeyen hata"}`;
+      content.textContent = `Hata raporu açılamadı.\n\n${userErrorMessage(error)}`;
       content.dataset.identifiers = "false";
       download.removeAttribute("href");
       download.classList.remove("has-report");
@@ -858,7 +858,7 @@ async function scanMessageCandidates() {
     renderMessageCandidates(data.candidates || []);
     $("#messageReviewApply").disabled = false;
   } catch (error) {
-    if (generation === messageReviewGeneration) $("#messageCandidateList").innerHTML = `<p>${escapeHTML(error.message)}</p>`;
+    if (generation === messageReviewGeneration) $("#messageCandidateList").innerHTML = `<p>${escapeHTML(userErrorMessage(error))}</p>`;
   } finally {
     if (generation === messageReviewGeneration) { button.disabled = false; button.textContent = "Yeniden tara"; }
   }
@@ -914,7 +914,7 @@ async function openReportViewer(jobId, title = "Paket işlem raporu") {
     content.textContent = report.trim() || "Bu işlem için rapor içeriği bulunamadı.";
     content.scrollTop = 0;
   } catch (error) {
-    content.textContent = `Rapor görüntülenemedi.\n\n${error.message || "Bilinmeyen hata"}`;
+    content.textContent = `Rapor görüntülenemedi.\n\n${userErrorMessage(error)}`;
   }
 }
 
@@ -1124,7 +1124,7 @@ async function refreshStorage() {
     }).join("") : '<p class="fineprint">Temizlenecek işlem dosyası yok.</p>';
     $("#storageCleanButton").disabled = true;
     refreshNativeCacheStorage();
-  } catch (error) { $("#storageTitle").textContent = error.message || "Depolama bilgisi okunamadı."; }
+  } catch (error) { $("#storageTitle").textContent = userErrorMessage(error, "Depolama bilgisi okunamadı."); }
 }
 
 function refreshNativeCacheStorage() {
@@ -1980,6 +1980,28 @@ function clearJobFailure() {
   $("#diagnosticAfterFailure").classList.add("hidden");
 }
 
+function userErrorMessage(error, fallback = "İşlem beklenmeyen bir hata nedeniyle tamamlanamadı.") {
+  const message = String(error?.message || error || "").split(/\r?\n/)[0].trim();
+  const rules = [
+    [/no space left|disk (?:is )?full|not enough space/i, "İşlem için yeterli boş depolama alanı yok."],
+    [/outofmemory|out of memory|memoryerror/i, "İşlem için yeterli kullanılabilir bellek yok."],
+    [/permission denied|access.*denied|operation not permitted/i, "İşlem için gereken dosyaya erişim izni yok."],
+    [/no such file|file not found/i, "İşlem için gereken dosya bulunamadı."],
+    [/not a zip file|badzipfile|bad crc|corrupt.*archive|invalid.*zip/i, "Paket arşivi bozuk veya desteklenen biçimde değil."],
+    [/failed to fetch|network.*error|connection refused|connection reset|load failed/i, "Bağlantı kurulamadı. Ağ bağlantısını ve yerel işlem motorunu kontrol et."],
+    [/timed? out|timeout|time.?out/i, "İşlem zaman aşımına uğradı. Bağlantıyı ve işlem durumunu kontrol et."],
+    [/unexpected token|json.*(?:decode|parse)|invalid json/i, "İşlem yanıtı okunamadı veya geçerli biçimde değil."],
+  ];
+  const zip = message.match(/There is no item named ['"](.+)['"] in the archive/i);
+  if (zip) return `APK arşivinde beklenen dosya bulunamadı: "${zip[1]}".`;
+  for (const [pattern, translated] of rules) if (pattern.test(message)) return translated;
+  if (/(?:^|\s)(?:error|exception|failed|unable|cannot|invalid|unsupported|unexpected)\b|java\.[\w.]+/i.test(message)) {
+    const prefix = message.split(":")[0].trim();
+    return /[çğıöşüÇĞİÖŞÜ]|\b(?:bilinmeyen|temizlik|paket|dosya|yerel|hata|kurulum|profil|rapor|klon|kaynak|iptal)\b/i.test(prefix) ? `${prefix}.` : fallback;
+  }
+  return /[çğıöşüÇĞİÖŞÜ]/.test(message) || /\b(?:bilinmeyen|temizlik|paket|dosya|yerel|hata|kurulum|profil|rapor|klon|kaynak|hazır|iptal|geri|kaydedildi|silindi|bulunamadı|yok|tamamlandı|kuruldu|denetimi)\b/i.test(message) ? message : fallback;
+}
+
 function jobFailureAdvice(message, cancelled = false) {
   if (cancelled) return "Seçenekleri gözden geçirip işlemi yeniden başlatabilirsin.";
   if (/Yerel işlem alanı dolu|yeterli (?:boş )?alan|No space left on device/i.test(message)) {
@@ -1996,7 +2018,7 @@ function jobFailureAdvice(message, cancelled = false) {
 
 function renderJobFailure(error) {
   const cancelled = error.jobStatus === "cancelled";
-  const message = error.jobFailure?.message || error.message || "İşlem tamamlanamadı. Nedeni belirlenemedi.";
+  const message = userErrorMessage(error.jobFailure?.message || error);
   const panel = $("#jobFailure");
   panel.setAttribute("role", cancelled ? "status" : "alert");
   $("#jobFailureTitle").textContent = cancelled ? "İşlem iptal edildi" : "İşlem tamamlanamadı";

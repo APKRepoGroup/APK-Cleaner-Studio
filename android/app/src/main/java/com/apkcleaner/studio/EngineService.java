@@ -113,9 +113,7 @@ public final class EngineService extends Service {
     }
 
     private static String describe(Throwable error) {
-        String message = error.getMessage();
-        return error.getClass().getSimpleName()
-                + (message == null || message.trim().isEmpty() ? "" : ": " + message);
+        return UserErrorMessages.describe(error, "Yerel işlem motoru başlatılamadı. Hata raporunu inceleyip yeniden dene.");
     }
 
     private Notification notification(String text) {

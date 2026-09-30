@@ -282,9 +282,7 @@ public final class MainActivity extends Activity {
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         TextView detail = new TextView(this);
-        String message = error.getMessage();
-        detail.setText(error.getClass().getSimpleName()
-                + (message == null || message.trim().isEmpty() ? "" : "\n" + message));
+        detail.setText(UserErrorMessages.describe(error, "Uygulama başlatılamadı. Hata raporunu inceleyip yeniden dene."));
         detail.setTextSize(14);
         detail.setTextColor(light ? Color.rgb(83, 103, 94) : Color.rgb(143, 164, 154));
         detail.setGravity(Gravity.CENTER);
@@ -676,7 +674,7 @@ public final class MainActivity extends Activity {
                 } catch (Exception error) {
                     try {
                         publishInstalledImport(new JSONObject().put("error",
-                                error.getMessage() == null ? "Yüklü uygulama alınamadı." : error.getMessage()).toString());
+                                messageOf(error, "Yüklü uygulama alınamadı.")).toString());
                     } catch (Exception ignored) {}
                 } finally {
                     if (staged != null) staged.delete();
@@ -1238,7 +1236,7 @@ public final class MainActivity extends Activity {
     }
 
     private String messageOf(Exception error, String fallback) {
-        return error.getMessage() == null || error.getMessage().trim().isEmpty() ? fallback : error.getMessage();
+        return UserErrorMessages.describe(error, fallback);
     }
 
     private void publishNativeAction(String action, String payload) {
