@@ -5,8 +5,8 @@ Bu modül, Windows ve Termux sürümlerindeki ortak web arayüzünü uygulama i�
 ## Hedef paket
 
 - Uygulama kimliği: `com.apkrepo.apkcleanerstudio`
-- Sürüm adı: `0.6.3-dev.2`
-- Sürüm kodu: `6302`
+- Sürüm adı: `0.6.3-dev.3`
+- Sürüm kodu: `6303`
 - Minimum Android: 8.0 / API 26
 - Hedef mimariler: `arm64-v8a`, `armeabi-v7a`
 - Paketlenen diller: varsayılan İngilizce ve Türkçe

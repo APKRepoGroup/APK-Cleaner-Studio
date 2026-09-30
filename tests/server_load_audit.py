@@ -70,7 +70,7 @@ def main() -> int:
         targets = [urls[index % 2] for index in range(400)]
         with ThreadPoolExecutor(max_workers=40) as pool:
             results = list(pool.map(fetch, targets))
-        failures = [row for row in results if row[0] != 200 or row[2].get("version") != "0.6.3-dev.2"]
+        failures = [row for row in results if row[0] != 200 or row[2].get("version") != "0.6.3-dev.3"]
         if failures:
             raise RuntimeError(f"Yük testinde {len(failures)} hatalı yanıt alındı.")
         latencies = sorted(row[1] for row in results)

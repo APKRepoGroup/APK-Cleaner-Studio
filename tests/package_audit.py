@@ -15,7 +15,7 @@ import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "0.6.3-dev.2"
+VERSION = "0.6.3-dev.3"
 EXE = ROOT / "outputs" / f"APK-Cleaner-Studio-v{VERSION}-Windows.exe"
 TERMUX = ROOT / "outputs" / f"APK-Cleaner-Studio-v{VERSION}-Termux.zip"
 
@@ -68,7 +68,7 @@ def audit_termux() -> dict:
             "studio/web/theme.css", "studio/web/ui-runtime.js",
             "studio/tools/direct-dex-patcher.jar", "studio/tools/binary-xml-patcher.jar",
             "install-termux.sh", "start-termux.sh", "README.md", "README-TR.md", "README-TERMUX.md",
-            "RELEASE-NOTES-v0.6.3-dev.2.md", "VERSION.txt",
+            "RELEASE-NOTES-v0.6.3-dev.3.md", "VERSION.txt",
         ):
             source = ROOT / relative
             if archive.read(relative) != source.read_bytes():

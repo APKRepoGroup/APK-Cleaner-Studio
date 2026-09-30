@@ -2,7 +2,8 @@
 param(
   [ValidateSet("Debug", "Release")]
   [string]$Variant = "Debug",
-  [string]$OutputName = "APK-Cleaner-Studio-v0.6.3-dev.2-Android.apk"
+  [string]$OutputName = "APK-Cleaner-Studio-v0.6.3-dev.3-Android.apk",
+  [switch]$Offline
 )
 
 $ErrorActionPreference = "Stop"
@@ -64,7 +65,7 @@ if (-not $env:APK_CLEANER_SHORT_PATH_BUILD -and $ProjectRoot.Length -gt 80) {
     if ($LASTEXITCODE -ne 0) { throw "$SdkDrive kısa SDK yolu kurulamadı." }
     $env:APK_CLEANER_SHORT_PATH_BUILD = "1"
     $env:ANDROID_SDK_ROOT = "$SdkDrive\"
-    & "$ProjectDrive\android\build-android.ps1" -Variant $Variant -OutputName $OutputName
+    & "$ProjectDrive\android\build-android.ps1" -Variant $Variant -OutputName $OutputName -Offline:$Offline
     return
   } finally {
     Remove-Item Env:APK_CLEANER_SHORT_PATH_BUILD -ErrorAction SilentlyContinue
@@ -105,7 +106,9 @@ try {
   # Windows/JDK zipfs bazen sınıf yolu JAR'ını Gradle daemonunda kilitli
   # bırakabiliyor. Tek kullanımlık süreç bu kilidi ve sonraki derleme hatasını
   # önler; üretilen APK içeriğini etkilemez.
-  & $Gradle clean "assemble$Variant" --no-daemon --max-workers=1 --stacktrace --no-problems-report
+  $BuildArguments = @("clean", "assemble$Variant", "--no-daemon", "--max-workers=1", "--stacktrace", "--no-problems-report")
+  if ($Offline) { $BuildArguments += "--offline" }
+  & $Gradle @BuildArguments
   if ($LASTEXITCODE -ne 0) { throw "Android $Variant derlemesi başarısız oldu." }
 } finally {
   Pop-Location
