@@ -19,6 +19,19 @@ from server import StudioHandler, _ACTIVE_JOBS, _ACTIVE_JOBS_LOCK, _BLOCKED_CLIE
 
 
 class LocalRequestSecurityTests(unittest.TestCase):
+    def test_zip_missing_item_is_turkish_and_sensitive_paths_stay_redacted(self):
+        from server import public_error
+        error = KeyError("There is no item named 'assets/audience_network/classes.dex' in the archive")
+        for message in (public_error(error), failure_diagnostic(error)["message"]):
+            self.assertIn("APK arşivinde beklenen dosya bulunamadı", message)
+            self.assertIn("assets/audience_network/classes.dex", message)
+            self.assertNotIn("There is no item named", message)
+        private = KeyError("There is no item named 'C:/Users/Private Person/private.dex' in the archive")
+        message = failure_diagnostic(private)["message"]
+        self.assertIn("APK arşivinde beklenen dosya bulunamadı", message)
+        self.assertNotIn("Private Person", message)
+        self.assertNotIn("Person/private.dex", message)
+
     def test_job_reports_original_split_archive_size_not_merged_apk_size(self):
         with tempfile.TemporaryDirectory() as name, mock.patch("server.JOBS", Path(name)):
             job_id = "e" * 32

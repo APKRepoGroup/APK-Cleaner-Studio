@@ -102,9 +102,15 @@ UA_CLIENT_HINTS = "Sec-CH-UA-Model, Sec-CH-UA-Platform, Sec-CH-UA-Platform-Versi
 CLIENT_COOKIE_NAME = "apk_cleaner_client_id"
 
 
+def localized_error_message(error: BaseException) -> str:
+    raw = str(error.args[0]) if isinstance(error, KeyError) and error.args else str(error or "")
+    match = re.fullmatch(r"There is no item named (['\"])(.+)\1 in the archive", raw)
+    return f'APK arşivinde beklenen dosya bulunamadı: "{match.group(2)}".' if match else str(error or "")
+
+
 def public_error(error: BaseException) -> str:
     """Return a useful API error without disclosing local filesystem layout."""
-    message = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]+", " ", str(error or "")).strip()
+    message = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]+", " ", localized_error_message(error)).strip()
     for sensitive in sorted(
         {str(DATA_ROOT), str(ROOT.parent), str(Path.home()), tempfile.gettempdir()},
         key=len,
@@ -117,7 +123,7 @@ def public_error(error: BaseException) -> str:
 
 def diagnostic_error(error: BaseException, *, identifiers: tuple[str, ...] = ()) -> str:
     """Keep the error summary, not raw logs, credentials or private identifiers."""
-    raw = str(error or "")
+    raw = localized_error_message(error)
     # Extra lines can contain a tool's command, log or Java traceback.
     message = next((line.strip() for line in raw.splitlines() if line.strip()), "")[:4096]
     for identifier in sorted(set(identifiers), key=len, reverse=True):
