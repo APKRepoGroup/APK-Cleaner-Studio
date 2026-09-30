@@ -1190,6 +1190,7 @@ async function loadHistoryJob(jobId) {
     const analysis = data.analysis;
     state.file = null; state.jobId = data.job_id; state.analysis = analysis; state.operation = "patch";
     clearJobFailure();
+    $("#restrictStoreUpdates").checked = false;
     const badge = String(analysis.source_type || "apk").toUpperCase();
     $("#fileCard").innerHTML = `<div class="apk">${escapeHTML(badge)}</div><div><b>${escapeHTML(analysis.filename)}</b><span>${humanSize(analysis.size || 0)} · Geçmiş işlem yeniden açıldı</span></div>`;
     renderNetworks(analysis); renderSplitOptions(analysis.split_options);
@@ -1563,6 +1564,9 @@ function renderTools(tools) {
   setupButton.setAttribute("aria-hidden", String(!setupNeeded));
   $("#optimizeApk").disabled = !tools.zipalign;
   $("#optimizeApk").closest(".option").classList.toggle("option-unavailable", !tools.zipalign);
+  $("#restrictStoreUpdates").disabled = !tools.manifest_tool;
+  $("#restrictStoreUpdates").closest(".option").classList.toggle("option-unavailable", !tools.manifest_tool);
+  if (!tools.manifest_tool) $("#restrictStoreUpdates").checked = false;
 }
 
 function renderNetworks(analysis) {
@@ -1768,7 +1772,7 @@ function updateActionState() {
   const hasAds = Number(state.analysis.network_count || 0) > 0;
   const wantsAds = hasAds && ((state.operation === "patch" && state.patchAdsSelected) || (state.operation !== "patch" && $("#patchAds").checked));
   updateAdProfileAvailability(wantsAds);
-  const hasIndependentPatch = $("#stripDebug").checked || $("#normalizeDex").checked || $("#optimizeApk").checked || $("#deobfuscateResources").checked || state.messageTargets.length > 0;
+  const hasIndependentPatch = $("#stripDebug").checked || $("#normalizeDex").checked || $("#optimizeApk").checked || $("#deobfuscateResources").checked || $("#restrictStoreUpdates").checked || state.messageTargets.length > 0;
   const canRun = state.operation === "clone" ? validClonePackageName() : state.operation === "convert" || wantsAds || hasIndependentPatch;
   $("#profileSection").classList.toggle("soft-disabled", !wantsAds);
   $(".manifest-note").classList.toggle("hidden", !wantsAds || state.profile === "safe");
@@ -1806,6 +1810,7 @@ function currentPresetOptions() {
     profile: state.profile,
     patchAds: state.operation !== "patch" ? $("#patchAds").checked : state.patchAdsSelected,
     stripDebug: $("#stripDebug").checked,
+    restrictStoreUpdates: $("#restrictStoreUpdates").checked,
     normalizeDex: $("#normalizeDex").checked,
     optimizeApk: $("#optimizeApk").checked,
     deobfuscateResources: $("#deobfuscateResources").checked,
@@ -1824,8 +1829,8 @@ function applySavedPreset() {
   state.patchAdsSelected = hasAds && Boolean(options.patchAds);
   $("#patchAds").checked = hasAds && Boolean(options.patchAds);
   for (const [key, selector] of Object.entries({
-    stripDebug: "#stripDebug", normalizeDex: "#normalizeDex", optimizeApk: "#optimizeApk", deobfuscateResources: "#deobfuscateResources"
-  })) $(selector).checked = Boolean(options[key]);
+    stripDebug: "#stripDebug", normalizeDex: "#normalizeDex", optimizeApk: "#optimizeApk", deobfuscateResources: "#deobfuscateResources", restrictStoreUpdates: "#restrictStoreUpdates"
+  })) $(selector).checked = Boolean(options[key]) && !$(selector).disabled;
   $$(".operation").forEach((button) => {
     const selected = button.dataset.operation === operation && (operation !== "patch" || state.patchAdsSelected);
     button.classList.toggle("selected", selected);
@@ -1873,6 +1878,7 @@ async function deleteSavedPreset() {
 
 function prepareAnalysisView(name, size, split = false) {
   clearJobFailure();
+  $("#restrictStoreUpdates").checked = false;
   state.operation = "patch"; setStep(2); showView("#analysisView");
   const ext = extension(name) || ".apk";
   $("#fileCard").innerHTML = `<div class="apk">${escapeHTML(ext.slice(1).toUpperCase())}</div><div><b>${escapeHTML(name)}</b><span>${humanSize(size)} · ${split ? "Split modüller birleştirilecek" : "Yerel analiz"}</span></div>`;
@@ -1880,6 +1886,7 @@ function prepareAnalysisView(name, size, split = false) {
 }
 
 function applyAnalysisResult(data) {
+  $("#restrictStoreUpdates").checked = false;
   state.messageTargets = []; state.messageCandidates = [];
   state.jobId = data.job_id; state.analysis = data.analysis; renderNetworks(data.analysis); renderSplitOptions(data.analysis.split_options);
   clearJobFailure();
@@ -2050,6 +2057,11 @@ function renderResultSummary(result) {
   $("#resultVerification").textContent = summary.verification;
   $("#resultVerification").classList.toggle("verified", summary.verified);
   $("#resultRemovedFiles").textContent = summary.removed;
+  const storeUpdates = $("#resultStoreUpdates");
+  storeUpdates.classList.toggle("hidden", !result.store_updates);
+  storeUpdates.textContent = result.store_updates
+    ? `Play Store güncellemesini kapat: ${result.store_updates.changed ? "uygulandı" : "mevcut yüksek kod korundu"}. Dahili sürüm kodu: ${result.store_updates.version_code_before} → ${result.store_updates.version_code_after}.`
+    : "";
   const details = $("#resultDetails");
   setInlineDisclosureOpen(details, false);
 }
@@ -2107,7 +2119,8 @@ async function runJob() {
   if (state.operation === "clone" && !validClonePackageName()) { toast("Klon için özgün addan farklı, geçerli bir paket adı gir."); return; }
   const needsDex = state.operation === "clone" || patchAds || $("#stripDebug").checked || $("#normalizeDex").checked;
   const needsResources = $("#deobfuscateResources").checked;
-  if (state.toolchain && (!state.toolchain.signer || (needsDex && !state.toolchain.dex_tools) || (state.operation === "clone" && !state.toolchain.manifest_tool) || (needsResources && !state.toolchain.resource_tool))) {
+  const needsManifest = state.operation === "clone" || $("#restrictStoreUpdates").checked;
+  if (state.toolchain && (!state.toolchain.signer || (needsDex && !state.toolchain.dex_tools) || (needsManifest && !state.toolchain.manifest_tool) || (needsResources && !state.toolchain.resource_tool))) {
     toast("İşlem için önce eksik bileşenleri hazırla."); $("#toolCard").scrollIntoView({ behavior: "smooth", block: "center" }); return;
   }
   setJobRunning(true);
@@ -2121,6 +2134,7 @@ async function runJob() {
       job_id: state.jobId, profile: state.profile, operation: state.operation, patch_ads: patchAds,
       clone_package_name: state.operation === "clone" ? $("#clonePackageName").value.trim() : null,
       strip_debug: $("#stripDebug").checked, normalize_dex: $("#normalizeDex").checked, optimize_apk: $("#optimizeApk").checked,
+      restrict_store_updates: $("#restrictStoreUpdates").checked,
       deobfuscate_resources: $("#deobfuscateResources").checked, normalize_resources: false,
       message_targets: state.messageTargets,
       split_selection: state.analysis?.split_merged ? state.splitSelection : null
@@ -2131,7 +2145,7 @@ async function runJob() {
     updateProgress(100, "Tamamlandı"); await waitForProgress(100);
     const patchCount = result.patches.void_patches + result.patches.boolean_patches;
     renderResultSummary(result);
-    $("#resultTitle").textContent = result.operation === "clone" ? "Klon APK oluşturuldu." : result.operation === "convert" ? "Tek APK başarıyla oluşturuldu." : "Temizlenmiş APK kullanıma hazır.";
+    $("#resultTitle").textContent = result.operation === "clone" ? "Klon APK oluşturuldu." : result.operation === "convert" ? "Tek APK başarıyla oluşturuldu." : result.cleaning_profile_applied === null ? "İşlenmiş APK kullanıma hazır." : "Temizlenmiş APK kullanıma hazır.";
     $("#resultStats").innerHTML = result.operation === "clone"
       ? `<div><b>${result.clone?.dex_strings_changed || 0}</b><span>DEX kimliği</span></div><div><b>${result.clone?.changes?.length || 0}</b><span>Manifest alanı</span></div><div><b>${patchCount}</b><span>Reklam yaması</span></div><div><b>${result.layouts?.count || 0}</b><span>XML alanı</span></div>`
       : `<div><b>${patchCount}</b><span>DEX yaması</span></div><div><b>${result.manifest.count}</b><span>Manifest kaydı</span></div><div><b>${result.layouts?.count || 0}</b><span>XML alanı</span></div><div><b>${result.patches.debug_directives_removed || 0}</b><span>Hata ayıklama yönergesi</span></div>`;
@@ -2173,6 +2187,7 @@ function reset() {
   Object.assign(state, { file: null, jobId: null, analysis: null, profile: "balanced", operation: "patch", patchAdsSelected: true, splitSelection: { abis: [], languages: [] }, messageTargets: [], messageCandidates: [], pollInFlight: false, jobRunning: false, outputUrl: "", outputFilename: "", nativeInstallBusy: false, nativeShareBusy: false, nativeSplitInstallBusy: false, splitInstallRequestJobId: null, splitInstallSubmitted: false, installedSharePackage: "" });
   setJobRunning(false);
   resetProgress();
+  $("#restrictStoreUpdates").checked = false;
   $("#fileInput").value = ""; $("#cleanButton").disabled = false; $("#stripDebug").checked = false; $("#normalizeDex").checked = false; $("#optimizeApk").checked = false; $("#deobfuscateResources").checked = false; $("#patchAds").checked = false;
   $("#clonePackageName").value = ""; $("#cloneOptions").classList.add("hidden");
   $("#patchAvailabilityNote").classList.add("hidden"); $("#cloneAvailabilityNote").classList.add("hidden");
@@ -2236,7 +2251,7 @@ $("#savedPresetSelect").addEventListener("change", () => renderSavedPresets());
 $("#applyPresetButton").addEventListener("click", applySavedPreset);
 $("#savePresetButton").addEventListener("click", saveCurrentPreset);
 $("#deletePresetButton").addEventListener("click", deleteSavedPreset);
-["#stripDebug", "#normalizeDex", "#optimizeApk", "#deobfuscateResources"].forEach((selector) => {
+["#stripDebug", "#normalizeDex", "#optimizeApk", "#deobfuscateResources", "#restrictStoreUpdates"].forEach((selector) => {
   $(selector).addEventListener("change", updateActionState);
   $(selector).addEventListener("input", updateActionState);
 });

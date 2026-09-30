@@ -52,7 +52,7 @@ class Handler(SimpleHTTPRequestHandler):
             <button onclick="setNativeVisibility(true)">QA Ön plan</button>
             <button onclick="applyTheme('light')">QA Açık</button><button onclick="applyTheme('dark')">QA Koyu</button>
             </nav>'''
-            if capture in {"analysis", "analysis-apk", "result", "failure"}:
+            if capture in {"analysis", "analysis-apk", "result", "failure", "store-updates"}:
                 html = html.replace(
                     "</head>",
                     "<style>.hero,#mobileHttpsBanner,.starter-content,footer{display:none!important}.workspace{margin-top:24px!important}</style></head>",
@@ -71,6 +71,7 @@ class Handler(SimpleHTTPRequestHandler):
                 "apps": "setTimeout(()=>openInstalledApps(),900);",
                 "analysis": "setTimeout(()=>qaAnalysis(true,false),1100);",
                 "analysis-apk": "setTimeout(()=>qaAnalysis(true,false,false),1100);",
+                "store-updates": "setTimeout(()=>{qaAnalysis(false,false,false);document.querySelector('#restrictStoreUpdates').closest('.option').scrollIntoView({block:'center'});},1100);",
                 "messages": "setTimeout(()=>{qaAnalysis(true,false);setTimeout(()=>openMessageReview(),450);},900);",
                 "working": "setTimeout(()=>{showView('#workingView');resetProgress();updateProgress(50,'Yerel işlem sürüyor');},1100);",
                 "result": "setTimeout(()=>{qaAnalysis(true,false,false);runJob();},1100);",
@@ -118,7 +119,7 @@ class Handler(SimpleHTTPRequestHandler):
         raw = self.rfile.read(int(self.headers.get("Content-Length", "0")))
         if urlsplit(self.path).path == "/api/clean":
             capture = parse_qs(urlsplit(self.headers.get("Referer", "")).query).get("capture", [""])[0]
-            if capture == "result":
+            if capture in {"result", "store-updates"}:
                 payload = json.loads(raw or b"{}")
                 result = {"operation": payload.get("operation", "patch"), "output": "Ornek-sonuc.apk", "signed": True,
                     "source_size_bytes": 52_428_800, "output_size_bytes": 48_234_496, "duration_seconds": 74.2,
@@ -126,6 +127,11 @@ class Handler(SimpleHTTPRequestHandler):
                     "patches": {"void_patches": 14, "boolean_patches": 3, "debug_directives_removed": 28},
                     "manifest": {"count": 6}, "layouts": {"count": 2}, "removed_files": ["assets/example-ad.json"],
                     "verification": {"passed": True, "archive_crc": "ok", "manifest": "ok", "signature": "ok"}}
+                if capture == "store-updates":
+                    result.update(store_updates={"version_code_before": 42, "version_code_after": 2100000000,
+                                  "version_code_major": 0, "changed": True} if payload.get("restrict_store_updates") else None,
+                                  patches={"void_patches": 0, "boolean_patches": 0, "debug_directives_removed": 0},
+                                  manifest={"count": 0}, layouts={"count": 0}, removed_files=[])
                 self.reply(json.dumps({"status": "done", "result": result}))
             else:
                 self.reply('{"status":"working"}')

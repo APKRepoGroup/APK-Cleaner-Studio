@@ -26,6 +26,7 @@ public final class BinaryManifestPatcher {
     private static final Set<String> COMPONENT_TAGS = new LinkedHashSet<String>();
     private static final Set<String> PERMISSION_TAGS = new LinkedHashSet<String>();
     private static final String ANDROID_URI = "http://schemas.android.com/apk/res/android";
+    private static final int STORE_UPDATE_VERSION_CODE = 2100000000;
 
     static {
         Collections.addAll(COMPONENT_TAGS, "activity", "activity-alias", "service", "receiver", "provider");
@@ -39,6 +40,8 @@ public final class BinaryManifestPatcher {
         final List<String> metadata = new ArrayList<String>();
         final Set<String> permissions = new LinkedHashSet<String>();
         boolean inspectPackage;
+        boolean inspectVersion;
+        boolean restrictStoreUpdates;
         String clonePackage;
     }
 
@@ -54,6 +57,11 @@ public final class BinaryManifestPatcher {
         }
         if (options.inspectPackage) {
             System.out.println("PACKAGE\t" + originalPackage);
+            return;
+        }
+        if (options.inspectVersion) {
+            System.out.println("VERSION\t" + versionField(manifest, "versionCode") + "\t"
+                    + versionField(manifest, "versionCodeMajor"));
             return;
         }
         List<ResXmlElement> removals = new ArrayList<ResXmlElement>();
@@ -91,6 +99,14 @@ public final class BinaryManifestPatcher {
             cloneManifest(manifest, originalPackage, options.clonePackage, cloneChanges, cloneWarnings, authorityChanges);
         }
 
+        int versionBefore = 0, versionAfter = 0, versionMajor = 0;
+        if (options.restrictStoreUpdates) {
+            versionBefore = versionField(manifest, "versionCode");
+            versionMajor = versionField(manifest, "versionCodeMajor");
+            versionAfter = Math.max(versionBefore, STORE_UPDATE_VERSION_CODE);
+            manifest.setVersionCode(versionAfter);
+        }
+
         Map<String, Integer> referencesBefore = referenceMultiset(manifest);
         manifest.refreshFull();
         manifest.writeBytes(options.output);
@@ -101,6 +117,15 @@ public final class BinaryManifestPatcher {
         }
         if (options.clonePackage != null && !options.clonePackage.equals(written.getPackageName())) {
             throw new IllegalStateException("Cloned package name was not retained in output manifest");
+        }
+        if (options.restrictStoreUpdates) {
+            if (versionField(written, "versionCode") != versionAfter
+                    || versionField(written, "versionCodeMajor") != versionMajor
+                    || !safe(manifest.getVersionName()).equals(safe(written.getVersionName()))
+                    || !safe(manifest.getPackageName()).equals(safe(written.getPackageName()))) {
+                throw new IllegalStateException("Version restriction was not retained in output manifest");
+            }
+            System.out.println("VERSION_CHANGE\t" + versionBefore + "\t" + versionAfter + "\t" + versionMajor);
         }
 
         for (String description : descriptions) {
@@ -209,6 +234,20 @@ public final class BinaryManifestPatcher {
         return null;
     }
 
+    private static int versionField(AndroidManifestBlock manifest, String name) {
+        ResXmlElement root = manifest.getManifestElement();
+        if (root == null) throw new IllegalStateException("Manifest root is missing");
+        ResXmlAttribute attribute = androidAttribute(root, name);
+        if (attribute == null) return 0;
+        ValueType type = attribute.getValueType();
+        if (type != ValueType.DEC && type != ValueType.HEX) {
+            throw new IllegalStateException("Non-integer " + name + " cannot be modified safely");
+        }
+        int value = attribute.getData();
+        if (value < 0) throw new IllegalStateException("Negative " + name + " cannot be modified safely");
+        return value;
+    }
+
     private static void qualifyClassAttribute(ResXmlElement element, String name, String originalPackage,
                                               List<String> changes) {
         ResXmlAttribute attribute = androidAttribute(element, name);
@@ -286,16 +325,22 @@ public final class BinaryManifestPatcher {
                 options.permissions.add(requireValue(args, ++i, arg));
             } else if ("--inspect-package".equals(arg)) {
                 options.inspectPackage = true;
+            } else if ("--inspect-version".equals(arg)) {
+                options.inspectVersion = true;
+            } else if ("--restrict-store-updates".equals(arg)) {
+                options.restrictStoreUpdates = true;
             } else if ("--clone-package".equals(arg)) {
                 options.clonePackage = requireValue(args, ++i, arg);
             } else {
                 throw new IllegalArgumentException("Unknown argument: " + arg);
             }
         }
-        if (options.input == null || (!options.inspectPackage && options.output == null)) {
+        boolean inspecting = options.inspectPackage || options.inspectVersion;
+        if (options.input == null || (!inspecting && options.output == null)) {
             throw new IllegalArgumentException("--input and --output are required unless inspecting package");
         }
-        if (options.inspectPackage && options.clonePackage != null) {
+        if ((inspecting && (options.clonePackage != null || options.restrictStoreUpdates))
+                || (options.inspectPackage && options.inspectVersion)) {
             throw new IllegalArgumentException("Package inspection and cloning cannot be combined");
         }
         return options;

@@ -1293,6 +1293,9 @@ def _execute_clean_job(job_id: str, payload: dict) -> None:
             raise ValueError("Klon için yeni paket adını gir.")
         strip_debug = bool(payload.get("strip_debug", False))
         normalize_dex = bool(payload.get("normalize_dex", False))
+        restrict_store_updates = payload.get("restrict_store_updates", False)
+        if not isinstance(restrict_store_updates, bool):
+            raise ValueError("Play Store güncelleme seçeneği geçersiz.")
         optimize_apk = bool(payload.get("optimize_apk", False))
         deobfuscate_resources = bool(payload.get("deobfuscate_resources", False))
         normalize_resources = bool(payload.get("normalize_resources", False))
@@ -1339,6 +1342,7 @@ def _execute_clean_job(job_id: str, payload: dict) -> None:
             patch_ads=patch_ads,
             strip_debug=strip_debug,
             normalize_dex=normalize_dex,
+            restrict_store_updates=restrict_store_updates,
             optimize_apk=optimize_apk,
             deobfuscate_resources=deobfuscate_resources,
             normalize_resources=normalize_resources,

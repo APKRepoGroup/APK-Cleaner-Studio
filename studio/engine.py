@@ -220,6 +220,26 @@ def inspect_manifest_package(manifest_bytes: bytes, tools: Toolchain) -> str:
         return package if PACKAGE_NAME_PATTERN.fullmatch(package) else ""
 
 
+def inspect_manifest_version(manifest_bytes: bytes, tools: Toolchain) -> tuple[int, int]:
+    if not tools.java or not tools.binary_manifest_patcher or not tools.apkeditor:
+        raise RuntimeError("Sürüm kodunu doğrulamak için manifest bileşeni hazır değil.")
+    with _temporary_directory(prefix="apkcleaner-version-") as temp_name:
+        manifest = Path(temp_name) / "AndroidManifest.xml"
+        manifest.write_bytes(manifest_bytes)
+        log: list[str] = []
+        run_checked([
+            tools.java, "-cp", os.pathsep.join((str(tools.apkeditor), str(tools.binary_manifest_patcher))),
+            "local.apkcleaner.xml.BinaryManifestPatcher", "--input", str(manifest), "--inspect-version",
+        ], log)
+    for line in log:
+        match = re.fullmatch(r"VERSION\t(\d+)\t(\d+)", line)
+        if match:
+            values = tuple(int(value) for value in match.groups())
+            if all(0 <= value <= 2147483647 for value in values):
+                return values
+    raise RuntimeError("Çıktı doğrulanamadı: sürüm kodu güvenli biçimde okunamadı.")
+
+
 def _android_archive_package(apk_path: Path) -> str:
     if os.environ.get("APK_CLEANER_ANDROID") != "1":
         return ""
@@ -239,6 +259,7 @@ def verify_output_apk(
     *,
     removed_files: set[str] | None = None,
     expected_package_name: str | None = None,
+    expected_version: tuple[int, int] | None = None,
 ) -> dict:
     """Fail closed before a generated APK is offered for download/install."""
     validate_package_archive(output)
@@ -272,6 +293,9 @@ def verify_output_apk(
             actual_package_name = inspect_manifest_package(produced.read("AndroidManifest.xml"), tools)
             if actual_package_name != expected_package_name:
                 raise RuntimeError("Çıktı doğrulanamadı: klon paket adı manifestte korunmadı.")
+        if expected_version is not None:
+            if inspect_manifest_version(produced.read("AndroidManifest.xml"), tools) != expected_version:
+                raise RuntimeError("Çıktı doğrulanamadı: Play Store güncelleme seçeneğinin sürüm kodu korunmadı.")
 
     if os.environ.get("APK_CLEANER_ANDROID") == "1":
         try:
@@ -922,6 +946,7 @@ def patch_manifest_binary(
     detected_ids: set[str],
     log: list[str],
     clone_package_name: str | None = None,
+    restrict_store_updates: bool = False,
 ) -> dict:
     """Patch binary AXML without decoding or rebuilding its resource table."""
     if not tools.java or not tools.apkeditor or not tools.binary_manifest_patcher:
@@ -957,6 +982,8 @@ def patch_manifest_binary(
             command.extend(("--permission", value))
     if clone_package_name:
         command.extend(("--clone-package", clone_package_name))
+    if restrict_store_updates:
+        command.append("--restrict-store-updates")
     manifest_log: list[str] = []
     run_checked(command, manifest_log)
     log.extend(manifest_log)
@@ -968,6 +995,19 @@ def patch_manifest_binary(
             count = int(match.group(1))
     if not destination.is_file():
         raise RuntimeError("Doğrudan manifest motoru çıktı üretmedi.")
+    store_updates = None
+    if restrict_store_updates:
+        for line in manifest_log:
+            match = re.fullmatch(r"VERSION_CHANGE\t(\d+)\t(\d+)\t(\d+)", line)
+            if match:
+                before, after, major = (int(value) for value in match.groups())
+                if not (0 <= before <= after <= 2147483647 and after >= 2100000000 and 0 <= major <= 2147483647):
+                    break
+                store_updates = {"version_code_before": before, "version_code_after": after,
+                                 "version_code_major": major, "changed": before != after}
+                break
+        if store_updates is None:
+            raise RuntimeError("Play Store güncelleme seçeneği uygulanamadı: sürüm kodu değişikliği doğrulanamadı.")
     return {
         "removed": removed,
         "count": count,
@@ -979,6 +1019,7 @@ def patch_manifest_binary(
         },
         "references_preserved": True,
         "engine": "binary-axml",
+        "store_updates": store_updates,
     }
 
 
@@ -1578,7 +1619,10 @@ def process_apk(
     analysis_report: dict | None = None,
     message_targets: list[str] | None = None,
     clone_package_name: str | None = None,
+    restrict_store_updates: bool = False,
 ) -> dict:
+    if not isinstance(restrict_store_updates, bool):
+        raise ValueError("Play Store güncelleme seçeneği geçersiz.")
     if mode not in {"safe", "balanced", "deep"}:
         raise ValueError("Bilinmeyen temizlik profili.")
     # The server already inspected ordinary APK uploads. Reuse that immutable
@@ -1618,7 +1662,7 @@ def process_apk(
     if optimize_apk and not tools.zipalign:
         raise RuntimeError("APK optimizasyonu için zipalign bileşeni hazır değil. ‘Eksik bileşenleri hazırla’ düğmesini kullan.")
     needs_manifest = bool(patch_ads and mode in {"balanced", "deep"} and report["manifest_hits"])
-    if (needs_manifest or clone_package_name) and not tool_status["manifest_tool"]:
+    if (needs_manifest or clone_package_name or restrict_store_updates) and not tool_status["manifest_tool"]:
         raise RuntimeError("Doğrudan manifest bileşeni hazır değil. ‘Eksik bileşenleri hazırla’ düğmesini kullan.")
     if not tool_status["signer"]:
         raise RuntimeError("APK imzalama bileşeni hazır değil. ‘Eksik bileşenleri hazırla’ düğmesini kullan.")
@@ -1642,20 +1686,22 @@ def process_apk(
 
     with _temporary_directory(prefix="apkcleaner-") as temp_name:
         temp = Path(temp_name)
-        manifest_result = {"removed": [], "count": 0, "skipped": True, "clone_changes": [], "clone_warnings": [], "authority_changes": {}}
+        manifest_result = {"removed": [], "count": 0, "skipped": True, "clone_changes": [], "clone_warnings": [], "authority_changes": {}, "store_updates": None}
         manifest_output = temp / "AndroidManifest-patched.bin"
         clone_strings: dict[str, str] = {}
-        if clone_package_name:
-            notify("Klonun paket kimliği hazırlanıyor", 10)
+        if clone_package_name or restrict_store_updates:
+            notify("Klonun paket kimliği hazırlanıyor" if clone_package_name else "Play Store güncelleme seçeneği uygulanıyor", 10)
             manifest_source = temp / "AndroidManifest-original.bin"
             with zipfile.ZipFile(apk_path) as archive:
                 manifest_source.write_bytes(archive.read("AndroidManifest.xml"))
             manifest_result = patch_manifest_binary(
                 manifest_source, manifest_output, tools, detected_ids if needs_manifest else set(), log,
                 clone_package_name=clone_package_name,
+                restrict_store_updates=restrict_store_updates,
             )
             manifest_result["skipped"] = False
-            clone_strings = {original_package_name: clone_package_name, **manifest_result["authority_changes"]}
+            if clone_package_name:
+                clone_strings = {original_package_name: clone_package_name, **manifest_result["authority_changes"]}
         dex_names = [
             row["name"] for row in report["dex"]
             if clone_package_name or strip_debug or normalize_dex or row["name"] in targets_by_dex or (patch_ads and row["networks"])
@@ -1707,14 +1753,14 @@ def process_apk(
 
         remove_files = deep_removals(apk_path, detected_ids) if patch_ads and mode == "deep" else set()
         archive_replacements = dict(dex_replacements)
-        if clone_package_name:
+        if clone_package_name or restrict_store_updates:
             archive_replacements["AndroidManifest.xml"] = manifest_output
 
         layout_result = {"hidden": [], "changes": [], "count": 0, "changed_files": 0, "archive_entries": [], "skipped": True}
         unsigned = apk_path
         # Yalnızca gerçekten aday kayıt taşıyan paketlerde XML katmanını aç.
         # DEX dosyaları bu aşamada ham kopyalanır; metin ara biçimine dönüştürülmez.
-        should_patch_manifest = needs_manifest and not clone_package_name
+        should_patch_manifest = needs_manifest and not (clone_package_name or restrict_store_updates)
         # Binary AXML string havuzu, hızlı arşiv taramasında her zaman görünmez.
         # Doğrulanmış bir reklam SDK'sı varsa XML katmanını ilk çalıştırmada açıp
         # gerçek öğe ağacında denetle; ikinci yama gerektiren eski önkoşulu kaldır.
@@ -1835,7 +1881,7 @@ def process_apk(
         stem = Path(source_name or apk_path.name).stem
         has_optional_changes = bool(
             strip_debug or normalize_dex or optimize_apk or deobfuscate_resources
-            or normalize_resources or selected_message_targets
+            or normalize_resources or selected_message_targets or restrict_store_updates
         )
         if clone_package_name:
             output_name = f"{stem}-clone{'-clean-' + mode if patch_ads else ''}.apk"
@@ -1856,7 +1902,10 @@ def process_apk(
         if not signed:
             raise RuntimeError(sign_warning or "İmzasız APK kullanıcıya sunulamaz.")
         notify("Çıktının bütünlüğü ve imzası doğrulanıyor", 96)
-        verification = verify_output_apk(apk_path, actual_output, tools, log, removed_files=remove_files, expected_package_name=clone_package_name)
+        store_updates = manifest_result.get("store_updates")
+        expected_version = (store_updates["version_code_after"], store_updates["version_code_major"]) if store_updates else None
+        verification = verify_output_apk(apk_path, actual_output, tools, log, removed_files=remove_files,
+                                         expected_package_name=clone_package_name, expected_version=expected_version)
 
     with zipfile.ZipFile(apk_path) as before_archive, zipfile.ZipFile(actual_output) as after_archive:
         before_names = set(before_archive.namelist())
@@ -1906,6 +1955,7 @@ def process_apk(
         "split_merged": split_merged,
         "split_components": split_details or {},
         "strip_debug": strip_debug,
+        "store_updates": store_updates,
         "normalize_dex": normalize_dex,
         "optimized": bool(optimize_apk and signed),
         "deobfuscate_resources": deobfuscate_resources,
@@ -1946,6 +1996,8 @@ def process_apk(
         f"Yerinde değiştirilen DEX dosyası: {totals['changed_files']}",
         f"Silinen DEX hata ayıklama yönergesi: {totals['debug_directives_removed']}",
         f"DEX yapısı yeniden düzenlendi: {'evet' if normalize_dex else 'hayır'}",
+        *([f"Play Store güncellemesini kapat: uygulandı (dahili kod {store_updates['version_code_before']} -> {store_updates['version_code_after']}; major={store_updates['version_code_major']})",
+           "Bu seçenek Play Store ayarlarını değiştirmez; sürüm kodunu yükseltir. Daha düşük kodlu APK'ya dönüş kurulum kısıtına takılabilir."] if store_updates else []),
         f"Manifest kaydı: {manifest_result['count']}",
         f"XML'de gizlenen reklam alanı: {layout_result['count']}",
         f"Kurulum kaynağı ve bütünlük denetimi: {len(report['install_source_checks'])}",

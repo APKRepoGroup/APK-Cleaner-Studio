@@ -57,6 +57,17 @@ test('terminal job states carry failure metadata through polling', async () => {
   vm.runInContext(source.slice(source.indexOf('async function waitForJobResult('), source.indexOf('async function runJob()')), context);
   await assert.rejects(context.waitForJobResult(), error => error.jobStatus === 'error' && error.jobFailure.stage === 'İmzalama');
 });
+test('store update metadata is shown only for outputs where the patch was requested', () => {
+  const { context, elements } = runtime();
+  context.renderResultSummary({ store_updates: { changed: true, version_code_before: 42, version_code_after: 2100000000 } });
+  assert.equal(elements.get('#resultStoreUpdates').classList.contains('hidden'), false);
+  assert.match(elements.get('#resultStoreUpdates').textContent, /uygulandı.*42 → 2100000000/);
+  context.renderResultSummary({ store_updates: { changed: false, version_code_before: 2147483647, version_code_after: 2147483647 } });
+  assert.match(elements.get('#resultStoreUpdates').textContent, /mevcut yüksek kod korundu/);
+  context.renderResultSummary({});
+  assert.equal(elements.get('#resultStoreUpdates').classList.contains('hidden'), true);
+  assert.equal(elements.get('#resultStoreUpdates').textContent, '');
+});
 test('result summary uses measured sizes and distinguishes growth from reduction', () => {
   const { context } = runtime();
   const base = { source_size_bytes: 1000, output_size_bytes: 800, duration_seconds: 74.2,

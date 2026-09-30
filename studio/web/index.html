@@ -151,6 +151,7 @@
             <div class="option-grid">
               <label id="convertPatchOption" class="option hidden"><input id="patchAds" type="checkbox"><span></span><div><b id="combinedPatchTitle">Dönüştürme sırasında reklam yaması uygula</b><p>Seçilen kapsamı, manifest ve XML düzenlemeleriyle birlikte oluşturulan APK’ya uygular.</p></div></label>
               <label class="option"><input id="stripDebug" type="checkbox"><span></span><div><b>DEX hata ayıklama verilerini kaldır</b><p>Kaynak dosya, satır ve yerel değişkenlere ait hata ayıklama kayıtlarını temizler.</p></div></label>
+                <label class="option"><input id="restrictStoreUpdates" type="checkbox"><span></span><div><b>Play Store güncellemesini kapat</b><p>Sürüm kodunu yükselterek mağazada güncelleme olarak gözükmesini sınırlar. Paket adı ve sürüm adı korunur. Orijinal sürüm kodu içeren uygulamaya geri dönüş yeniden kurulum gerektirir ve üzerine kurulmaz.</p></div></label>
               <label class="option"><input id="normalizeDex" type="checkbox"><span></span><div><b>DEX yapısını yeniden düzenle</b><p>Standart DEX yapısını doğrulayıp yeniden yazar. Eşleme dosyası olmadan özgün yöntem adlarını geri getirmez; özel şifreleme algılanırsa işlem güvenle durdurulur.</p></div></label>
               <label class="option"><input id="optimizeApk" type="checkbox"><span></span><div><b>Yamalanan APK’yı optimize et</b><p>İmzalamadan önce standart ZIP hizalaması uygular; dosya içeriklerini yeniden derlemez.</p></div></label>
               <label class="option"><input id="deobfuscateResources" type="checkbox"><span></span><div><b>RES kaynak korumasını kaldır</b><p>APKEditor’ün yalın kaynak düzenleme işlemini doğrudan uygular ve üretilen paketle devam eder.</p></div></label>
@@ -188,6 +189,7 @@
           </section>
           <details id="resultDetails" class="result-details"><summary>İşlem ayrıntıları</summary>
             <div id="resultStats" class="stats"></div><p id="resultRemovedFiles" class="fineprint"></p>
+            <p id="resultStoreUpdates" class="fineprint hidden"></p>
             <p class="fineprint">Doğrulama, APK yapısını ve imzasını denetler; uygulamanın cihazında sorunsuz çalışacağını garanti etmez.</p>
           </details>
           <div class="actions center"><a id="downloadButton" class="primary wide" href="#"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v11m-4-4 4 4 4-4"/><path d="M4 17v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg><span>APK’yı indir</span></a><button id="installButton" class="secondary install-action native-android-action hidden" type="button"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2.5"/><path d="M12 7v8m-3-3 3 3 3-3M10 19h4"/></svg><span>APK’yı kur</span></button><button id="shareOutputButton" class="secondary native-android-action hidden" type="button">Paylaş</button><button id="reportButton" class="secondary" type="button">Raporu aç</button></div>
@@ -360,6 +362,6 @@
   </div>
   <div id="toast" class="toast" role="status" aria-live="polite" aria-atomic="true"></div>
   <script src="ui-runtime.js?v=0.6.3-dev.2-20260927.1"></script>
-  <script src="app.js?v=0.6.3-dev.2-20260930.10"></script>
+  <script src="app.js?v=0.6.3-dev.2-20260930.11"></script>
 </body>
 </html>
