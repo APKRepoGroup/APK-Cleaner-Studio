@@ -42,10 +42,12 @@ function runtime({ animated = false, reduced = false } = {}) {
   const state = { update: null, updateBusy: false, updateCheckInFlight: false, dismissedUpdateVersion: '' };
   let reply = { available: true, update };
   let requests = 0;
-  const frames = []; const scrolls = []; const listeners = {};
+  const frames = []; const scrolls = []; const listeners = {}; const session = new Map();
   const pageScrollLocks = new Set();
   const context = vm.createContext({
     state, URL, motionMedia: { matches: reduced }, pageScrollLocks,
+    location: { pathname: '/', search: '?embedded=android' },
+    sessionStorage: { setItem: (key, value) => session.set(key, value), removeItem: key => session.delete(key) },
     requestAnimationFrame: callback => frames.push(callback),
     window: { scrollTo: options => scrolls.push(options), addEventListener: (type, callback) => { listeners[type] = callback; } },
     getComputedStyle: () => ({ paddingTop: '18px', paddingBottom: '18px', marginTop: '16px', marginBottom: '-12px', borderTopWidth: '1px', borderBottomWidth: '1px' }),
@@ -67,7 +69,7 @@ function runtime({ animated = false, reduced = false } = {}) {
       }
       return elements.get(selector);
     },
-    document: { readyState: 'complete', createElement: tag => new Element(tag), createTextNode: value => ({ tag: '#text', textContent: value }) },
+    document: { documentElement: new Element('html'), readyState: 'complete', createElement: tag => new Element(tag), createTextNode: value => ({ tag: '#text', textContent: value }) },
     apiFetch: async () => { requests++; return { ok: true, json: async () => reply }; },
     clientHeaders: () => ({}), syncUiActivity() {}, isUiActive: () => true,
     // A previous release saved permanent dismissal here. New code must ignore it.
@@ -75,7 +77,7 @@ function runtime({ animated = false, reduced = false } = {}) {
   });
   vm.runInContext('let nativeUiVisible = true;\n' + helpers + nativeVisibility + pageShow, context);
   return {
-    context, state, pageScrollLocks, scrolls,
+    context, state, pageScrollLocks, scrolls, session,
     flushFrames() { while (frames.length) frames.shift()(); },
     pageShow: persisted => listeners.pageshow({ persisted }),
     get: selector => context.$(selector), reply: value => { reply = value; }, requests: () => requests,
@@ -96,6 +98,38 @@ test('dismissal lasts for this opening only, even with an old persistent dismiss
   await reopened.context.checkForUpdates();
   assert.equal(reopened.get('#updateNotice').classList.contains('hidden'), false);
   assert.equal(reopened.get('#updateReleaseNotes').open, false);
+});
+
+test('a reload-position hint survives dismissal but is cleared when no update remains', async () => {
+  const app = runtime(); await app.context.checkForUpdates();
+  assert.equal(app.session.get('apk-cleaner-update-launch'), '/?embedded=android');
+  app.context.dismissUpdateNotice();
+  assert.equal(app.session.get('apk-cleaner-update-launch'), '/?embedded=android');
+  app.reply({ available: false, update: null }); await app.context.checkForUpdates();
+  assert.equal(app.session.has('apk-cleaner-update-launch'), false);
+});
+
+test('failed checks clear the reload hint and restricted storage cannot break updates', async () => {
+  const app = runtime(); await app.context.checkForUpdates();
+  app.context.apiFetch = async () => { throw new Error('offline'); };
+  await app.context.checkForUpdates();
+  assert.equal(app.session.has('apk-cleaner-update-launch'), false);
+  app.context.sessionStorage.setItem = () => { throw new Error('restricted'); };
+  app.context.renderAvailableUpdate(update);
+  assert.equal(app.get('#updateNotice').classList.contains('hidden'), false);
+});
+
+test('no-update and failed launch checks promptly release the first-paint guard', async () => {
+  for (const failure of [false, true]) {
+    const app = runtime();
+    const root = app.context.document.documentElement;
+    root.classList.add('update-launch-pending');
+    if (failure) app.context.apiFetch = async () => { throw new Error('offline'); };
+    else app.reply({ available: false, update: null });
+    await app.context.checkForUpdates();
+    assert.equal(root.classList.contains('update-launch-pending'), false);
+    assert.equal(app.scrolls.length, 0);
+  }
 });
 
 test('returning to the Android app reopens a dismissed notice with notes collapsed', async () => {
@@ -173,12 +207,15 @@ test('notification descriptions use the approved test and stable wording', () =>
 
 test('a launch shows the update at the top once, while polling preserves scroll position', async () => {
   const app = runtime();
+  app.context.document.documentElement.classList.add('update-launch-pending');
   await app.context.checkForUpdates();
   assert.equal(app.scrolls.length, 0);
+  assert.equal(app.context.document.documentElement.classList.contains('update-launch-pending'), true);
   app.flushFrames();
   assert.equal(app.scrolls.length, 1);
   assert.equal(app.scrolls[0].top, 0);
   assert.equal(app.scrolls[0].behavior, 'instant');
+  assert.equal(app.context.document.documentElement.classList.contains('update-launch-pending'), false);
   await app.context.checkForUpdates(); app.flushFrames();
   assert.equal(app.scrolls.length, 1);
   app.context.dismissUpdateNotice();

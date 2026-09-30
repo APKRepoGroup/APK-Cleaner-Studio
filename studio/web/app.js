@@ -1228,6 +1228,17 @@ async function refreshStatus() {
 // Match the installed-app action menu's expansion/collapse rhythm.
 const INLINE_REFLOW_MOTION = { duration: 360, easing: "cubic-bezier(.22,.61,.36,1)" };
 
+function rememberUpdateLaunch(available) {
+  try {
+    if (available) sessionStorage.setItem("apk-cleaner-update-launch", location.pathname + location.search);
+    else sessionStorage.removeItem("apk-cleaner-update-launch");
+  } catch {}
+}
+
+function revealUpdateLaunch() {
+  document.documentElement.classList.remove("update-launch-pending");
+}
+
 function appendReleaseNoteText(element, text) {
   // Release bodies are external Markdown, never trusted HTML.
   const tokens = /(`[^`]+`|\*\*[^*]+\*\*|\[[^\]]+\]\([^)]+\))/g;
@@ -1301,15 +1312,16 @@ function focusUpdateNoticeOnLaunch() {
   const notice = $("#updateNotice");
   if (notice.classList.contains("hidden")) return;
   updateNoticeFocusPending = false;
-  if (!isUiActive() || state.updateBusy || state.jobRunning || pageScrollLocks.size) return;
+  if (!isUiActive() || state.updateBusy || state.jobRunning || pageScrollLocks.size) { revealUpdateLaunch(); return; }
   const version = notice.dataset.version;
   // Wait for the browser's load-time scroll restoration and the new panel's
   // layout. Ordinary polling must never interrupt the user's scroll position.
   requestAnimationFrame(() => requestAnimationFrame(() => {
     if (!isUiActive() || state.updateBusy || state.jobRunning || pageScrollLocks.size
         || notice.classList.contains("hidden") || notice.dataset.version !== version
-        || state.dismissedUpdateVersion === version) return;
+        || state.dismissedUpdateVersion === version) { revealUpdateLaunch(); return; }
     window.scrollTo({ top: 0, left: 0, behavior: "instant" });
+    revealUpdateLaunch();
   }));
 }
 
@@ -1383,6 +1395,7 @@ function toggleInlineDisclosure(details, event) {
 }
 
 function renderAvailableUpdate(update) {
+  rememberUpdateLaunch(true);
   state.update = update;
   if (state.dismissedUpdateVersion === update.latest_version) return;
   const notice = $("#updateNotice");
@@ -1412,6 +1425,7 @@ function dismissUpdateNotice() {
   const notice = $("#updateNotice");
   if (updateNoticeAnimation || notice.classList.contains("hidden")) return;
   state.dismissedUpdateVersion = notice.dataset.version || "";
+  revealUpdateLaunch();
   if (motionMedia.matches || !isUiActive() || typeof notice.animate !== "function") {
     notice.classList.add("hidden");
     resetUpdateNotes();
@@ -1456,9 +1470,11 @@ async function checkForUpdates() {
     const response = await apiFetch("/api/update", { cache: "no-store", headers: clientHeaders() });
     const data = await response.json();
     const update = data.update;
-    if (!response.ok) { updateNoticeFocusPending = false; return; }
+    if (!response.ok) { rememberUpdateLaunch(false); revealUpdateLaunch(); updateNoticeFocusPending = false; return; }
     if (state.updateBusy) return;
     if (!data.available || !update) {
+      rememberUpdateLaunch(false);
+      revealUpdateLaunch();
       state.update = null;
       updateNoticeFocusPending = false;
       cancelUpdateNoticeMotion();
@@ -1468,7 +1484,11 @@ async function checkForUpdates() {
     }
     renderAvailableUpdate(update);
   } catch {
-    if (!state.updateCheckOnResume) updateNoticeFocusPending = false;
+    if (!state.updateCheckOnResume) {
+      rememberUpdateLaunch(false);
+      revealUpdateLaunch();
+      updateNoticeFocusPending = false;
+    }
   }
   finally {
     state.updateCheckInFlight = false;

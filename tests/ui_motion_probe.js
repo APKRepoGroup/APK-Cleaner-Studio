@@ -1,5 +1,25 @@
 /* Local QA only: finite frame/geometry sampling, never shipped with the app. */
 (() => {
+  if (new URLSearchParams(location.search).get('capture') === 'update') {
+    const launchOffsets = [], visibleOffsets = [], launchStart = performance.now(), initialRestoration = history.scrollRestoration;
+    const launchSample = now => {
+      launchOffsets.push(window.scrollY);
+      if (getComputedStyle(document.body).visibility !== 'hidden') visibleOffsets.push(window.scrollY);
+      if (now - launchStart < 650) { requestAnimationFrame(launchSample); return; }
+      document.documentElement.dataset.qaLaunchScroll = JSON.stringify({
+        navigation: performance.getEntriesByType('navigation')[0]?.type,
+        initialRestoration,
+        hint: sessionStorage.getItem('apk-cleaner-update-launch'),
+        frames: launchOffsets.length, first: launchOffsets[0],
+        visibleFrames: visibleOffsets.length,
+        visibleMin: visibleOffsets.length ? Math.min(...visibleOffsets) : null,
+        visibleMax: visibleOffsets.length ? Math.max(...visibleOffsets) : null,
+        min: Math.min(...launchOffsets), max: Math.max(...launchOffsets),
+        last: launchOffsets.at(-1),
+      });
+    };
+    requestAnimationFrame(launchSample);
+  }
   let sampling = 0;
   document.addEventListener('click', (event) => {
     if (!event.target.closest('button, summary, label, a')) return;
