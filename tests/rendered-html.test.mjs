@@ -204,7 +204,7 @@ test("ships the current local studio interface", async () => {
   assert.match(theme, /\.supporter-disclosure\s*\{[^}]*border:\s*0;\s*background:\s*transparent/i);
   assert.match(theme, /\.supporter-disclosure\s*\{[^}]*border-radius:\s*12px;\s*background:\s*transparent/i);
   assert.match(script, /const desktopThanks = matchMedia\("\(min-width: 721px\)"\)/);
-  assert.match(script, /if \(desktopThanks\.matches\) supporterDisclosure\.open = true;\s*else if \(!supporterDisclosureInitialized\) supporterDisclosure\.open = false;/);
+  assert.match(script, /if \(desktopThanks\.matches\) \{\s*if \(supporterDisclosureInitialized\) setInlineDisclosureOpen\(supporterDisclosure, true\);\s*else supporterDisclosure\.open = true;\s*\}\s*else if \(!supporterDisclosureInitialized\) supporterDisclosure\.open = false;/);
   assert.match(theme, /\.special-thanks-copy h2\s*\{[^}]*display:\s*block/i);
   assert.match(html, /ʙʏᴛᴇᴄʜɴᴏ/);
   assert.doesNotMatch(html, /id="messageOriginalInput"|id="messageCompareButton"/);

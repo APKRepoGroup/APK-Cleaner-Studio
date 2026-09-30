@@ -59,7 +59,10 @@ function syncSupporterDisclosure() {
   if (!supporterDisclosure) return;
   // Keep an expanded list open when a desktop window becomes narrow. Closing
   // it during resize removes page height and makes the browser jump upward.
-  if (desktopThanks.matches) supporterDisclosure.open = true;
+  if (desktopThanks.matches) {
+    if (supporterDisclosureInitialized) setInlineDisclosureOpen(supporterDisclosure, true);
+    else supporterDisclosure.open = true;
+  }
   else if (!supporterDisclosureInitialized) supporterDisclosure.open = false;
   supporterDisclosureInitialized = true;
   const summary = supporterDisclosure.querySelector("summary");
@@ -1320,18 +1323,33 @@ function cancelUpdateNoticeMotion() {
 }
 
 function resetUpdateNotes() {
-  const details = $("#updateReleaseNotes");
+  setInlineDisclosureOpen($("#updateReleaseNotes"), false);
+}
+
+function setInlineDisclosureOpen(details, expanded) {
   const animation = inlineDisclosureAnimations.get(details);
   inlineDisclosureAnimations.delete(details);
   animation?.cancel();
   details.classList.remove("is-animating");
   delete details.dataset.expanded;
-  details.open = false;
-  details.querySelector("summary").setAttribute("aria-expanded", "false");
+  details.open = expanded;
+  details.querySelector("summary").setAttribute("aria-expanded", String(expanded));
 }
 
 function toggleUpdateNotes(event) {
   toggleInlineDisclosure($("#updateReleaseNotes"), event);
+}
+
+function handleInlineDisclosureClick(event) {
+  if (event.defaultPrevented) return;
+  const summary = event.target.closest?.("summary");
+  const details = summary?.parentElement;
+  if (details?.tagName !== "DETAILS" || summary !== details.querySelector("summary")) return;
+  // Links or controls embedded in a summary retain their own action. Event
+  // delegation also covers disclosures created later, without double toggles.
+  if (event.target.closest("a, button, input, select, textarea")) return;
+  if (details === $("#updateReleaseNotes")) toggleUpdateNotes(event);
+  else toggleInlineDisclosure(details, event);
 }
 
 function toggleInlineDisclosure(details, event) {
@@ -2202,8 +2220,7 @@ document.addEventListener("keydown", (event) => {
 $("#toolsButton").addEventListener("click", () => $("#toolCard").scrollIntoView({ behavior: "smooth", block: "center" }));
 $("#updateDownload").addEventListener("click", applyAvailableUpdate);
 $("#updateDismiss").addEventListener("click", dismissUpdateNotice);
-$("#updateReleaseNotes summary").addEventListener("click", toggleUpdateNotes);
-$("#toolCertificate summary").addEventListener("click", (event) => toggleInlineDisclosure($("#toolCertificate"), event));
+document.addEventListener("click", handleInlineDisclosureClick);
 $("#setupButton").addEventListener("click", async () => {
   const button = $("#setupButton"); button.disabled = true; button.textContent = "Bileşenler hazırlanıyor…";
   try {

@@ -333,6 +333,69 @@ test('certificate disclosure shares update timing without sharing its animation 
   assert.equal(certificate.open, false);
 });
 
+function summaryClick(details, { prevented = false, control = false } = {}) {
+  details.tagName = 'DETAILS';
+  const summary = details.querySelector('summary');
+  summary.parentElement = details;
+  return {
+    defaultPrevented: prevented,
+    target: { closest: selector => selector === 'summary' ? summary : (control ? {} : null) },
+    preventDefault() { this.defaultPrevented = true; },
+  };
+}
+
+test('all page disclosures use the same delegated animation, including late-created menus', async () => {
+  const app = runtime({ animated: true });
+  for (const selector of ['#updateReleaseNotes', '#toolCertificate', '.supporter-disclosure', '#storageCard', '#installHistoryCard', '.mobile-https-banner details', '.late-created-call-trace']) {
+    const details = app.get(selector);
+    app.context.handleInlineDisclosureClick(summaryClick(details));
+    assert.equal(details.animation.options.duration, 360);
+    assert.equal(details.animation.options.easing, 'cubic-bezier(.22,.61,.36,1)');
+    details.animation.finish(); await Promise.resolve();
+    assert.equal(details.open, true);
+    app.context.handleInlineDisclosureClick(summaryClick(details));
+    assert.equal(details.open, true);
+    details.animation.finish(); await Promise.resolve();
+    assert.equal(details.open, false);
+  }
+});
+
+test('prevented desktop disclosure clicks and summary links retain their own behavior', () => {
+  const app = runtime({ animated: true });
+  const desktopSupporters = app.get('.supporter-disclosure');
+  desktopSupporters.open = true;
+  app.context.handleInlineDisclosureClick(summaryClick(desktopSupporters, { prevented: true }));
+  assert.equal(desktopSupporters.open, true);
+  assert.equal(desktopSupporters.animation, undefined);
+  const details = app.get('#storageCard');
+  app.context.handleInlineDisclosureClick(summaryClick(details, { control: true }));
+  assert.equal(details.animation, undefined);
+  app.context.handleInlineDisclosureClick({ defaultPrevented: false, target: { closest: () => null } });
+});
+
+test('a desktop breakpoint cancels a mobile supporter close and leaves the list open', async () => {
+  const app = runtime({ animated: true });
+  const details = app.get('.supporter-disclosure');
+  details.open = true;
+  app.context.handleInlineDisclosureClick(summaryClick(details));
+  const closing = details.animation;
+  app.context.setInlineDisclosureOpen(details, true);
+  closing.finish(); await Promise.resolve();
+  assert.equal(details.open, true);
+  assert.equal(details.classList.contains('is-animating'), false);
+  assert.equal(details.querySelector('summary').attributes['aria-expanded'], 'true');
+});
+
+test('delegated disclosure clicks honor reduced motion', () => {
+  const app = runtime({ animated: true, reduced: true });
+  const details = app.get('#storageCard');
+  app.context.handleInlineDisclosureClick(summaryClick(details));
+  assert.equal(details.open, true);
+  assert.equal(details.animation, undefined);
+  app.context.handleInlineDisclosureClick(summaryClick(details));
+  assert.equal(details.open, false);
+});
+
 test('checks and Android resume do not interrupt an active update', async () => {
   const app = runtime(); await app.context.checkForUpdates();
   app.state.updateBusy = true;

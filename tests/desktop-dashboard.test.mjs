@@ -14,7 +14,7 @@ test('the certificate stays in the expanding engine card without shrinking its l
   assert.match(theme, /#toolCard\s*\{\s*max-height: none;/);
   assert.match(theme, /#toolCard > #toolList\s*\{\s*flex: 0 0 auto;/);
   assert.match(theme, /\.mobile-cert\s*\{\s*flex: 0 0 auto;[^}]*max-height: none;/);
-  assert.match(script, /#toolCertificate summary[\s\S]{0,120}toggleInlineDisclosure/);
+  assert.match(script, /document\.addEventListener\("click", handleInlineDisclosureClick\)/);
 });
 
 test('desktop stages keep the sidebar and the compact feature strip, without the full guide during analysis', () => {

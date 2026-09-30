@@ -99,6 +99,7 @@ body,
 .update-release-notes summary svg { width: 16px; height: 16px; flex-shrink: 0; transition: transform 360ms cubic-bezier(.22,.61,.36,1); }
 .update-release-notes[open] summary svg { transform: rotate(180deg); }
 .update-release-notes[data-expanded="false"] summary svg { transform: rotate(0); }
+details.is-animating,
 .update-release-notes.is-animating,
 .mobile-cert.is-animating { overflow: hidden; min-height: 0; }
 .update-notice.is-closing { overflow: hidden; min-height: 0; pointer-events: none; }
@@ -2471,8 +2472,12 @@ body.modal-scroll-locked {
 .supporter-disclosure summary > span { display: grid; gap: 2px; min-width: 0; }
 .supporter-disclosure summary b { color: var(--ink); font-size: 11px; }
 .supporter-disclosure summary small { color: var(--muted); font-size: 9px; }
-.supporter-disclosure summary::after { content: ''; flex: 0 0 7px; width: 7px; height: 7px; margin-right: 3px; border-right: 2px solid var(--green); border-bottom: 2px solid var(--green); transform: rotate(45deg); transition: transform .18s ease; }
+.supporter-disclosure summary::after { content: ''; flex: 0 0 7px; width: 7px; height: 7px; margin-right: 3px; border-right: 2px solid var(--green); border-bottom: 2px solid var(--green); transform: rotate(45deg); transition: transform 360ms cubic-bezier(.22,.61,.36,1); }
 .supporter-disclosure[open] summary::after { transform: rotate(225deg); }
+.supporter-disclosure[data-expanded="false"] summary::after { transform: rotate(45deg); }
+@media (prefers-reduced-motion: reduce) {
+  .supporter-disclosure summary::after { transition: none; }
+}
 .supporter-disclosure summary:focus-visible { outline: 2px solid var(--green); outline-offset: 3px; border-radius: 5px; }
 .supporter-list { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px 8px; min-width: 0; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line); }
 .supporter-list > span {
