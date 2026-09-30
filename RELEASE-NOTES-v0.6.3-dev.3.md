@@ -13,6 +13,7 @@
 
 ### 🐛 Hata Düzeltmeleri
 
+- Windows'ta işlem ilerlemesi okunurken durum dosyasının eşzamanlı güncellenmesinden kaynaklanan erişim hatası giderildi. ([26a0771](https://github.com/APKRepoGroup/APK-Cleaner-Studio/commit/26a077145c949d6b06900cc9727c1a7bcccbb7d3))
 - Gelişmiş temizlikte reklam klasöründeki DEX dosyaları kaldırıldığında işlem raporunun hata vermesi düzeltildi. Aynı adlı DEX dosyalarının farklı klasörlerde bulunması artık işlem dosyalarını çakıştırmaz. ([5325836](https://github.com/APKRepoGroup/APK-Cleaner-Studio/commit/5325836e8803e8187b43b52ec6c1d93e9e3196d2))
 - Arşiv, bağlantı, depolama, erişim ve Android işlem hataları için Türkçe kullanıcı açıklamaları eklendi; İngilizce araç hataları doğrudan kullanıcıya gösterilmez. ([e88bbfb](https://github.com/APKRepoGroup/APK-Cleaner-Studio/commit/e88bbfbe0ff4d2013372dd3dd00e6df2a826d906))
 - BlueStacks üzerinde otomatik güncellemede görülen paket imzası karşılaştırma sorunu giderildi; APK doğrulama ve imza eşleştirme kontrolleri korunuyor. ([97d3a48](https://github.com/APKRepoGroup/APK-Cleaner-Studio/commit/97d3a483ded775706064389b4edfafbb33737201))

@@ -49,7 +49,8 @@ class StartupApiTests(unittest.TestCase):
         with patch("server.inspect_startup_calls", side_effect=ValueError("invalid dex")):
             self.handler.do_POST()
         self.assertNotIn(self.job_id, server._SCANNING_JOBS)
-        self.assertEqual(self.handler.send_json.call_args.args, ({"error": "invalid dex"}, 400))
+        self.assertEqual(self.handler.send_json.call_args.args,
+                         ({"error": "İşlem bileşeni beklenmeyen bir hata nedeniyle tamamlanamadı."}, 400))
 
     def test_foreign_job_is_not_scanned(self):
         with patch("server.job_visible_to", return_value=False), patch("server.inspect_startup_calls") as scan:

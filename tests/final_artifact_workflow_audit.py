@@ -96,6 +96,7 @@ def packaged_server(label, command, folder, asset_fixture, user_fixture=None):
             results = []
             job_ids = []
             for name, options in cases:
+                print(f"Starting {label}: {name}", flush=True)
                 # Completed jobs are deliberately idempotent. Each choice needs a fresh analysis.
                 options = dict(options)
                 source = asset_fixture if options.pop("_asset_fixture", False) else FIXTURE
@@ -107,6 +108,10 @@ def packaged_server(label, command, folder, asset_fixture, user_fixture=None):
                 accepted = json.loads(http(base, "/api/clean", json.dumps(payload).encode()))
                 assert accepted["job_id"] == job_id, accepted
                 finished = wait_job(base, job_id)
+                if finished["status"] != "done":
+                    diagnostic_path = folder / "data" / "jobs" / job_id / "diagnostic.json"
+                    if diagnostic_path.exists():
+                        print(json.dumps(json.loads(diagnostic_path.read_text(encoding="utf-8")), ensure_ascii=True), flush=True)
                 assert finished["status"] == "done", finished
                 result = finished["result"]
                 assert result["signed"] and result["verification"]["passed"], result
@@ -163,6 +168,11 @@ def packaged_server(label, command, folder, asset_fixture, user_fixture=None):
                 deleted = json.loads(http(base, f"/api/jobs/{job_id}/delete", b""))
                 assert deleted["ok"], deleted
             return {"package": label, "cases": results, "safe_diagnostic": True, "history_delete": True}
+        except Exception:
+            log.flush()
+            diagnostic_log = (folder / "server.log").read_bytes()[-14000:].decode("utf-8", errors="replace")
+            print(diagnostic_log.encode("ascii", errors="backslashreplace").decode("ascii"), flush=True)
+            raise
         finally:
             if process.poll() is None:
                 if hasattr(signal, "CTRL_BREAK_EVENT"):
