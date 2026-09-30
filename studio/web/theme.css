@@ -99,7 +99,8 @@ body,
 .update-release-notes summary svg { width: 16px; height: 16px; flex-shrink: 0; transition: transform 360ms cubic-bezier(.22,.61,.36,1); }
 .update-release-notes[open] summary svg { transform: rotate(180deg); }
 .update-release-notes[data-expanded="false"] summary svg { transform: rotate(0); }
-.update-release-notes.is-animating { overflow: hidden; min-height: 0; }
+.update-release-notes.is-animating,
+.mobile-cert.is-animating { overflow: hidden; min-height: 0; }
 .update-notice.is-closing { overflow: hidden; min-height: 0; pointer-events: none; }
 @media (prefers-reduced-motion: reduce) {
   .update-release-notes summary svg { transition: none; }
@@ -1777,8 +1778,18 @@ html[data-theme="dark"] .option input:checked + span {
 .workspace-primary { min-width: 0; display: grid; gap: 18px; align-content: start; }
 .workspace-primary > .features { width: 100%; margin: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 18px; background: color-mix(in srgb, var(--surface) 72%, transparent); }
 .mobile-https-banner { display: none; }
-.mobile-cert { margin-top: 14px; padding-top: 13px; border-top: 1px solid var(--line); }
-.mobile-cert summary { color: var(--ink); font-size: 9.5px; font-weight: 850; cursor: pointer; }
+#toolCard { max-height: none; }
+#toolCard > #toolList { flex: 0 0 auto; }
+.mobile-cert { flex: 0 0 auto; margin-top: 14px; padding-top: 13px; border-top: 1px solid var(--line); max-height: none; }
+.mobile-cert summary { display: flex; align-items: center; justify-content: space-between; gap: 10px; color: var(--ink); font-size: 11px; font-weight: 850; cursor: pointer; list-style: none; }
+.mobile-cert summary::-webkit-details-marker { display: none; }
+.mobile-cert summary svg { flex: 0 0 16px; width: 16px; height: 16px; transition: transform 360ms cubic-bezier(.22,.61,.36,1); }
+.mobile-cert[open] summary svg { transform: rotate(180deg); }
+.mobile-cert[data-expanded="false"] summary svg { transform: rotate(0); }
+.mobile-cert summary:focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; border-radius: 4px; }
+@media (prefers-reduced-motion: reduce) {
+  .mobile-cert summary svg { transition: none; }
+}
 .mobile-cert p,.mobile-cert li,.mobile-cert small { color: var(--muted); font-size: 8.5px; line-height: 1.55; }
 .mobile-cert p { margin: 10px 0; }
 .mobile-cert ol { margin: 10px 0; padding-left: 18px; }
@@ -2236,12 +2247,12 @@ html[data-theme="dark"] .topbar::before {
 html[data-embedded="android"] .mobile-https-banner,
 html[data-embedded="android"] #clientCard { display: none !important; }
 
-/* Android kabuğunda yalnızca ana sertifika banner'ı gizlenir. Kullanıcının
-   özellikle istediği manuel sertifika aracı yan motor kartında korunur. */
+/* Android kabuğunda yalnızca ana sertifika banner'ı gizlenir. Manuel
+   sertifika açıklaması motor kartında kalır; kart içerikle birlikte büyür. */
 html[data-embedded="android"] #toolCard,
-html[data-embedded="android"] #toolCard .mobile-cert { display: block !important; }
-html[data-embedded="android"] #toolCard .host-cert-copy { display: none; }
-html[data-embedded="android"] #toolCard .embedded-cert-copy { display: block; }
+html[data-embedded="android"] #toolCertificate { display: block !important; }
+html[data-embedded="android"] #toolCertificate .host-cert-copy { display: none; }
+html[data-embedded="android"] #toolCertificate .embedded-cert-copy { display: block; }
 
 @media (min-width: 901px) {
   html[data-embedded="android"] #toolCard { display: flex !important; }

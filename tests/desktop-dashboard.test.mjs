@@ -4,6 +4,18 @@ import test from 'node:test';
 
 const theme = await readFile(new URL('../studio/web/theme.css', import.meta.url), 'utf8');
 const script = await readFile(new URL('../studio/web/app.js', import.meta.url), 'utf8');
+const html = await readFile(new URL('../studio/web/index.html', import.meta.url), 'utf8');
+
+test('the certificate stays in the expanding engine card without shrinking its list', () => {
+  const engine = html.match(/<section id="toolCard"[\s\S]*?<\/section>/)[0];
+  assert.match(engine, /<details id="toolCertificate" class="mobile-cert">/);
+  assert.equal((engine.match(/class="tools-row pending"/g) || []).length, 6);
+  assert.doesNotMatch(engine, /id="toolCertificate"[^>]*side-card/);
+  assert.match(theme, /#toolCard\s*\{\s*max-height: none;/);
+  assert.match(theme, /#toolCard > #toolList\s*\{\s*flex: 0 0 auto;/);
+  assert.match(theme, /\.mobile-cert\s*\{\s*flex: 0 0 auto;[^}]*max-height: none;/);
+  assert.match(script, /#toolCertificate summary[\s\S]{0,120}toggleInlineDisclosure/);
+});
 
 test('desktop stages keep the sidebar and the compact feature strip, without the full guide during analysis', () => {
   assert.match(theme, /@media \(min-width:\s*901px\)[\s\S]*?\.workspace\s*\{\s*grid-template-columns:\s*minmax\(0, 1fr\) 340px/);

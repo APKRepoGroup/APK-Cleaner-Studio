@@ -314,6 +314,25 @@ test('reduced motion skips panel and disclosure animation', () => {
   assert.equal(app.get('#updateNotice').animation, undefined);
 });
 
+test('certificate disclosure shares update timing without sharing its animation state', async () => {
+  const app = runtime({ animated: true });
+  const certificate = app.get('#toolCertificate');
+  const notes = app.get('#updateReleaseNotes');
+  const event = { preventDefault() {} };
+  app.context.toggleInlineDisclosure(certificate, event);
+  app.context.toggleUpdateNotes(event);
+  assert.equal(certificate.animation.options.duration, notes.animation.options.duration);
+  assert.equal(certificate.animation.options.easing, notes.animation.options.easing);
+  app.context.resetUpdateNotes();
+  assert.equal(certificate.animation.running, true);
+  certificate.animation.finish(); await Promise.resolve();
+  assert.equal(certificate.open, true);
+  app.context.toggleInlineDisclosure(certificate, event);
+  assert.equal(certificate.open, true);
+  certificate.animation.finish(); await Promise.resolve();
+  assert.equal(certificate.open, false);
+});
+
 test('checks and Android resume do not interrupt an active update', async () => {
   const app = runtime(); await app.context.checkForUpdates();
   app.state.updateBusy = true;

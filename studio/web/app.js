@@ -1290,7 +1290,7 @@ function renderUpdateReleaseNotes(notes) {
 }
 
 let updateNoticeAnimation = null;
-let updateNotesAnimation = null;
+const inlineDisclosureAnimations = new WeakMap();
 let updateNoticeFocusPending = true;
 
 function focusUpdateNoticeOnLaunch() {
@@ -1320,10 +1320,10 @@ function cancelUpdateNoticeMotion() {
 }
 
 function resetUpdateNotes() {
-  const animation = updateNotesAnimation;
-  updateNotesAnimation = null;
-  animation?.cancel();
   const details = $("#updateReleaseNotes");
+  const animation = inlineDisclosureAnimations.get(details);
+  inlineDisclosureAnimations.delete(details);
+  animation?.cancel();
   details.classList.remove("is-animating");
   delete details.dataset.expanded;
   details.open = false;
@@ -1331,12 +1331,15 @@ function resetUpdateNotes() {
 }
 
 function toggleUpdateNotes(event) {
+  toggleInlineDisclosure($("#updateReleaseNotes"), event);
+}
+
+function toggleInlineDisclosure(details, event) {
   event.preventDefault();
-  const details = $("#updateReleaseNotes");
   const startHeight = details.getBoundingClientRect().height;
-  const expanded = updateNotesAnimation ? details.dataset.expanded !== "true" : !details.open;
-  const previous = updateNotesAnimation;
-  updateNotesAnimation = null;
+  const previous = inlineDisclosureAnimations.get(details);
+  const expanded = previous ? details.dataset.expanded !== "true" : !details.open;
+  inlineDisclosureAnimations.delete(details);
   previous?.cancel();
   details.classList.remove("is-animating");
   details.open = expanded;
@@ -1351,10 +1354,10 @@ function toggleUpdateNotes(event) {
   const animation = details.animate([
     { height: `${startHeight}px` }, { height: `${endHeight}px` },
   ], { ...INLINE_REFLOW_MOTION, fill: "both" });
-  updateNotesAnimation = animation;
+  inlineDisclosureAnimations.set(details, animation);
   animation.finished.then(() => {
-    if (updateNotesAnimation !== animation) return;
-    updateNotesAnimation = null;
+    if (inlineDisclosureAnimations.get(details) !== animation) return;
+    inlineDisclosureAnimations.delete(details);
     details.open = expanded;
     details.classList.remove("is-animating");
     animation.cancel();
@@ -2200,6 +2203,7 @@ $("#toolsButton").addEventListener("click", () => $("#toolCard").scrollIntoView(
 $("#updateDownload").addEventListener("click", applyAvailableUpdate);
 $("#updateDismiss").addEventListener("click", dismissUpdateNotice);
 $("#updateReleaseNotes summary").addEventListener("click", toggleUpdateNotes);
+$("#toolCertificate summary").addEventListener("click", (event) => toggleInlineDisclosure($("#toolCertificate"), event));
 $("#setupButton").addEventListener("click", async () => {
   const button = $("#setupButton"); button.disabled = true; button.textContent = "Bileşenler hazırlanıyor…";
   try {
