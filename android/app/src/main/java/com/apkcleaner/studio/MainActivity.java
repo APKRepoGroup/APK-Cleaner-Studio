@@ -47,6 +47,8 @@ import android.widget.ProgressBar;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import com.android.apksig.ApkVerifier;
+
 import java.io.InputStream;
 import java.io.IOException;
 import java.io.OutputStream;
@@ -60,6 +62,7 @@ import java.net.HttpURLConnection;
 import java.net.Proxy;
 import java.net.URL;
 import java.security.MessageDigest;
+import java.security.cert.X509Certificate;
 import java.util.Locale;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -1066,8 +1069,13 @@ public final class MainActivity extends Activity {
             }
             if (installed != null) {
                 JSONArray reasons = new JSONArray();
-                String archiveSigner = signerDigest(archive);
-                String installedSigner = signerDigest(installed);
+                // Some Android package managers leave archive signingInfo empty even
+                // for a valid APK. Verify both actual APK files for official updates.
+                String archiveSigner = officialUpdate
+                        ? verifiedApkSignerDigest(apk, "Güncelleme paketinin") : signerDigest(archive);
+                String installedSigner = officialUpdate
+                        ? verifiedApkSignerDigest(new File(getApplicationInfo().sourceDir), "Cihazdaki uygulamanın")
+                        : signerDigest(installed);
                 if (archiveSigner.isEmpty() || installedSigner.isEmpty()) {
                     throw new IOException("Paket imzası güvenli biçimde karşılaştırılamadı.");
                 }
@@ -1120,6 +1128,29 @@ public final class MainActivity extends Activity {
         for (android.content.pm.Signature signature : signatures) {
             digests.add(Base64.encodeToString(
                     MessageDigest.getInstance("SHA-256").digest(signature.toByteArray()), Base64.NO_WRAP));
+        }
+        Collections.sort(digests);
+        return String.join("|", digests);
+    }
+
+    private String verifiedApkSignerDigest(File apk, String description) throws Exception {
+        if (apk == null || !apk.isFile()) throw new IOException(description + " APK dosyası okunamadı.");
+        ApkVerifier.Result verified;
+        try {
+            verified = new ApkVerifier.Builder(apk)
+                    .setMinCheckedPlatformVersion(Build.VERSION.SDK_INT)
+                    .setMaxCheckedPlatformVersion(Build.VERSION.SDK_INT)
+                    .build().verify();
+        } catch (Exception error) {
+            throw new IOException(description + " imzası doğrulanamadı.", error);
+        }
+        if (!verified.isVerified() || verified.getSignerCertificates().isEmpty()) {
+            throw new IOException(description + " imzası doğrulanamadı.");
+        }
+        List<String> digests = new ArrayList<>();
+        for (X509Certificate certificate : verified.getSignerCertificates()) {
+            digests.add(Base64.encodeToString(
+                    MessageDigest.getInstance("SHA-256").digest(certificate.getEncoded()), Base64.NO_WRAP));
         }
         Collections.sort(digests);
         return String.join("|", digests);

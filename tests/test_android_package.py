@@ -201,6 +201,16 @@ class AndroidPackageTests(unittest.TestCase):
         self.assertIn("finishInstalledShareUi()", script)
         self.assertGreaterEqual(activity.count("openConnection(Proxy.NO_PROXY)"), 3)
 
+    def test_official_update_verifies_both_apk_files_before_install(self):
+        activity = (ANDROID / "app/src/main/java/com/apkcleaner/studio/MainActivity.java").read_text(encoding="utf-8")
+        self.assertIn('verifiedApkSignerDigest(apk, "Güncelleme paketinin")', activity)
+        self.assertIn('verifiedApkSignerDigest(new File(getApplicationInfo().sourceDir), "Cihazdaki uygulamanın")', activity)
+        self.assertIn("new ApkVerifier.Builder(apk)", activity)
+        self.assertIn(".setMinCheckedPlatformVersion(Build.VERSION.SDK_INT)", activity)
+        self.assertIn(".setMaxCheckedPlatformVersion(Build.VERSION.SDK_INT)", activity)
+        self.assertIn("!verified.isVerified() || verified.getSignerCertificates().isEmpty()", activity)
+        self.assertIn('if (!archiveSigner.equals(installedSigner))', activity)
+
     def test_no_ad_analysis_strictly_disables_cleaning_profiles(self):
         script = (ROOT / "studio" / "web" / "app.js").read_text(encoding="utf-8")
         html = (ROOT / "studio" / "web" / "index.html").read_text(encoding="utf-8")
