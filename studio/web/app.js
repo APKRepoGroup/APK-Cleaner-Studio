@@ -5,6 +5,7 @@ const state = {
   splitSelection: { abis: [], languages: [] },
   messageTargets: [], messageCandidates: [],
   displayedProgress: 0, targetProgress: 0, progressFrame: 0, progressLastTick: 0,
+  progressEvents: [], progressLogSignature: "",
   pollInFlight: false, jobRunning: false, statusInFlight: false,
   installedApps: [], installedAppsLoading: false, installedAppsReady: false, selectedInstalledPackage: "", installedSharePackage: "",
   outputUrl: "", outputFilename: "", nativeInstallBusy: false, nativeShareBusy: false, nativeSplitInstallBusy: false,
@@ -1978,11 +1979,47 @@ function animateProgress(timestamp = 0) {
   if (state.displayedProgress < state.targetProgress) state.progressFrame = requestAnimationFrame(animateProgress);
 }
 
-function updateProgress(progress, message) {
+function activityTime(seconds) {
+  if (typeof seconds !== "number" || !Number.isFinite(seconds) || seconds < 0) return "—";
+  const total = Math.floor(seconds);
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
+}
+
+function renderProgressActivity(message, events) {
+  // A server snapshot includes fast stages that can finish between two polls.
+  // Older engines still get a best-effort history of the observed messages.
+  if (Array.isArray(events) && events.length) {
+    state.progressEvents = events.slice(-120).filter(event => event && typeof event.message === "string")
+      .map(event => ({ id: event.id, message: event.message.slice(0, 500), elapsed_seconds: event.elapsed_seconds }));
+  } else if (typeof message === "string" && message && state.progressEvents.at(-1)?.message !== message) {
+    state.progressEvents = [...state.progressEvents, { message: message.slice(0, 500) }].slice(-120);
+  }
+  const signature = JSON.stringify(state.progressEvents);
+  if (signature === state.progressLogSignature) return;
+  state.progressLogSignature = signature;
+  const makeRow = event => {
+    const row = document.createElement("li"), time = document.createElement("span"), text = document.createElement("span");
+    time.className = "activity-time"; time.textContent = activityTime(event.elapsed_seconds);
+    text.textContent = event.message;
+    row.append(time, text);
+    return row;
+  };
+  progressElements.log.replaceChildren(...state.progressEvents.slice(-4).map(makeRow));
+  const history = $("#workingFullLog");
+  const atBottom = history.scrollHeight - history.clientHeight - history.scrollTop < 24;
+  const scrollTop = history.scrollTop;
+  history.replaceChildren(...state.progressEvents.map(makeRow));
+  history.scrollTop = atBottom ? history.scrollHeight : scrollTop;
+  $("#workingLogNote").textContent = state.progressEvents[0]?.id > 1
+    ? "Uzun işlemlerde son 120 aşama kaydı gösterilir. Ayrıntılı sonuç raporu işlem sonunda hazırlanır."
+    : "Kaydedilen aşamalar ve işlem başlangıcından itibaren geçen süre. Ayrıntılı sonuç raporu işlem sonunda hazırlanır.";
+}
+
+function updateProgress(progress, message, events) {
   const value = Math.max(state.displayedProgress, Math.min(100, Math.round(progress)));
   state.targetProgress = Math.max(state.targetProgress, value);
-  progressElements.phase.textContent = message;
-  progressElements.log.textContent = `✓ Orijinal paket korunuyor\n● ${message}`;
+  progressElements.phase.textContent = String(message || "İşleniyor").split(" · ")[0];
+  renderProgressActivity(message, events);
   if (motionMedia.matches || !isUiActive()) {
     state.displayedProgress = state.targetProgress;
     renderProgress(state.displayedProgress);
@@ -1998,6 +2035,12 @@ function resetProgress() {
   state.displayedProgress = 0;
   state.targetProgress = 0;
   state.progressLastTick = 0;
+  state.progressEvents = [];
+  state.progressLogSignature = "";
+  progressElements.log.replaceChildren();
+  $("#workingFullLog").replaceChildren();
+  $("#workingFullLog").scrollTop = 0;
+  setInlineDisclosureOpen($("#workingDetails"), false);
   renderProgress(0);
 }
 
@@ -2132,7 +2175,7 @@ async function pollJob() {
     const response = await apiFetch(`/api/jobs/${state.jobId}/state`, { cache: "no-store", headers: clientHeaders() });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || "İş durumu alınamadı.");
-    if (["working", "cancelling", "done"].includes(data.status)) updateProgress(data.progress || 0, data.message || "İşleniyor");
+    if (["working", "cancelling", "done"].includes(data.status)) updateProgress(data.progress || 0, data.message || "İşleniyor", data.events);
     return data;
   } catch { return null; }
   finally { state.pollInFlight = false; }

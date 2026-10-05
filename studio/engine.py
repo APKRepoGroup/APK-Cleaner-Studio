@@ -1771,7 +1771,19 @@ def process_apk(
                     for key in ("changed_files", "void_patches", "boolean_patches", "callback_patches", "message_patches", "debug_directives_removed", "clone_strings_changed"):
                         totals[key] += patch[key]
                     totals["risky_calls"].extend(patch["risky_calls"])
-                    notify(f"{dex_name} işlendi ({completed}/{len(dex_names)})", 20 + int(37 * completed / len(dex_names)))
+                    changes = []
+                    ad_patches = sum(patch[key] for key in ("void_patches", "boolean_patches", "callback_patches"))
+                    if ad_patches:
+                        changes.append(f"{ad_patches} reklam yaması")
+                    for key, label in (("message_patches", "mesaj yaması"),
+                                       ("debug_directives_removed", "hata ayıklama kaydı kaldırıldı"),
+                                       ("clone_strings_changed", "paket kimliği kaydı değişti")):
+                        if patch[key]:
+                            changes.append(f"{patch[key]} {label}")
+                    if normalize_dex:
+                        changes.append("DEX yapısı düzenlendi")
+                    detail = " · ".join(changes) if changes else "Değişiklik gerekmedi"
+                    notify(f"{dex_name} işlendi ({completed}/{len(dex_names)}) · {detail}", 20 + int(37 * completed / len(dex_names)))
 
         archive_replacements = dict(dex_replacements)
         if clone_package_name or restrict_store_updates:

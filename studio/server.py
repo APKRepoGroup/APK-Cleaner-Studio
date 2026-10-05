@@ -1286,6 +1286,25 @@ class JobCancelled(RuntimeError):
     """Raised cooperatively when a user cancels an active APK operation."""
 
 
+class JobProgressJournal:
+    """Bounded engine events, retained between UI polls; not a raw tool log."""
+
+    def __init__(self) -> None:
+        self.started = time.monotonic()
+        self.events: list[dict] = []
+        self.sequence = 0
+
+    def record(self, message: str, percent: int) -> list[dict]:
+        message = str(message)[:500]
+        percent = min(100, max(0, int(percent)))
+        if not self.events or (self.events[-1]["message"], self.events[-1]["progress"]) != (message, percent):
+            self.sequence += 1
+            self.events.append({"id": self.sequence, "message": message, "progress": percent,
+                                "elapsed_seconds": round(max(0, time.monotonic() - self.started), 1)})
+            self.events = self.events[-120:]
+        return list(self.events)
+
+
 def cancel_clean_job(job_id: str, requester_id: str, requester_is_local: bool) -> bool:
     if not JOB_ID.fullmatch(job_id):
         raise ValueError("Geçersiz iş kimliği.")
@@ -1307,6 +1326,7 @@ def cancel_clean_job(job_id: str, requester_id: str, requester_is_local: bool) -
         write_json(job / "state.json", {
             "status": "cancelling", "message": "İşlem güvenli biçimde durduruluyor",
             "progress": current.get("progress", 0), "filename": current.get("filename", "paket.apk"),
+            "events": current.get("events", []),
         })
     return active
 
@@ -1317,6 +1337,7 @@ def _execute_clean_job(job_id: str, payload: dict) -> None:
     analysis = read_json(job / "analysis.json")
     filename = analysis.get("filename", "paket.apk")
     last_stage = "İşlem seçenekleri denetleniyor"
+    journal = JobProgressJournal()
     with _ACTIVE_JOBS_LOCK:
         cancel_event = _JOB_CANCEL_EVENTS.setdefault(job_id, threading.Event())
         _JOB_THREADS[job_id] = threading.get_ident()
@@ -1329,6 +1350,7 @@ def _execute_clean_job(job_id: str, payload: dict) -> None:
         write_json(job / "state.json", {
             "status": "working", "message": message,
             "progress": min(99, max(0, int(percent))), "filename": filename,
+            "events": journal.record(message, percent),
         })
 
     try:
@@ -1416,12 +1438,14 @@ def _execute_clean_job(job_id: str, payload: dict) -> None:
         write_json(job / "state.json", {
             "status": "done", "message": "Çıktı APK hazır", "progress": 100,
             "filename": filename, "result": result,
+            "events": journal.record("Çıktı APK hazır", 100),
         })
     except JobCancelled as exc:
         shutil.rmtree(job / "output", ignore_errors=True)
         shutil.rmtree(job / "prepared-selected", ignore_errors=True)
         write_json(job / "state.json", {
             "status": "cancelled", "message": str(exc), "progress": 0, "filename": filename,
+            "events": journal.record("İşlem kullanıcı tarafından iptal edildi.", 0),
         })
     except Exception as exc:
         if cancel_event.is_set():
@@ -1430,6 +1454,7 @@ def _execute_clean_job(job_id: str, payload: dict) -> None:
             write_json(job / "state.json", {
                 "status": "cancelled", "message": "İşlem kullanıcı tarafından iptal edildi.",
                 "progress": 0, "filename": filename,
+                "events": journal.record("İşlem kullanıcı tarafından iptal edildi.", 0),
             })
             return
         details = failure_diagnostic(exc, analysis=analysis, payload=payload)
@@ -1441,6 +1466,7 @@ def _execute_clean_job(job_id: str, payload: dict) -> None:
         write_json(job / "state.json", {
             "status": "error", "message": details["message"], "progress": 0, "filename": filename,
             "failure": {key: details[key] for key in ("message", "stage", "operation", "profile")},
+            "events": journal.record(details["message"], 0),
         })
     finally:
         with _ACTIVE_JOBS_LOCK:

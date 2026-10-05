@@ -1348,6 +1348,19 @@ html[data-theme] .file-card .apk.has-app-icon {
   border-radius: 10px;
   background: var(--surface-soft);
 }
+.working-activity { width: min(100%, 625px); min-width: 0; margin-top: 4px; padding: 16px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface-soft); text-align: start; }
+.source-preserved { color: var(--green); font-size: 12px; }
+.working-activity h3 { margin: 16px 0 10px; font-size: 12px; }
+.activity-list { list-style: none; margin: 0; padding: 0; }
+.activity-list li { display: grid; grid-template-columns: 42px minmax(0, 1fr); gap: 9px; padding: 8px 0; font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
+.activity-list li + li { border-top: 1px solid var(--line); }
+.activity-time { color: var(--muted); font-variant-numeric: tabular-nums; }
+#liveLog li:last-child { color: var(--green); }
+#workingDetails { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+#workingDetails summary { cursor: pointer; font-size: 12px; font-weight: 750; }
+.working #workingLogNote { margin: 12px 0; font-size: 11px; line-height: 1.6; }
+.activity-history { max-height: 240px; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+.activity-history:focus-visible { outline: 2px solid var(--green); outline-offset: 3px; border-radius: 5px; }
 .success {
   border-color: color-mix(in srgb, var(--green) 45%, #0d1515);
   box-shadow: 0 12px 30px color-mix(in srgb, var(--green) 18%, transparent);
