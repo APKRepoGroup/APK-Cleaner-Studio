@@ -1310,7 +1310,7 @@ public final class MainActivity extends Activity {
         return result.toString();
     }
 
-    private String drawableDataUri(Drawable drawable) throws IOException {
+    static String drawableDataUri(Drawable drawable) throws IOException {
         // 72 px, 42 CSS px kartlarda keskin kalırken ikon kodlama yükünü ve
         // WebView köprü verisini 96 px'e göre belirgin biçimde azaltır.
         final int size = 72;

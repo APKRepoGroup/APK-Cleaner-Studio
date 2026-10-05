@@ -126,7 +126,7 @@ class AndroidPackageTests(unittest.TestCase):
 
     def test_installed_icons_preserve_density_dependent_insets_before_scaling(self):
         activity = (ANDROID / "app/src/main/java/com/apkcleaner/studio/MainActivity.java").read_text(encoding="utf-8")
-        renderer = activity.split("private String drawableDataUri(", 1)[1].split("private static void copyFile", 1)[0]
+        renderer = activity.split("static String drawableDataUri(", 1)[1].split("private static void copyFile", 1)[0]
         self.assertIn("drawable.getIntrinsicWidth()", renderer)
         self.assertIn("drawable.getIntrinsicHeight()", renderer)
         self.assertIn("setBounds(0, 0, logicalSize, logicalSize)", renderer)
@@ -157,7 +157,7 @@ class AndroidPackageTests(unittest.TestCase):
         self.assertIn("launcher.loadIcon(manager)", activity)
         self.assertIn("android.R.attr.state_enabled", activity)
         self.assertIn("drawable.jumpToCurrentState()", activity)
-        rasterizer = activity.split("private String drawableDataUri", 1)[1].split("private static void copyFile", 1)[0]
+        rasterizer = activity.split("static String drawableDataUri", 1)[1].split("private static void copyFile", 1)[0]
         self.assertLess(rasterizer.index("try ("), rasterizer.index("drawable.draw("))
         self.assertIn("bitmap.recycle()", rasterizer.split("finally", 1)[1])
 
@@ -251,11 +251,11 @@ class AndroidPackageTests(unittest.TestCase):
             app_archive = zipfile.ZipFile(io.BytesIO(archive.read("assets/chaquopy/app.imy")))
             embedded = set(app_archive.namelist())
         for required in (
-            "android_entry.py", "engine.py", "server.py", "profiles.json",
+            "android_entry.py", "engine.py", "package_icon.py", "server.py", "profiles.json",
             "web/index.html", "web/app.js", "web/styles.css", "web/ui-runtime.js",
         ):
             self.assertIn(required, embedded)
-        for relative in ("engine.py", "server.py", "profiles.json", "web/index.html", "web/app.js", "web/theme.css", "web/ui-runtime.js"):
+        for relative in ("engine.py", "package_icon.py", "server.py", "profiles.json", "web/index.html", "web/app.js", "web/theme.css", "web/ui-runtime.js"):
             self.assertEqual(
                 app_archive.read(relative),
                 (ROOT / "studio" / relative).read_bytes(),
@@ -364,10 +364,10 @@ class AndroidPackageTests(unittest.TestCase):
 
     def test_android_sync_script_covers_all_shared_runtime_files(self):
         sync = (ROOT / "packaging" / "sync_android.py").read_text(encoding="utf-8")
-        for name in ("engine.py", "server.py", "setup_tools.py", "updater.py", "device_catalog.py"):
+        for name in ("engine.py", "package_icon.py", "server.py", "setup_tools.py", "updater.py", "device_catalog.py"):
             self.assertIn(f'"{name}"', sync)
         self.assertIn("shutil.copytree(STUDIO / \"web\"", sync)
-        for relative in ("engine.py", "server.py", "profiles.json", "web/app.js", "web/theme.css", "web/ui-runtime.js"):
+        for relative in ("engine.py", "package_icon.py", "server.py", "profiles.json", "web/app.js", "web/theme.css", "web/ui-runtime.js"):
             self.assertEqual(
                 (ANDROID / "app" / "src" / "main" / "python" / relative).read_bytes(),
                 (ROOT / "studio" / relative).read_bytes(),

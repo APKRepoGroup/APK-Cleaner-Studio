@@ -17,6 +17,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Callable, Iterable
 from xml.etree import ElementTree as ET
+from package_icon import MAX_MANIFEST_BYTES, extract_apk_icon, extract_split_icon, read_manifest_identity
 
 ROOT = Path(__file__).resolve().parent
 BUNDLED_TOOLS = ROOT / "tools"
@@ -537,6 +538,7 @@ def inspect_apk(apk_path: Path, known_sha256: str | None = None) -> dict:
     source_integrity_risk = bool(SOURCE_INTEGRITY_RISK_LABELS.intersection(install_source_checks))
     return {
         "filename": apk_path.name,
+        "app_icon": extract_apk_icon(apk_path),
         "size": apk_path.stat().st_size,
         "sha256": known_sha256 or sha256(apk_path),
         "package_name": package_name,
@@ -590,6 +592,7 @@ def inspect_split_package(
     suspicious_files: set[str] = set()
     warnings: list[str] = []
     package_name = ""
+    app_icon = ""
     notify = progress or (lambda _message, _percent: None)
 
     with _temporary_directory(prefix="apkcleaner-split-scan-") as temp_name:
@@ -610,6 +613,8 @@ def inspect_split_package(
                 report = inspect_apk(extracted)
                 candidate_package = str(report.get("package_name") or "")
                 is_base = any(item.get("name") == name and item.get("kind") == "base" for item in inventory.get("modules", []))
+                if is_base:
+                    app_icon = report.get("app_icon", "")
                 if candidate_package and (not package_name or is_base):
                     package_name = candidate_package
                 module_label = Path(name).name
@@ -643,6 +648,7 @@ def inspect_split_package(
     source_integrity_risk = bool(SOURCE_INTEGRITY_RISK_LABELS.intersection(install_source_checks))
     return {
         "filename": source.name,
+        "app_icon": app_icon or extract_split_icon(source, inventory),
         "size": source.stat().st_size,
         "sha256": known_sha256 or sha256(source),
         "package_name": package_name,

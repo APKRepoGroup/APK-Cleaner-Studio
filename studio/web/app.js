@@ -929,6 +929,7 @@ function renderAccessBlocked() {
 
 function humanSize(bytes) { return bytes > 1024 ** 2 ? `${(bytes / 1024 ** 2).toFixed(1)} MB` : `${(bytes / 1024).toFixed(1)} KB`; }
 function showView(id) {
+  if (id === "#workingView") renderWorkingPackage();
   $$(".view").forEach((view) => view.classList.add("hidden"));
   $(id).classList.remove("hidden");
   const showStartGuide = id === "#selectView" || id === "#workingView" || id === "#resultView";
@@ -937,6 +938,40 @@ function showView(id) {
   const workspace = $(".workspace");
   if (workspace) workspace.dataset.stage = id.slice(1).replace(/View$/, "");
 }
+function renderPackageIcon(selector, icon) {
+  const container = $(selector);
+  if (!container) return;
+  container.querySelector(".package-app-icon")?.remove();
+  container.classList.remove("has-app-icon");
+  if (typeof icon !== "string" || icon.length > 700000 || !/^data:image\/(?:png|webp|jpeg);base64,[A-Za-z0-9+/]+={0,2}$/.test(icon)) return;
+  const image = document.createElement("img");
+  image.className = "package-app-icon";
+  image.alt = "";
+  image.decoding = "async";
+  image.onload = () => { if (image.parentElement === container) container.classList.add("has-app-icon"); };
+  image.onerror = () => {
+    if (image.parentElement !== container) return;
+    image.remove();
+    container.classList.remove("has-app-icon");
+  };
+  container.append(image);
+  image.src = icon;
+}
+
+function workingPackageSummary(analysis, file) {
+  const text = (value) => typeof value === "string" ? value.trim() : "";
+  const packageName = text(analysis?.package_name);
+  return { name: text(analysis?.filename) || text(file?.name) || packageName || "Seçilen paket", packageName };
+}
+
+function renderWorkingPackage() {
+  const summary = workingPackageSummary(state.analysis, state.file);
+  $("#workingPackageName").textContent = summary.name;
+  $("#workingPackageId").textContent = summary.packageName;
+  $("#workingPackageId").classList.toggle("hidden", !summary.packageName);
+  renderPackageIcon(".working-package-icon", state.analysis?.app_icon);
+}
+
 function setStep(step) { $$(".steps>div").forEach((item) => item.classList.toggle("active", Number(item.dataset.step) <= step)); }
 
 function startHeroRotation() {
@@ -1192,7 +1227,8 @@ async function loadHistoryJob(jobId) {
     clearJobFailure();
     $("#restrictStoreUpdates").checked = false;
     const badge = String(analysis.source_type || "apk").toUpperCase();
-    $("#fileCard").innerHTML = `<div class="apk">${escapeHTML(badge)}</div><div><b>${escapeHTML(analysis.filename)}</b><span>${humanSize(analysis.size || 0)} · Geçmiş işlem yeniden açıldı</span></div>`;
+    $("#fileCard").innerHTML = `<div class="apk"><span>${escapeHTML(badge)}</span></div><div><b>${escapeHTML(analysis.filename)}</b><span>${humanSize(analysis.size || 0)} · Geçmiş işlem yeniden açıldı</span></div>`;
+    renderPackageIcon("#fileCard .apk", analysis.app_icon);
     renderNetworks(analysis); renderSplitOptions(analysis.split_options);
     updateDirectSplitInstall(analysis);
     prepareCloneOption(analysis);
@@ -1881,7 +1917,7 @@ function prepareAnalysisView(name, size, split = false) {
   $("#restrictStoreUpdates").checked = false;
   state.operation = "patch"; setStep(2); showView("#analysisView");
   const ext = extension(name) || ".apk";
-  $("#fileCard").innerHTML = `<div class="apk">${escapeHTML(ext.slice(1).toUpperCase())}</div><div><b>${escapeHTML(name)}</b><span>${humanSize(size)} · ${split ? "Split modüller birleştirilecek" : "Yerel analiz"}</span></div>`;
+  $("#fileCard").innerHTML = `<div class="apk"><span>${escapeHTML(ext.slice(1).toUpperCase())}</span></div><div><b>${escapeHTML(name)}</b><span>${humanSize(size)} · ${split ? "Split modüller birleştirilecek" : "Yerel analiz"}</span></div>`;
   $("#scanProgress").classList.remove("hidden"); $("#analysisContent").classList.add("hidden");
 }
 
@@ -1889,6 +1925,7 @@ function applyAnalysisResult(data) {
   $("#restrictStoreUpdates").checked = false;
   state.messageTargets = []; state.messageCandidates = [];
   state.jobId = data.job_id; state.analysis = data.analysis; renderNetworks(data.analysis); renderSplitOptions(data.analysis.split_options);
+  renderPackageIcon("#fileCard .apk", data.analysis.app_icon);
   clearJobFailure();
   updateDirectSplitInstall(data.analysis);
   prepareCloneOption(data.analysis);

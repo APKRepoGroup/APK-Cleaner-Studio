@@ -111,6 +111,24 @@ public final class EmbeddedToolRunner {
         }
     }
 
+    /** Render the source APK's drawable without consulting an installed copy. */
+    public static String inspectArchiveIcon(String apkPath) {
+        Context context = appContext;
+        if (context == null || apkPath == null || apkPath.isEmpty()) return "";
+        try {
+            android.content.pm.PackageManager manager = context.getPackageManager();
+            PackageInfo info = manager.getPackageArchiveInfo(apkPath, 0);
+            if (info == null || info.applicationInfo == null || info.applicationInfo.icon == 0) return "";
+            info.applicationInfo.sourceDir = apkPath;
+            info.applicationInfo.publicSourceDir = apkPath;
+            android.content.res.Resources resources = manager.getResourcesForApplication(info.applicationInfo);
+            return MainActivity.drawableDataUri(resources.getDrawable(info.applicationInfo.icon, null));
+        } catch (Exception error) {
+            Log.w(TAG, "APK ikonu okunamadı; varsayılan paket simgesi kullanılacak", error);
+            return "";
+        }
+    }
+
     public static Result run(String[] command, String cwd) {
         Thread current = Thread.currentThread();
         // Chaquopy may reuse a worker interrupted by an earlier cancelled job.

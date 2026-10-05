@@ -1401,7 +1401,7 @@ def _execute_clean_job(job_id: str, payload: dict) -> None:
             analysis_report=None if selected_split_rebuilt else {
                 key: analysis[key]
                 for key in (
-                    "filename", "size", "sha256", "package_name", "suggested_clone_package_name", "dex", "dex_count", "detections",
+                    "filename", "size", "sha256", "package_name", "app_icon", "suggested_clone_package_name", "dex", "dex_count", "detections",
                     "network_count", "manifest_hits", "layout_hits", "install_source_checks", "source_integrity_risk",
                     "message_ui_candidates", "message_ui_candidate_count", "requires_splits",
                     "suspicious_files", "toolchain", "warnings",
