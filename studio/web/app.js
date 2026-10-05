@@ -1,6 +1,7 @@
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
 const state = {
+  appearanceIcon: "", appearanceGeneration: 0, appearanceLoading: false,
   file: null, profile: "balanced", operation: "patch", patchAdsSelected: true, jobId: null, analysis: null, toolchain: null,
   splitSelection: { abis: [], languages: [] },
   messageTargets: [], messageCandidates: [],
@@ -22,6 +23,9 @@ const SAVED_PRESETS_KEY = "apk-cleaner-processing-presets-v1";
 const ACTION_NEXT_ICON = '<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h15m-6-6 6 6-6 6"/></svg>';
 function setJobRunning(active) {
   state.jobRunning = Boolean(active);
+  for (const selector of ["#customAppName", "#customAppIcon", "#clearAppAppearance", "#selectAppIcon"]) {
+    const control = $(selector); if (control) control.disabled = state.jobRunning || Boolean(state.toolchain && !state.toolchain.manifest_tool);
+  }
   if (document.documentElement.dataset.embedded !== "android") return;
   try { globalThis.AndroidThemeBridge?.setProcessingActive?.(state.jobRunning); } catch {}
 }
@@ -1604,6 +1608,10 @@ function renderTools(tools) {
   $("#restrictStoreUpdates").disabled = !tools.manifest_tool;
   $("#restrictStoreUpdates").closest(".option").classList.toggle("option-unavailable", !tools.manifest_tool);
   if (!tools.manifest_tool) $("#restrictStoreUpdates").checked = false;
+  for (const selector of ["#customAppName", "#customAppIcon", "#selectAppIcon", "#clearAppAppearance"]) {
+    $(selector).disabled = state.jobRunning || !tools.manifest_tool;
+  }
+  if (state.analysis) updateActionState();
 }
 
 function renderNetworks(analysis) {
@@ -1742,6 +1750,52 @@ function renderPackageInfo(analysis) {
   }));
 }
 
+function resetAppAppearance() {
+  state.appearanceGeneration = (state.appearanceGeneration || 0) + 1;
+  state.appearanceIcon = ""; state.appearanceLoading = false;
+  $("#customAppName").value = ""; $("#customAppIcon").value = "";
+  $("#appIconSelection").textContent = "Mevcut simge korunacak";
+  setInlineDisclosureOpen($("#appAppearance"), false);
+  renderAppearancePreview();
+}
+
+function renderAppearancePreview() {
+  $("#appearancePreviewName").textContent = $("#customAppName").value.trim() || state.analysis?.package_info?.app_name || state.analysis?.filename || "Mevcut uygulama adı";
+  renderPackageIcon("#appearancePreviewIcon", state.appearanceIcon || state.analysis?.app_icon);
+}
+
+async function selectAppearanceIcon() {
+  const file = $("#customAppIcon").files?.[0];
+  const generation = ++state.appearanceGeneration;
+  state.appearanceIcon = ""; state.appearanceLoading = Boolean(file);
+  renderAppearancePreview(); updateActionState();
+  if (!file) return;
+  try {
+    if (!["image/png", "image/jpeg", "image/webp"].includes(file.type) || file.size > 5 * 1024 * 1024) throw new Error("PNG, JPEG veya WebP simgesi seç; dosya en fazla 5 MB olmalı.");
+    const url = URL.createObjectURL(file);
+    try {
+      const image = new Image();
+      await new Promise((resolve, reject) => { image.onload = resolve; image.onerror = () => reject(new Error("Simge açılamadı; farklı bir görsel seç.")); image.src = url; });
+      if (!image.naturalWidth || !image.naturalHeight || image.naturalWidth > 4096 || image.naturalHeight > 4096) throw new Error("Simge en fazla 4096 × 4096 piksel olmalı.");
+      const canvas = document.createElement("canvas"); canvas.width = canvas.height = 256;
+      const context = canvas.getContext("2d");
+      if (!context) throw new Error("Simge hazırlanamadı.");
+      const ratio = 256 / Math.max(image.naturalWidth, image.naturalHeight);
+      const width = image.naturalWidth * ratio, height = image.naturalHeight * ratio;
+      context.drawImage(image, (256 - width) / 2, (256 - height) / 2, width, height);
+      if (generation === state.appearanceGeneration) state.appearanceIcon = canvas.toDataURL("image/png");
+    } finally { URL.revokeObjectURL(url); }
+  } catch (error) {
+    if (generation === state.appearanceGeneration) { $("#customAppIcon").value = ""; toast(error.message || "Simge hazırlanamadı."); }
+  } finally {
+    if (generation === state.appearanceGeneration) {
+      state.appearanceLoading = false;
+      $("#appIconSelection").textContent = state.appearanceIcon ? file.name : "Mevcut simge korunacak";
+      renderAppearancePreview(); updateActionState();
+    }
+  }
+}
+
 function updateDirectSplitInstall(analysis) {
   clearDirectSplitPlan();
   state.splitInstallRequestJobId = null;
@@ -1849,6 +1903,7 @@ function processingSelectionSummary(selection) {
     if (selection.hasLanguageChoices) rows.push(["Dil paketleri", selection.languages.join(", ") || "Ek dil seçilmedi"]);
   }
   if (selection.operation === "clone") rows.push(["Klon paket adı", selection.clonePackage || "Henüz girilmedi"]);
+  if (selection.appearanceName) rows.push(["Görünen uygulama adı", selection.appearanceName]);
   const extras = [
     ["stripDebug", "DEX hata ayıklama verilerini kaldır"],
     ["restrictStoreUpdates", "Play Store güncellemesini kapat"],
@@ -1857,6 +1912,7 @@ function processingSelectionSummary(selection) {
     ["deobfuscateResources", "RES kaynak korumasını kaldır"],
   ].filter(([key]) => selection[key]).map(([, label]) => label);
   if (selection.messageCount) extras.push(`${selection.messageCount} başlangıç çağrısını kaldır`);
+  if (selection.appearanceIcon) extras.push("Uygulama simgesini değiştir");
   rows.push(["Ek işlemler", extras.length ? extras.join(" · ") : "Seçilmedi"]);
   return {
     rows,
@@ -1878,6 +1934,7 @@ function renderSelectionSummary(patchAds, canRun) {
     abis: state.splitSelection?.abis || [],
     languages: selectedLanguages.map(code => splitOptions?.languages?.find(item => item.code === code)?.label || code),
     clonePackage: $("#clonePackageName").value.trim(), messageCount: state.messageTargets.length,
+    appearanceName: $("#customAppName").value.trim(), appearanceIcon: Boolean(state.appearanceIcon),
   });
   const list = $("#selectionSummaryRows");
   // Status polls must not replace unchanged content under the user's pointer.
@@ -1898,8 +1955,8 @@ function updateActionState() {
   const hasAds = Number(state.analysis.network_count || 0) > 0;
   const wantsAds = hasAds && ((state.operation === "patch" && state.patchAdsSelected) || (state.operation !== "patch" && $("#patchAds").checked));
   updateAdProfileAvailability(wantsAds);
-  const hasIndependentPatch = $("#stripDebug").checked || $("#normalizeDex").checked || $("#optimizeApk").checked || $("#deobfuscateResources").checked || $("#restrictStoreUpdates").checked || state.messageTargets.length > 0;
-  const canRun = state.operation === "clone" ? validClonePackageName() : state.operation === "convert" || wantsAds || hasIndependentPatch;
+  const hasIndependentPatch = $("#stripDebug").checked || $("#normalizeDex").checked || $("#optimizeApk").checked || $("#deobfuscateResources").checked || $("#restrictStoreUpdates").checked || state.messageTargets.length > 0 || $("#customAppName").value.trim() || state.appearanceIcon;
+  const canRun = !state.appearanceLoading && (state.operation === "clone" ? validClonePackageName() : state.operation === "convert" || wantsAds || Boolean(hasIndependentPatch));
   $("#profileSection").classList.toggle("soft-disabled", !wantsAds);
   $(".manifest-note").classList.toggle("hidden", !wantsAds || state.profile === "safe");
   $("#cleanButton").disabled = !canRun;
@@ -2004,6 +2061,7 @@ async function deleteSavedPreset() {
 }
 
 function prepareAnalysisView(name, size, split = false) {
+  resetAppAppearance();
   clearJobFailure();
   $("#restrictStoreUpdates").checked = false;
   state.operation = "patch"; setStep(2); showView("#analysisView");
@@ -2013,10 +2071,12 @@ function prepareAnalysisView(name, size, split = false) {
 }
 
 function applyAnalysisResult(data) {
+  resetAppAppearance();
   $("#restrictStoreUpdates").checked = false;
   state.messageTargets = []; state.messageCandidates = [];
   state.jobId = data.job_id; state.analysis = data.analysis; renderNetworks(data.analysis); renderSplitOptions(data.analysis.split_options);
   renderPackageIcon("#fileCard .apk", data.analysis.app_icon);
+  renderAppearancePreview();
   clearJobFailure();
   updateDirectSplitInstall(data.analysis);
   prepareCloneOption(data.analysis);
@@ -2290,6 +2350,11 @@ function renderResultSummary(result) {
   $("#resultVerification").textContent = summary.verification;
   $("#resultVerification").classList.toggle("verified", summary.verified);
   $("#resultRemovedFiles").textContent = summary.removed;
+  const appearanceResult = $("#resultAppearance");
+  appearanceResult.classList.toggle("hidden", !result.app_appearance);
+  appearanceResult.textContent = result.app_appearance
+    ? `Uygulama adı: ${result.app_appearance.name || "korundu"}. Simge: ${result.app_appearance.icon_changed ? "değiştirildi" : "korundu"}.`
+    : "";
   const storeUpdates = $("#resultStoreUpdates");
   storeUpdates.classList.toggle("hidden", !result.store_updates);
   storeUpdates.textContent = result.store_updates
@@ -2347,12 +2412,13 @@ async function waitForJobResult(initialResult = null) {
 
 async function runJob() {
   if (!state.jobId || state.jobRunning) return;
+  if (state.appearanceLoading) { toast("Simge hazırlanıyor; tamamlanmasını bekle."); return; }
   const hasAds = Number(state.analysis?.network_count || 0) > 0;
   const patchAds = hasAds && ((state.operation === "patch" && state.patchAdsSelected) || (state.operation !== "patch" && $("#patchAds").checked));
   if (state.operation === "clone" && !validClonePackageName()) { toast("Klon için özgün addan farklı, geçerli bir paket adı gir."); return; }
   const needsDex = state.operation === "clone" || patchAds || $("#stripDebug").checked || $("#normalizeDex").checked;
   const needsResources = $("#deobfuscateResources").checked;
-  const needsManifest = state.operation === "clone" || $("#restrictStoreUpdates").checked;
+  const needsManifest = state.operation === "clone" || $("#restrictStoreUpdates").checked || $("#customAppName").value.trim() || state.appearanceIcon;
   if (state.toolchain && (!state.toolchain.signer || (needsDex && !state.toolchain.dex_tools) || (needsManifest && !state.toolchain.manifest_tool) || (needsResources && !state.toolchain.resource_tool))) {
     toast("İşlem için önce eksik bileşenleri hazırla."); $("#toolCard").scrollIntoView({ behavior: "smooth", block: "center" }); return;
   }
@@ -2368,6 +2434,7 @@ async function runJob() {
       clone_package_name: state.operation === "clone" ? $("#clonePackageName").value.trim() : null,
       strip_debug: $("#stripDebug").checked, normalize_dex: $("#normalizeDex").checked, optimize_apk: $("#optimizeApk").checked,
       restrict_store_updates: $("#restrictStoreUpdates").checked,
+      app_appearance: { name: $("#customAppName").value.trim(), icon: state.appearanceIcon || "" },
       deobfuscate_resources: $("#deobfuscateResources").checked, normalize_resources: false,
       message_targets: state.messageTargets,
       split_selection: state.analysis?.split_merged ? state.splitSelection : null
@@ -2417,6 +2484,7 @@ async function cancelJob() {
 }
 
 function reset() {
+  resetAppAppearance();
   Object.assign(state, { file: null, jobId: null, analysis: null, profile: "balanced", operation: "patch", patchAdsSelected: true, splitSelection: { abis: [], languages: [] }, messageTargets: [], messageCandidates: [], pollInFlight: false, jobRunning: false, outputUrl: "", outputFilename: "", nativeInstallBusy: false, nativeShareBusy: false, nativeSplitInstallBusy: false, splitInstallRequestJobId: null, splitInstallSubmitted: false, installedSharePackage: "" });
   setJobRunning(false);
   resetProgress();
@@ -2480,6 +2548,12 @@ $$(".profile").forEach((button) => button.addEventListener("click", () => {
 $("#patchAds").addEventListener("change", updateActionState);
 $("#patchAds").addEventListener("input", updateActionState);
 $("#clonePackageName").addEventListener("input", updateActionState);
+$("#customAppName").addEventListener("input", () => { renderAppearancePreview(); updateActionState(); });
+$("#customAppIcon").addEventListener("change", selectAppearanceIcon);
+$("#selectAppIcon").addEventListener("click", () => $("#customAppIcon").click());
+$("#clearAppAppearance").addEventListener("click", () => {
+  resetAppAppearance(); setInlineDisclosureOpen($("#appAppearance"), true); updateActionState();
+});
 $("#savedPresetSelect").addEventListener("change", () => renderSavedPresets());
 $("#applyPresetButton").addEventListener("click", applySavedPreset);
 $("#savePresetButton").addEventListener("click", saveCurrentPreset);

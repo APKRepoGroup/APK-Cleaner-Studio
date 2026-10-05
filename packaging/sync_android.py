@@ -16,6 +16,7 @@ STUDIO = ROOT / "studio"
 PYTHON_FILES = (
     "engine.py",
     "package_icon.py",
+    "app_appearance.py",
     "package_info.py",
     "server.py",
     "setup_tools.py",

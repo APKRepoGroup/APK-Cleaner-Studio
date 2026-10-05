@@ -162,6 +162,18 @@
               <label class="option"><input id="deobfuscateResources" type="checkbox"><span></span><div><b>RES kaynak korumasını kaldır</b><p>APKEditor’ün yalın kaynak düzenleme işlemini doğrudan uygular ve üretilen paketle devam eder.</p></div></label>
             </div>
             <div class="manifest-note"><span>✓</span><p><b>Manifest ve XML denetimi etkin.</b> Dengeli ve Gelişmiş profiller doğrulanmış reklam servislerini, izinlerini ve metadata kayıtlarını temizler. Bilinen reklam görünümü bulunursa ilgili alan <code>0dp + gone</code> yapılır.</p></div>
+              <details id="appAppearance" class="app-appearance"><summary>Uygulama adını ve simgesini özelleştir</summary>
+                <p>Telefonda ve uygulama kısayolunda görünen adı veya simgeyi değiştir. Boş bırakılan alanlar korunur; paket kimliği ve sürüm bilgileri bu seçenekle değiştirilmez.</p>
+                <label for="customAppName">Yeni uygulama adı</label>
+                <input id="customAppName" type="text" maxlength="80" autocomplete="off" placeholder="Boş bırakırsan mevcut ad korunur">
+                <label for="customAppIcon">Yeni uygulama simgesi</label>
+                <input id="customAppIcon" class="hidden" type="file" accept="image/png,image/jpeg,image/webp" aria-describedby="appIconHint">
+                <div class="appearance-file"><button id="selectAppIcon" class="secondary" type="button">Simge seç</button><span id="appIconSelection">Mevcut simge korunacak</span></div>
+                <p id="appIconHint" class="fineprint">PNG, JPEG veya WebP · En fazla 5 MB. Seçilen görsel kare bir tuvale sığdırılır; cihaz kendi simge şeklini uygular.</p>
+                <div class="appearance-preview"><span id="appearancePreviewIcon" class="appearance-preview-icon" aria-hidden="true"><span>APK</span></span><div><small>GÖRÜNÜM ÖNİZLEMESİ</small><b id="appearancePreviewName"></b></div></div>
+                <button id="clearAppAppearance" class="secondary" type="button">Özelleştirmeyi temizle</button>
+                <p class="fineprint">APK yeniden imzalanır. Sabitlenmiş kısayollar ve uygulamanın kendi içindeki ad veya logolar değişmeyebilir.</p>
+              </details>
             <section class="saved-presets" aria-labelledby="savedPresetsTitle">
               <div><b id="savedPresetsTitle">Kayıtlı işlem profilleri</b><p>Yalnızca işlem seçenekleri bu cihazda saklanır; APK ve dosya bilgileri kaydedilmez.</p></div>
               <div class="saved-presets-controls"><select id="savedPresetSelect" aria-label="Kayıtlı işlem profili"><option value="">Profil seç</option></select><button id="applyPresetButton" class="secondary" type="button" disabled>Uygula</button><button id="savePresetButton" class="secondary" type="button">Seçenekleri kaydet</button><button id="deletePresetButton" class="secondary" type="button" disabled aria-label="Seçili profili sil">Sil</button></div>
@@ -218,7 +230,7 @@
             <p id="resultVerification" class="result-verification"></p>
           </section>
           <details id="resultDetails" class="result-details"><summary>İşlem ayrıntıları</summary>
-            <div id="resultStats" class="stats"></div><p id="resultRemovedFiles" class="fineprint"></p>
+            <div id="resultStats" class="stats"></div><p id="resultRemovedFiles" class="fineprint"></p><p id="resultAppearance" class="fineprint hidden"></p>
             <p id="resultStoreUpdates" class="fineprint hidden"></p>
             <p class="fineprint">Doğrulama, APK yapısını ve imzasını denetler; uygulamanın cihazında sorunsuz çalışacağını garanti etmez.</p>
           </details>

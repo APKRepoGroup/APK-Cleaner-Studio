@@ -26,6 +26,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 import local.apkcleaner.dex.DirectDexPatcher;
 import local.apkcleaner.xml.BinaryManifestPatcher;
+import local.apkcleaner.xml.AppAppearancePatcher;
 
 /** Executes the existing JVM tools in-process: no Java executable or Termux is required. */
 public final class EmbeddedToolRunner {
@@ -210,6 +211,10 @@ public final class EmbeddedToolRunner {
             }
             if (className.equals("local.apkcleaner.xml.BinaryManifestPatcher")) {
                 BinaryManifestPatcher.main(toolArgs);
+                return;
+            }
+            if (className.equals("local.apkcleaner.xml.AppAppearancePatcher")) {
+                AppAppearancePatcher.main(toolArgs);
                 return;
             }
             throw new IllegalArgumentException("Desteklenmeyen gömülü sınıf: " + className);

@@ -372,10 +372,14 @@ public final class MainActivity extends Activity {
             @Override public boolean onShowFileChooser(WebView view, ValueCallback<Uri[]> callback, FileChooserParams params) {
                 cancelFileSelection();
                 fileCallback = callback;
+                boolean choosingImage = params != null && params.getAcceptTypes() != null
+                        && String.join(",", params.getAcceptTypes()).contains("image/");
                 Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT)
                         .addCategory(Intent.CATEGORY_OPENABLE)
-                        .setType("application/octet-stream")
-                        .putExtra(Intent.EXTRA_MIME_TYPES, new String[] {
+                        .setType(choosingImage ? "image/*" : "application/octet-stream")
+                        .putExtra(Intent.EXTRA_MIME_TYPES, choosingImage ? new String[] {
+                                "image/png", "image/jpeg", "image/webp"
+                        } : new String[] {
                                 "application/vnd.android.package-archive", "application/zip", "application/octet-stream"
                         });
                 try {

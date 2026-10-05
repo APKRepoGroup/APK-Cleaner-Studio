@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import base64
 import json
 import os
 import re
@@ -18,6 +19,7 @@ from pathlib import Path
 from typing import Callable, Iterable
 from xml.etree import ElementTree as ET
 from package_icon import MAX_MANIFEST_BYTES, extract_apk_icon, extract_split_icon, read_manifest_identity
+from app_appearance import validate_appearance
 from package_info import inspect_package_info
 
 ROOT = Path(__file__).resolve().parent
@@ -1202,6 +1204,45 @@ def rewrite_apk(source: Path, destination: Path, replacements: dict[str, Path], 
                 continue
             data = replacements[name].read_bytes() if name in replacements else src.read(name)
             dst.writestr(info, data)
+        for name in replacements.keys() - set(src.namelist()):
+            dst.write(replacements[name], name, compress_type=zipfile.ZIP_DEFLATED)
+
+
+def patch_app_appearance(source: Path, destination: Path, appearance: dict, tools: Toolchain, log: list[str]) -> dict:
+    """Append a dedicated icon resource, never replace shared original resources."""
+    work = destination.parent / "appearance"
+    work.mkdir()
+    manifest_in, manifest_out = work / "source.bin", work / "output.bin"
+    command = [tools.java, "-cp", os.pathsep.join((str(tools.apkeditor), str(tools.binary_manifest_patcher))),
+               "local.apkcleaner.xml.AppAppearancePatcher", "--input", str(manifest_in), "--output", str(manifest_out)]
+    replacements = {"AndroidManifest.xml": manifest_out}
+    with zipfile.ZipFile(source) as archive:
+        if archive.getinfo("AndroidManifest.xml").file_size > MAX_MANIFEST_BYTES:
+            raise ValueError("Uygulama görünümü için manifest boyutu sınırı aşıldı.")
+        manifest_in.write_bytes(archive.read("AndroidManifest.xml"))
+        if appearance.get("name"):
+            label_file = work / "label.txt"
+            label_file.write_text(appearance["name"], encoding="utf-8")
+            command.extend(("--label-file", str(label_file)))
+        icon_path = None
+        if appearance.get("icon"):
+            from package_icon import MAX_RESOURCE_BYTES
+            if "resources.arsc" not in archive.namelist() or archive.getinfo("resources.arsc").file_size > MAX_RESOURCE_BYTES:
+                raise ValueError("Simge değişimi için desteklenen bir kaynak tablosu bulunamadı.")
+            # UUID prevents overwriting an existing resource or file, including on a
+            # previously customized APK. Original icon resources remain untouched.
+            import uuid
+            icon_path = "res/drawable/apkcleaner_icon_" + uuid.uuid4().hex + ".png"
+            table_in, table_out, png = work / "resources-in.arsc", work / "resources-out.arsc", work / "icon.png"
+            table_in.write_bytes(archive.read("resources.arsc"))
+            png.write_bytes(base64.b64decode(appearance["icon"].split(",", 1)[1], validate=True))
+            command.extend(("--table", str(table_in), "--table-output", str(table_out), "--icon-path", icon_path))
+            replacements.update({"resources.arsc": table_out, icon_path: png})
+    run_checked(command, log)
+    if not any(line.startswith("APPEARANCE\t") for line in log) or not manifest_out.is_file():
+        raise RuntimeError("Uygulama görünümü doğrulanamadı.")
+    rewrite_apk(source, destination, replacements, set())
+    return {"name": appearance.get("name") or None, "icon_changed": bool(icon_path), "icon_path": icon_path}
 
 
 def deep_removals(apk_path: Path, detected_ids: set[str]) -> set[str]:
@@ -1654,7 +1695,9 @@ def process_apk(
     message_targets: list[str] | None = None,
     clone_package_name: str | None = None,
     restrict_store_updates: bool = False,
+    app_appearance: dict | None = None,
 ) -> dict:
+    appearance = validate_appearance(app_appearance)
     if not isinstance(restrict_store_updates, bool):
         raise ValueError("Play Store güncelleme seçeneği geçersiz.")
     if mode not in {"safe", "balanced", "deep"}:
@@ -1698,6 +1741,8 @@ def process_apk(
     needs_manifest = bool(patch_ads and mode in {"balanced", "deep"} and report["manifest_hits"])
     if (needs_manifest or clone_package_name or restrict_store_updates) and not tool_status["manifest_tool"]:
         raise RuntimeError("Doğrudan manifest bileşeni hazır değil. ‘Eksik bileşenleri hazırla’ düğmesini kullan.")
+    if appearance and not tool_status.get("manifest_tool"):
+        raise RuntimeError("Uygulama görünümü için manifest bileşenini hazırla.")
     if not tool_status["signer"]:
         raise RuntimeError("APK imzalama bileşeni hazır değil. ‘Eksik bileşenleri hazırla’ düğmesini kullan.")
 
@@ -1925,11 +1970,17 @@ def process_apk(
                     rewrite_apk(unsigned, xml_staged, entry_replacements, set())
                     unsigned = xml_staged
 
+        appearance_result = None
+        if appearance:
+            notify("Uygulama adı ve simgesi düzenleniyor", 90)
+            customized = temp / "customized.apk"
+            appearance_result = patch_app_appearance(unsigned, customized, appearance, tools, log)
+            unsigned = customized
         notify("APK imzalanıyor", 92)
         stem = Path(source_name or apk_path.name).stem
         has_optional_changes = bool(
             strip_debug or normalize_dex or optimize_apk or deobfuscate_resources
-            or normalize_resources or selected_message_targets or restrict_store_updates
+            or normalize_resources or selected_message_targets or restrict_store_updates or appearance
         )
         if clone_package_name:
             output_name = f"{stem}-clone{'-clean-' + mode if patch_ads else ''}.apk"
@@ -1953,7 +2004,15 @@ def process_apk(
         store_updates = manifest_result.get("store_updates")
         expected_version = (store_updates["version_code_after"], store_updates["version_code_major"]) if store_updates else None
         verification = verify_output_apk(apk_path, actual_output, tools, log, removed_files=remove_files,
-                                         expected_package_name=clone_package_name, expected_version=expected_version)
+                                         expected_package_name=clone_package_name or (original_package_name if appearance else None), expected_version=expected_version)
+        if appearance_result:
+            # Verify the final signed bytes too; a signer must not undo the edits.
+            with zipfile.ZipFile(unsigned) as expected, zipfile.ZipFile(actual_output) as actual:
+                entries = ["AndroidManifest.xml"]
+                if appearance_result["icon_changed"]:
+                    entries.extend(("resources.arsc", appearance_result["icon_path"]))
+                if any(expected.read(entry) != actual.read(entry) for entry in entries):
+                    raise RuntimeError("Çıktı doğrulanamadı: uygulama adı veya simgesi korunmadı.")
 
     with zipfile.ZipFile(apk_path) as before_archive, zipfile.ZipFile(actual_output) as after_archive:
         before_names = set(before_archive.namelist())
@@ -2012,6 +2071,7 @@ def process_apk(
         "source_size_bytes": source_size_bytes if source_size_bytes is not None else apk_path.stat().st_size,
         "output_size_bytes": actual_output.stat().st_size,
         "identity_comparison": identity_comparison,
+        "app_appearance": appearance_result,
         "operation": "clone" if clone_package_name else ("patch" if patch_ads or has_optional_changes else "convert"),
         "clone": {"original_package": original_package_name, "new_package": clone_package_name,
                   "changes": manifest_result.get("clone_changes", []),
@@ -2045,6 +2105,8 @@ def process_apk(
     lines = [
         "APK CLEANER STUDIO RAPORU",
         f"Dosya: {result['filename']}",
+        *([f"Görünen uygulama adı: {appearance_result['name'] or 'korundu'}",
+           f"Uygulama simgesi: {'değiştirildi' if appearance_result['icon_changed'] else 'korundu'}"] if appearance_result else []),
         f"İşlem: {'APK klonlama' if clone_package_name else 'reklam temizleme' if patch_ads else 'APK dönüştürme/iyileştirme'}",
         *([f"Özgün paket adı: {original_package_name}", f"Klon paket adı: {clone_package_name}",
            f"DEX paket/sağlayıcı sabiti: {totals['clone_strings_changed']}"] if clone_package_name else []),

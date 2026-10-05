@@ -15,7 +15,7 @@ function runtime() {
     profile: 'balanced', patchAdsSelected: false, messageTargets: [] }, ACTION_NEXT_ICON: 'icon',
     updateAdProfileAvailability() {}, validClonePackageName: () => true, renderSelectionSummary() {},
     $: selector => {
-      if (!elements.has(selector)) elements.set(selector, { checked: false, disabled: false, value: 'fixture',
+      if (!elements.has(selector)) elements.set(selector, { checked: false, disabled: false, value: selector === '#customAppName' ? '' : 'fixture',
         classList: { toggle() {} } });
       return elements.get(selector);
     }, $$: () => [], setOperation: operation => { context.state.operation = operation; }, toast() {},

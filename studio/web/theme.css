@@ -1303,6 +1303,18 @@ html[data-theme="dark"] .result .install-action {
 .app-appearance, .package-info { min-width: 0; margin: 18px 0; padding: 18px; border: 1px solid var(--line); border-radius: 15px; background: var(--surface-soft); }
 .app-appearance summary, .package-info summary { color: var(--ink); font-size: 13px; font-weight: 750; cursor: pointer; }
 .app-appearance > p, .package-info p { color: var(--muted); font-size: 12px; line-height: 1.7; }
+.app-appearance label { display: block; margin: 16px 0 8px; font-size: 12px; font-weight: 700; }
+.app-appearance input { width: 100%; min-width: 0; box-sizing: border-box; padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--paper); color: var(--ink); font: inherit; font-size: 12px; }
+.app-appearance input[type="file"] { overflow: hidden; }
+.app-appearance input::file-selector-button { border: 0; border-radius: 6px; padding: 7px; margin-right: 8px; background: var(--green); color: #041510; font: inherit; }
+.appearance-preview { display: flex; align-items: center; gap: 12px; padding: 14px 0; min-width: 0; }
+.appearance-preview-icon { display: grid; place-items: center; flex: 0 0 52px; width: 52px; height: 52px; border: 1px solid var(--line); border-radius: 15px; overflow: hidden; font-size: 11px; }
+.appearance-preview-icon img { width: 100%; height: 100%; object-fit: contain; }
+.appearance-file { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.appearance-file > span { min-width: 0; font-size: 11px; color: var(--muted); overflow-wrap: anywhere; }
+.appearance-preview > div { min-width: 0; }
+.appearance-preview small { color: var(--muted); font-size: 9px; }
+.appearance-preview b { display: block; margin-top: 5px; font-size: 13px; overflow-wrap: anywhere; }
 .package-info dl { margin: 16px 0; }
 .package-info dl > div { display: grid; grid-template-columns: 130px minmax(0, 1fr); gap: 12px; padding: 10px 0; border-top: 1px solid var(--line); font-size: 12px; line-height: 1.6; }
 .package-info dt { color: var(--muted); }

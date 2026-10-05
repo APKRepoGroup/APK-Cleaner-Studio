@@ -1432,6 +1432,7 @@ def _execute_clean_job(job_id: str, payload: dict) -> None:
             },
             message_targets=message_targets,
             clone_package_name=clone_package_name,
+            app_appearance=payload.get("app_appearance"),
         )
         if cancel_event.is_set():
             raise JobCancelled("İşlem kullanıcı tarafından iptal edildi.")

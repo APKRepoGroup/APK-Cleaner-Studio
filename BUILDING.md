@@ -99,4 +99,12 @@ python packaging/build_termux.py
 
 ## Sürüm bütünlüğü
 
+### Uygulama görünümü ve uyumluluk kartı (dev.4 kaynak çalışması)
+
+Görünen ad/simge özelleştirmesi isteğe bağlıdır. Ad için uygulama ve ana ekran/TV başlatıcı activity-alias kayıtları düzenlenir; paket kimliği/sürümü değiştirilmez. Simge için ayrı bir drawable kaydı eklenir, özgün kaynak değerleri ve kimlikleri yazım sonrası denetlenir. PNG/JPEG/WebP seçimi tarayıcıda 256 × 256 PNG'ye çevrilir; sunucu boyut, PNG bölüm bütünlüğü ve sınırlı açılmış piksel verisini ayrıca denetler. Kayıtlı işlem profilleri ad veya görsel saklamaz. Android dosya seçicisi, görsel alanları için yalnızca PNG/JPEG/WebP kabul eder.
+
+Uyumluluk kartı salt okunurdur: SDK gereksinimleri, sürüm adı, yerel kütüphane mimarileri, izinler ve tespit edilen V1/V2/V3/V3.1 imza kayıtları gösterilir. İmza kaydı tespiti kriptografik doğrulama veya kurulum garantisi değildir. Split bilgilerinde manifest ve imza, temel APK'ya aittir; mimari listesine bileşen envanteri de eklenir. Kaynak referanslı/okunamayan metadata tahmin edilmez.
+
+Kaynak testleri: `test_app_appearance.py`, `test_package_info.py`, `app-appearance.test.mjs`. Son paketleme Java araçlarını yeniden derleyerek yeni `AppAppearancePatcher` sınıfını Android/Windows/Termux'a dahil eder. Kaynak geliştirme sırasında dağıtım paketi üretilmez; gerçek cihazda ad/simge görünümü ve split/klon birleşimi son derlemeden sonra ayrıca denenmelidir.
+
 Dağıtımdan önce üç platform paketi için SHA-256 değerlerini yeniden üret ve `SHA256-v<SÜRÜM>.txt` dosyasıyla birlikte paylaş. Kaynak ağacındaki geçici çalışma dosyaları ile yerel anahtarlar paketlere eklenmemelidir.
