@@ -1,5 +1,6 @@
 """Local-only UI fixture; never included in a release or connected to real jobs."""
 import json
+import base64
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
@@ -46,35 +47,44 @@ class Handler(SimpleHTTPRequestHandler):
             <button onclick="openReportViewer('fixture','Örnek işlem raporu')">QA Rapor</button>
             <button onclick="confirmAction('Örnek onay','Bu yalnızca görsel bir testtir.')">QA Onay</button>
             <button onclick="openMessageReview()">QA Mesaj</button>
-            <button onclick="showView('#workingView');resetProgress();updateProgress(50,'Yerel işlem sürüyor');document.querySelector('#workingView').scrollIntoView()">QA İlerleme</button>
-            <button onclick="showView('#resultView');document.querySelector('#resultView').scrollIntoView()">QA Sonuç</button>
+            <button onclick="qaWorking();document.querySelector('#workingView').scrollIntoView()">QA İlerleme</button>
+            <button onclick="qaAnalysis(true,false,false);runJob();">QA Sonuç</button>
             <button onclick="setNativeVisibility(false)">QA Arka plan</button>
             <button onclick="setNativeVisibility(true)">QA Ön plan</button>
             <button onclick="applyTheme('light')">QA Açık</button><button onclick="applyTheme('dark')">QA Koyu</button>
             </nav>'''
-            if capture in {"analysis", "analysis-apk", "result", "failure", "store-updates"}:
+            if capture in {"analysis", "analysis-apk", "selection-summary", "result", "comparison", "failure", "store-updates"}:
                 html = html.replace(
                     "</head>",
                     "<style>.hero,#mobileHttpsBanner,.starter-content,footer{display:none!important}.workspace{margin-top:24px!important}</style></head>",
                     1,
                 )
-            elif capture == "working":
+            elif capture in {"working", "working-long", "working-split"}:
                 html = html.replace(
                     "</head>",
                     "<style>.hero,#mobileHttpsBanner,footer{display:none!important}.workspace{margin-top:24px!important}</style></head>",
                     1,
                 )
             html = html.replace('<script src="ui-runtime.js', bridge + '<script src="ui-runtime.js', 1)
-            setup = '''function qaAnalysis(ads,shouldScroll=true,split=true) { const analysis={filename:split?'Görsel test.apks':'Görsel test.apk',package_name:'com.example.visualtest',size:10240,dex_count:3,network_count:ads?18:0,detections:ads?qaMarks:[],split_merged:split,split_options:split?{abis:['arm64-v8a','armeabi-v7a'],languages:[{code:'tr',label:'Türkçe'},{code:'en',label:'İngilizce'}]}:null}; prepareAnalysisView(analysis.filename,analysis.size,split); applyAnalysisResult({job_id:'fixture',analysis}); if(shouldScroll)document.querySelector('#analysisView').scrollIntoView(); }'''
+            qa_icon = "data:image/png;base64," + base64.b64encode((WEB / "favicon.png").read_bytes()).decode("ascii")
+            setup = 'const qaAppIcon=' + json.dumps(qa_icon) + ';'
+            setup += '''function qaAnalysis(ads,shouldScroll=true,split=true) { const analysis={filename:split?'Görsel test.apks':'Görsel test.apk',package_name:'com.example.visualtest',package_info:{app_name:'Görsel Test',version_name:'1.4.2',min_sdk:26,target_sdk:37,abis:['arm64-v8a','armeabi-v7a'],signature_schemes:['V2','V3'],permissions:['android.permission.INTERNET','android.permission.POST_NOTIFICATIONS']},app_icon:qaAppIcon,size:10240,dex_count:3,network_count:ads?18:0,detections:ads?qaMarks:[],split_merged:split,split_options:split?{abis:['arm64-v8a','armeabi-v7a'],languages:[{code:'tr',label:'Türkçe'},{code:'en',label:'İngilizce'}]}:null}; prepareAnalysisView(analysis.filename,analysis.size,split); applyAnalysisResult({job_id:'fixture',analysis}); if(shouldScroll)document.querySelector('#analysisView').scrollIntoView(); }'''
+            setup += '''function qaWorking(longName=false,split=false){qaAnalysis(true,false,split);state.analysis.dex_count=10;if(longName){state.analysis.filename='Çok uzun uygulama adı ve paket dosyası ile mobil görünüm testi 2026.apk';state.analysis.package_name='com.example.verylongapplicationpackagename.withadditionalsegments.preview';}setStep(3);showView('#workingView');resetProgress();const messages=['Yerel işlem motoru hazırlanıyor','DEX dosyaları hazırlanıyor',...Array.from({length:9},(_,i)=>`${i?'classes'+(i+1):'classes'}.dex işlendi (${i+1}/10) · ${i===2?'Değişiklik gerekmedi':(i+2)+' reklam yaması'}`)];const events=messages.map((message,i)=>({id:i+1,message,elapsed_seconds:i*3.2}));updateProgress(53,events.at(-1).message,events);}'''
             setup += '''function qaIconIdentity(){openInstalledApps();const images=[...document.querySelectorAll('.installed-app-icon')];const same=()=>images.every((image,i)=>image===document.querySelectorAll('.installed-app-icon')[i]);renderInstalledApps('Test uygulaması 2');renderInstalledApps();openInstalledApps();onInstalledPackagesLoaded(JSON.stringify(qaApps));const passed=images.length===100&&same();document.querySelector('#qaResult').textContent=passed?'PASS: 100 ikon düğümü korundu':'FAIL: ikon değişti';}'''
             capture_actions = {
                 "apps": "setTimeout(()=>openInstalledApps(),900);",
                 "analysis": "setTimeout(()=>qaAnalysis(true,false),1100);",
                 "analysis-apk": "setTimeout(()=>qaAnalysis(true,false,false),1100);",
+                "appearance": "setTimeout(()=>{qaAnalysis(false,false,false);setInlineDisclosureOpen(document.querySelector('#appAppearance'),true);document.querySelector('#appAppearance').scrollIntoView({block:'start'});},1100);",
+                "compatibility": "setTimeout(()=>{qaAnalysis(true,false,true);setInlineDisclosureOpen(document.querySelector('#packageInfo'),true);document.querySelector('#packageInfo').scrollIntoView({block:'start'});},1100);",
+                "selection-summary": "setTimeout(()=>{qaAnalysis(true,false);document.querySelector('#selectionSummary').scrollIntoView({block:'center'});},1100);",
                 "store-updates": "setTimeout(()=>{qaAnalysis(false,false,false);document.querySelector('#restrictStoreUpdates').closest('.option').scrollIntoView({block:'center'});},1100);",
                 "messages": "setTimeout(()=>{qaAnalysis(true,false);setTimeout(()=>openMessageReview(),450);},900);",
-                "working": "setTimeout(()=>{showView('#workingView');resetProgress();updateProgress(50,'Yerel işlem sürüyor');},1100);",
+                "working": "setTimeout(()=>qaWorking(),1100);",
+                "working-long": "setTimeout(()=>qaWorking(true),1100);",
+                "working-split": "setTimeout(()=>qaWorking(false,true),1100);",
                 "result": "setTimeout(()=>{qaAnalysis(true,false,false);runJob();},1100);",
+                "comparison": "setTimeout(()=>{qaAnalysis(true,false,false);setOperation('clone');document.querySelector('#clonePackageName').value='com.example.visualtest.clone';document.querySelector('#restrictStoreUpdates').checked=true;runJob();},1100);",
                 "failure": "setTimeout(()=>{qaAnalysis(true,false,false);runJob();},1100);",
             }
             capture_action = capture_actions.get(capture, "")
@@ -83,7 +93,7 @@ class Handler(SimpleHTTPRequestHandler):
         elif path == "/qa-motion.js":
             self.reply((ROOT / "tests" / "ui_motion_probe.js").read_text(encoding="utf-8"), "text/javascript")
         elif path == "/api/status":
-            self.reply(json.dumps(dict(toolchain=TOOLS, platform="android", clients=[], channel="dev", version="0.6.3-dev.3", engine_version="2.0")))
+            self.reply(json.dumps(dict(toolchain=TOOLS, platform="android", clients=[], channel="dev", version="0.6.3-dev.4", engine_version="2.0")))
         elif path == "/api/history":
             self.reply('{"jobs":[]}')
         elif path == "/api/update":
@@ -119,7 +129,7 @@ class Handler(SimpleHTTPRequestHandler):
         raw = self.rfile.read(int(self.headers.get("Content-Length", "0")))
         if urlsplit(self.path).path == "/api/clean":
             capture = parse_qs(urlsplit(self.headers.get("Referer", "")).query).get("capture", [""])[0]
-            if capture in {"result", "store-updates"}:
+            if capture in {"", "result", "comparison", "store-updates", "appearance", "compatibility"}:
                 payload = json.loads(raw or b"{}")
                 result = {"operation": payload.get("operation", "patch"), "output": "Ornek-sonuc.apk", "signed": True,
                     "source_size_bytes": 52_428_800, "output_size_bytes": 48_234_496, "duration_seconds": 74.2,
@@ -127,6 +137,21 @@ class Handler(SimpleHTTPRequestHandler):
                     "patches": {"void_patches": 14, "boolean_patches": 3, "debug_directives_removed": 28},
                     "manifest": {"count": 6}, "layouts": {"count": 2}, "removed_files": ["assets/example-ad.json"],
                     "verification": {"passed": True, "archive_crc": "ok", "manifest": "ok", "signature": "ok"}}
+                result["split_merged"] = bool(payload.get("split_selection"))
+                appearance = payload.get("app_appearance") or {}
+                if appearance.get("name") or appearance.get("icon"):
+                    result["app_appearance"] = {"name": appearance.get("name") or None, "icon_changed": bool(appearance.get("icon"))}
+                result["identity_comparison"] = {
+                    "before": {"package_name": "com.example.visualtest", "version_code": "42"},
+                    "after": {"package_name": payload.get("clone_package_name") or "com.example.visualtest",
+                              "version_code": "2100000000" if payload.get("restrict_store_updates") else "42"},
+                }
+                if payload.get("operation") == "clone":
+                    result["clone"] = {"original_package": "com.example.visualtest", "new_package": payload.get("clone_package_name"),
+                                       "dex_strings_changed": 12, "changes": ["package"]}
+                if payload.get("restrict_store_updates"):
+                    result["store_updates"] = {"version_code_before": 42, "version_code_after": 2100000000,
+                                               "version_code_major": 0, "changed": True}
                 if capture == "store-updates":
                     result.update(store_updates={"version_code_before": 42, "version_code_after": 2100000000,
                                   "version_code_major": 0, "changed": True} if payload.get("restrict_store_updates") else None,

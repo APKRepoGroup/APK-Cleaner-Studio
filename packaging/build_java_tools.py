@@ -42,7 +42,14 @@ def compile_adapter(name: str, source_dir: Path, dependencies: tuple[str, ...]) 
         classes.mkdir()
         command = [javac_path(), "--release", "8", "-encoding", "UTF-8", "-d", str(classes)]
         if dependencies:
-            command.extend(("-classpath", os.pathsep.join(str(TOOLS / item) for item in dependencies)))
+            # javac's ZIP file manager may fail while closing dependencies on
+            # long Windows workspace paths. Compile against private short-path
+            # copies, never rename or modify the bundled dependency JARs.
+            dependency_dir = Path(temp_name) / "dependencies"
+            dependency_dir.mkdir()
+            for item in dependencies:
+                shutil.copy2(TOOLS / item, dependency_dir / item)
+            command.extend(("-classpath", os.pathsep.join(str(dependency_dir / item) for item in dependencies)))
         command.extend(str(source) for source in sources)
         subprocess.run(command, check=True, cwd=ROOT)
 

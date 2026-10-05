@@ -15,7 +15,7 @@ import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "0.6.3-dev.3"
+VERSION = "0.6.3-dev.4"
 EXE = ROOT / "outputs" / f"APK-Cleaner-Studio-v{VERSION}-Windows.exe"
 TERMUX = ROOT / "outputs" / f"APK-Cleaner-Studio-v{VERSION}-Termux.zip"
 
@@ -63,12 +63,13 @@ def audit_termux() -> dict:
         if leaked:
             raise RuntimeError(f"Termux paketinde çalışma verisi bulundu: {leaked[:5]}")
         for relative in (
-            "studio/server.py", "studio/engine.py", "studio/setup_tools.py", "studio/web/index.html",
+            "studio/server.py", "studio/engine.py", "studio/setup_tools.py", "studio/package_icon.py",
+            "studio/package_info.py", "studio/app_appearance.py", "studio/web/index.html",
             "studio/web/app.js", "studio/web/boot.js", "studio/web/boot.css",
             "studio/web/theme.css", "studio/web/ui-runtime.js",
             "studio/tools/direct-dex-patcher.jar", "studio/tools/binary-xml-patcher.jar",
             "install-termux.sh", "start-termux.sh", "README.md", "README-TR.md", "README-TERMUX.md",
-            "RELEASE-NOTES-v0.6.3-dev.3.md", "VERSION.txt",
+            "RELEASE-NOTES-v0.6.3-dev.4.md", "VERSION.txt",
         ):
             source = ROOT / relative
             if archive.read(relative) != source.read_bytes():

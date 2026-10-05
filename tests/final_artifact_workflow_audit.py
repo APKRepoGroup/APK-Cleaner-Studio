@@ -21,9 +21,10 @@ import uuid
 import zipfile
 from pathlib import Path
 from deep_asset_fixture import AD_DEX, NESTED_AD_DEX, RETAINED_DEX, build_asset_fixture
+from test_app_appearance import image
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "0.6.3-dev.3"
+VERSION = "0.6.3-dev.4"
 FIXTURE = ROOT / "work/hello-with-ad-call.apk"
 OUTPUTS = ROOT / "outputs"
 
@@ -34,7 +35,7 @@ def digest(path):
 
 def http(base, route, body=None, content_type="application/json"):
     request = urllib.request.Request(base + route, data=body, headers={
-        "X-Client-ID": "dev3-final-artifact-audit", "Content-Type": content_type,
+        "X-Client-ID": "dev4-final-artifact-audit", "Content-Type": content_type,
     })
     with urllib.request.urlopen(request, timeout=20) as response:
         return response.read()
@@ -50,7 +51,7 @@ def wait_job(base, job_id):
     raise RuntimeError("Packaged workflow timed out")
 
 
-def packaged_server(label, command, folder, asset_fixture, user_fixture=None):
+def packaged_server(label, command, folder, asset_fixture, user_fixture=None, selected_cases=None):
     with socket.socket() as probe:
         probe.bind(("127.0.0.1", 0))
         port = probe.getsockname()[1]
@@ -75,9 +76,9 @@ def packaged_server(label, command, folder, asset_fixture, user_fixture=None):
             assert status["version"] == VERSION, status
             assert status["toolchain"]["fully_ready"], status
             boundary = "----FinalArtifactAudit" + uuid.uuid4().hex
-            prefix = (f'--{boundary}\r\nContent-Disposition: form-data; name="package"; filename="final-audit.apk"\r\n'
-                    'Content-Type: application/vnd.android.package-archive\r\n\r\n').encode()
             def upload_job(source=FIXTURE):
+                prefix = (f'--{boundary}\r\nContent-Disposition: form-data; name="package"; filename="final-audit{source.suffix}"\r\n'
+                          'Content-Type: application/vnd.android.package-archive\r\n\r\n').encode()
                 body = prefix + source.read_bytes() + f"\r\n--{boundary}--\r\n".encode()
                 uploaded = json.loads(http(base, "/api/analyze", body, f"multipart/form-data; boundary={boundary}"))
                 return uploaded["job_id"]
@@ -90,9 +91,17 @@ def packaged_server(label, command, folder, asset_fixture, user_fixture=None):
                 ("balanced_asset_dex", {"_asset_fixture": True, "patch_ads": True, "profile": "balanced", "restrict_store_updates": False, "normalize_dex": True}),
                 ("deep_asset_clone_and_version", {"_asset_fixture": True, "patch_ads": True, "profile": "deep", "operation": "clone", "clone_package_name": "com.example.finalaudit.clone"}),
                 ("deep_asset_res_and_version", {"_asset_fixture": True, "patch_ads": True, "profile": "deep", "deobfuscate_resources": True, "optimize_apk": True}),
+                ("appearance_name_only", {"patch_ads": False, "restrict_store_updates": False, "app_appearance": {"name": "Yeni uygulama adı"}}),
+                ("appearance_icon_only", {"patch_ads": False, "restrict_store_updates": False, "app_appearance": {"icon": image()}}),
+                ("appearance_clone_clean_version", {"patch_ads": True, "profile": "deep", "operation": "clone", "clone_package_name": "com.example.finalaudit.appearance", "app_appearance": {"name": "Özel klon", "icon": image()}}),
+                ("appearance_resource_edits", {"patch_ads": False, "deobfuscate_resources": True, "optimize_apk": True, "app_appearance": {"name": "Kaynak düzenleme", "icon": image()}}),
+                ("split_appearance_clone", {"_split_fixture": True, "patch_ads": False, "operation": "clone", "clone_package_name": "com.example.finalaudit.split", "app_appearance": {"name": "Split klon", "icon": image()}}),
             )
             if user_fixture:
                 cases += (("original_user_deep_apk", {"_user_fixture": True, "patch_ads": True, "profile": "deep", "restrict_store_updates": False}),)
+            if selected_cases:
+                assert set(selected_cases).issubset({name for name, _ in cases}), selected_cases
+                cases = tuple(row for row in cases if row[0] in selected_cases)
             results = []
             job_ids = []
             for name, options in cases:
@@ -100,6 +109,8 @@ def packaged_server(label, command, folder, asset_fixture, user_fixture=None):
                 # Completed jobs are deliberately idempotent. Each choice needs a fresh analysis.
                 options = dict(options)
                 source = asset_fixture if options.pop("_asset_fixture", False) else FIXTURE
+                if options.pop("_split_fixture", False):
+                    source = ROOT / "work/ui-split-preview.apks"
                 if options.pop("_user_fixture", False):
                     source = user_fixture
                 job_id = upload_job(source)
@@ -124,6 +135,19 @@ def packaged_server(label, command, folder, asset_fixture, user_fixture=None):
                 assert len(apk_bytes) == result["output_size_bytes"], result
                 target = folder / (name + ".apk")
                 target.write_bytes(apk_bytes)
+                sys.path.insert(0, str(ROOT / "studio"))
+                from package_info import inspect_package_info
+                from package_icon import extract_apk_icon
+                metadata = inspect_package_info(target)
+                assert "permissions" in metadata and "signature_schemes" in metadata, metadata
+                appearance = payload.get("app_appearance")
+                if appearance:
+                    assert result["app_appearance"]["name"] == appearance.get("name"), result
+                    assert result["app_appearance"]["icon_changed"] == bool(appearance.get("icon")), result
+                    if appearance.get("name"):
+                        assert metadata["app_name"] == appearance["name"], metadata
+                    if appearance.get("icon"):
+                        assert extract_apk_icon(target) == appearance["icon"]
                 with zipfile.ZipFile(target) as archive:
                     assert archive.testzip() is None
                     assert "AndroidManifest.xml" in archive.namelist()
@@ -150,10 +174,13 @@ def packaged_server(label, command, folder, asset_fixture, user_fixture=None):
                     assert f"{AD_DEX}: kaldırıldı" in report, report
                 if payload["operation"] == "clone":
                     assert result["clone"]["new_package"] == options["clone_package_name"]
+                expected_package = options.get("clone_package_name", result["package_name"])
+                assert result["identity_comparison"]["after"]["package_name"] == expected_package, result
                 if name == "version_only":
                     with zipfile.ZipFile(FIXTURE) as source, zipfile.ZipFile(target) as output:
                         assert source.read("classes.dex") == output.read("classes.dex")
                 results.append({"case": name, "signed": True, "verified": True, "report": True,
+                                "appearance_checked": bool(appearance), "compatibility_metadata": True,
                                 "download_size_matches": True, "asset_dex_fixture": source == asset_fixture,
                                 "version_code": result["store_updates"]["version_code_after"] if result["store_updates"] else None})
             # A malformed opt-in must produce a useful diagnostic, not a silent success.
@@ -191,7 +218,9 @@ def packaged_server(label, command, folder, asset_fixture, user_fixture=None):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--user-apk", type=Path)
-    user_fixture = parser.parse_args().user_apk
+    parser.add_argument("--case", action="append", dest="selected_cases")
+    args = parser.parse_args()
+    user_fixture = args.user_apk
     user_digest = digest(user_fixture) if user_fixture else None
     artifacts = [OUTPUTS / f"APK-Cleaner-Studio-v{VERSION}-{platform}.{extension}"
                  for platform, extension in (("Android", "apk"), ("Windows", "exe"), ("Termux", "zip"))]
@@ -204,7 +233,7 @@ def main():
         asset_digest = digest(asset_fixture)
         windows = root / "windows"
         windows.mkdir()
-        summaries = [packaged_server("Windows EXE", [str(artifacts[1])], windows, asset_fixture, user_fixture)]
+        summaries = [packaged_server("Windows EXE", [str(artifacts[1])], windows, asset_fixture, user_fixture, args.selected_cases)]
         termux = root / "termux"
         termux.mkdir()
         with zipfile.ZipFile(artifacts[2]) as archive:
@@ -213,7 +242,7 @@ def main():
                 resolved = (termux / entry).resolve()
                 assert resolved.is_relative_to(termux.resolve()), entry
             archive.extractall(termux)
-        summaries.append(packaged_server("Extracted Termux engine on Windows host", [sys.executable, str(termux / "studio/server.py")], termux, asset_fixture, user_fixture))
+        summaries.append(packaged_server("Extracted Termux engine on Windows host", [sys.executable, str(termux / "studio/server.py")], termux, asset_fixture, user_fixture, args.selected_cases))
         assert digest(asset_fixture) == asset_digest, "Asset DEX fixture changed"
     assert digest(FIXTURE) == fixture_digest, "Original APK fixture changed"
     assert not user_fixture or digest(user_fixture) == user_digest, "Original user APK changed"

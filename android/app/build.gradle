@@ -24,8 +24,8 @@ android {
         targetSdk 37
         // Geliştirme sürümleri 63xx aralığını kullanır; v0.6.3 kararlı sürümü
         // daha yüksek bir kodla yayımlanarak dev kurulumlarının üzerine geçebilir.
-        versionCode 6303
-        versionName "0.6.3-dev.3"
+        versionCode 6304
+        versionName "0.6.3-dev.4"
 
         // Yalnızca varsayılan/İngilizce ve Türkçe metin kaynaklarını paketle.
         // Yoğunluklar resourceConfigurations ile filtrelenemez; projede yalnızca

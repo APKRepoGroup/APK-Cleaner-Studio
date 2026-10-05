@@ -1,3 +1,3 @@
-APK Cleaner Studio 0.6.3-dev.3
+APK Cleaner Studio 0.6.3-dev.4
 Channel: dev
 Engine: 2.0

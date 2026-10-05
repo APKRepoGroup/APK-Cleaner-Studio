@@ -37,7 +37,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name="APK-Cleaner-Studio-v0.6.3-dev.3-Windows",
+    name="APK-Cleaner-Studio-v0.6.3-dev.4-Windows",
     icon=str(project / "public" / "favicon.ico"),
     debug=False,
     bootloader_ignore_signals=False,
