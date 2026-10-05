@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Callable, Iterable
 from xml.etree import ElementTree as ET
 from package_icon import MAX_MANIFEST_BYTES, extract_apk_icon, extract_split_icon, read_manifest_identity
+from package_info import inspect_package_info
 
 ROOT = Path(__file__).resolve().parent
 BUNDLED_TOOLS = ROOT / "tools"
@@ -549,6 +550,7 @@ def inspect_apk(apk_path: Path, known_sha256: str | None = None) -> dict:
     return {
         "filename": apk_path.name,
         "app_icon": extract_apk_icon(apk_path),
+        "package_info": inspect_package_info(apk_path),
         "size": apk_path.stat().st_size,
         "sha256": known_sha256 or sha256(apk_path),
         "package_name": package_name,
@@ -603,6 +605,7 @@ def inspect_split_package(
     warnings: list[str] = []
     package_name = ""
     app_icon = ""
+    package_info = {}
     notify = progress or (lambda _message, _percent: None)
 
     with _temporary_directory(prefix="apkcleaner-split-scan-") as temp_name:
@@ -625,6 +628,7 @@ def inspect_split_package(
                 is_base = any(item.get("name") == name and item.get("kind") == "base" for item in inventory.get("modules", []))
                 if is_base:
                     app_icon = report.get("app_icon", "")
+                    package_info = report.get("package_info", {})
                 if candidate_package and (not package_name or is_base):
                     package_name = candidate_package
                 module_label = Path(name).name
@@ -659,6 +663,7 @@ def inspect_split_package(
     return {
         "filename": source.name,
         "app_icon": app_icon or extract_split_icon(source, inventory),
+        "package_info": {**package_info, "abis": sorted(set(package_info.get("abis", [])) | set(inventory.get("abis", []))), "split": True},
         "size": source.stat().st_size,
         "sha256": known_sha256 or sha256(source),
         "package_name": package_name,

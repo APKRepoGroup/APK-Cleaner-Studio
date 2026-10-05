@@ -92,6 +92,11 @@
           <div id="fileCard" class="file-card"></div>
           <div id="scanProgress" class="scan-progress"><i></i><span>Paket hazırlanıyor ve güvenli biçimde taranıyor…</span></div>
           <div id="analysisContent" class="hidden">
+            <details id="packageInfo" class="package-info"><summary>APK bilgileri ve uyumluluk</summary>
+              <dl id="packageInfoRows"></dl>
+              <p class="fineprint">Bu bilgiler paketten okunur; cihazda sorunsuz kurulacağını veya çalışacağını garanti etmez. İmza kayıtlarının bulunması, imzanın geçerli olduğu anlamına gelmez.</p>
+              <details id="packagePermissions"><summary>İstenen izinleri göster</summary><ul id="packagePermissionList"></ul></details>
+            </details>
             <div id="directSplitInstall" class="direct-split-install hidden">
               <div><b>Özgün split paketi doğrudan kur</b><p>APKS, APKM veya XAPK içindeki APK bileşenleri birleştirilmez, düzenlenmez ve yeniden imzalanmaz. Kurulumu Android onaylar. OBB içeren XAPK paketleri desteklenmez.</p></div>
               <button id="directSplitInstallButton" class="secondary" type="button">Bileşenleri incele</button>

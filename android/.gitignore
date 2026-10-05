@@ -4,6 +4,7 @@
 /app/build/
 /app/src/main/python/engine.py
 /app/src/main/python/package_icon.py
+/app/src/main/python/package_info.py
 /app/src/main/python/server.py
 /app/src/main/python/setup_tools.py
 /app/src/main/python/updater.py

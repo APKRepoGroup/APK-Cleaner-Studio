@@ -1607,6 +1607,7 @@ function renderTools(tools) {
 }
 
 function renderNetworks(analysis) {
+  renderPackageInfo(analysis);
   $(".network-card").classList.toggle("network-card--scrollable", analysis.detections.length > 7);
   $("#networkTitle").textContent = analysis.network_count ? `${analysis.network_count} reklam ağı tespit edildi` : "Bilinen reklam ağı bulunamadı";
   $("#networkList").innerHTML = analysis.detections.length
@@ -1710,6 +1711,35 @@ function prepareCloneOption(analysis) {
   $("#cloneOperation").setAttribute("aria-disabled", String(!original));
   $("#cloneAvailabilityNote").classList.toggle("hidden", Boolean(original));
   $("#cloneOperation").title = original ? "" : "Paket adı okunamadığı için klonlama kullanılamıyor.";
+}
+
+function packageInfoRows(analysis) {
+  const info = analysis?.package_info || {};
+  const versions = { 26: "8.0", 27: "8.1", 28: "9", 29: "10", 30: "11", 31: "12", 32: "12L", 33: "13", 34: "14", 35: "15", 36: "16", 37: "17" };
+  const sdk = value => Number.isInteger(value) && value > 0
+    ? Object.hasOwn(versions, value) ? `Android ${versions[value]} (API ${value})` : `API ${value}` : "Okunamadı";
+  const names = { "arm64-v8a": "ARM64 (64 bit)", "armeabi-v7a": "ARMv7 (32 bit)", x86: "x86 (32 bit)", x86_64: "x86_64 (64 bit)" };
+  const abis = [...new Set([...(info.abis || []), ...(analysis?.split_options?.abis || [])])];
+  return [
+    ["Paket adı", analysis?.package_name || "Okunamadı"],
+    ["Görünen sürüm", info.version_name || "Okunamadı"],
+    ["En düşük Android", sdk(info.min_sdk)],
+    ["Hedef Android", sdk(info.target_sdk)],
+    ["İşlemci desteği", abis.length ? abis.map(abi => Object.hasOwn(names, abi) ? names[abi] : abi).join(" · ") : Array.isArray(info.abis) ? "Native kütüphane tespit edilmedi" : "Okunamadı"],
+    ["İmza kayıtları", info.signature_schemes?.length ? `${info.signature_schemes.join(" · ")} (${info.split || analysis?.split_merged ? "temel APK; " : ""}doğrulanmadı)` : info.split || analysis?.split_merged ? "Bileşen bazında incelenmeli" : "Tespit edilemedi"],
+  ];
+}
+
+function renderPackageInfo(analysis) {
+  $("#packageInfoRows").replaceChildren(...packageInfoRows(analysis).map(([label, value]) => {
+    const row = document.createElement("div"), term = document.createElement("dt"), description = document.createElement("dd");
+    term.textContent = label; description.textContent = value; row.append(term, description); return row;
+  }));
+  const permissions = analysis.package_info?.permissions || [];
+  $("#packagePermissionList").replaceChildren(...(permissions.length ? permissions : ["İzin kaydı bulunamadı veya okunamadı."]).map(value => {
+    const labels = { "android.permission.INTERNET": "İnternet erişimi", "android.permission.ACCESS_NETWORK_STATE": "Ağ durumunu görüntüleme", "android.permission.POST_NOTIFICATIONS": "Bildirim gönderme", "android.permission.CAMERA": "Kamera erişimi", "android.permission.RECORD_AUDIO": "Mikrofon erişimi", "android.permission.ACCESS_FINE_LOCATION": "Hassas konum erişimi", "android.permission.READ_CONTACTS": "Kişileri okuma", "android.permission.READ_MEDIA_IMAGES": "Görsellere erişim", "android.permission.READ_EXTERNAL_STORAGE": "Depolamayı okuma", "android.permission.WRITE_EXTERNAL_STORAGE": "Depolamaya yazma" };
+    const item = document.createElement("li"); item.textContent = Object.hasOwn(labels, value) ? `${labels[value]} · ${value}` : value; return item;
+  }));
 }
 
 function updateDirectSplitInstall(analysis) {

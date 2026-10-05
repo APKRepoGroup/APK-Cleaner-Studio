@@ -1300,6 +1300,15 @@ html[data-theme="dark"] .result .install-action {
 .selection-summary dd { margin: 0; font-weight: 650; overflow-wrap: anywhere; }
 .selection-summary > .selection-summary-note { padding-top: 12px; border-top: 1px solid var(--line); }
 .selection-summary-note.needs-selection { color: var(--orange); }
+.app-appearance, .package-info { min-width: 0; margin: 18px 0; padding: 18px; border: 1px solid var(--line); border-radius: 15px; background: var(--surface-soft); }
+.app-appearance summary, .package-info summary { color: var(--ink); font-size: 13px; font-weight: 750; cursor: pointer; }
+.app-appearance > p, .package-info p { color: var(--muted); font-size: 12px; line-height: 1.7; }
+.package-info dl { margin: 16px 0; }
+.package-info dl > div { display: grid; grid-template-columns: 130px minmax(0, 1fr); gap: 12px; padding: 10px 0; border-top: 1px solid var(--line); font-size: 12px; line-height: 1.6; }
+.package-info dt { color: var(--muted); }
+.package-info dd { margin: 0; overflow-wrap: anywhere; }
+#packagePermissionList { max-height: 200px; overflow: auto; padding-left: 18px; font-size: 11px; overflow-wrap: anywhere; }
+@media (max-width: 480px) { .package-info dl > div { grid-template-columns: 105px minmax(0, 1fr); gap: 8px; } }
 @media (max-width: 420px) {
   .selection-summary { padding: 14px; }
   .selection-summary dl > div { grid-template-columns: 92px minmax(0, 1fr); gap: 10px; }
