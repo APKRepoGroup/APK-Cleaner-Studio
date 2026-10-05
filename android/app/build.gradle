@@ -20,7 +20,8 @@ android {
     defaultConfig {
         applicationId "com.apkrepo.apkcleanerstudio"
         minSdk 26
-        targetSdk 36
+        // Android 17; eski cihaz desteği minSdk ve iki ARM ABI'siyle korunur.
+        targetSdk 37
         // Geliştirme sürümleri 63xx aralığını kullanır; v0.6.3 kararlı sürümü
         // daha yüksek bir kodla yayımlanarak dev kurulumlarının üzerine geçebilir.
         versionCode 6303

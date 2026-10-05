@@ -56,7 +56,7 @@ python -m PyInstaller packaging/APK-Cleaner-Studio-Windows.spec --noconfirm
 Gereksinimler:
 
 - JDK 21
-- Android SDK ve güncel build-tools
+- Android 17 SDK (API 37) ve güncel build-tools
 - Gradle veya Gradle Wrapper
 - Python 3
 - Yerel çıktı imzalama anahtarı
@@ -68,6 +68,24 @@ Proje kökünde PowerShell ile:
 ```
 
 `ANDROID_SDK_ROOT`, `APK_CLEANER_GRADLE_HOME`, `APK_CLEANER_ANDROID_JDK` ve `APK_CLEANER_PYTHON` ortam değişkenleri gerektiğinde özel araç yollarını göstermek için kullanılabilir. Çıktı `outputs/APK-Cleaner-Studio-v<SÜRÜM>-Android.apk` olarak hazırlanır ve imza ile ZIP hizalaması doğrulanır.
+
+### Android 17 hedefi ve yayın öncesi doğrulama
+
+Kaynak yapılandırması `compileSdk 37` ve `targetSdk 37` kullanır. Minimum Android sürümü değişmez: Android 8.0 (API 26). `arm64-v8a` ve `armeabi-v7a` desteği korunur; 32 bit desteğini kaldırmamak için gömülü Python 3.11 kullanılır.
+
+Android kabuğu, kendi işlem motoruna aynı uygulama/profil içindeki `127.0.0.1` üzerinden bağlanır; LAN sunucusu açmaz. Bu nedenle bu akış için `ACCESS_LOCAL_NETWORK` izni eklenmez. HTTP istisnası yalnızca loopback adresleriyle sınırlıdır; dış HTTPS bağlantılarında platformun sertifika denetimleri kapatılmaz.
+
+Chaquopy 17.0.0'ın Android Java köprüsü temel yerel kütüphaneleri `System.loadLibrary` ile kurulu APK'dan yükler. Uygulamanın Java kaynaklarında yazılabilir çalışma klasöründen `System.load` çağrısı yoktur. Android 17'nin yerel dinamik kod yükleme kısıtları nedeniyle bu durum, bağımlılık güncellemelerinde yeniden kontrol edilmelidir. Kullanıcının işlem dosyalarını veya tüm Python çalışma alanını salt okunur yapmak uygun bir çözüm değildir.
+
+Hedef SDK değişikliği tek başına cihaz uyumluluğunu doğrulamaz. Son Android derlemesinden sonra aşağıdaki çalışma testleri yapılmadan Android 17 desteği tam doğrulanmış sayılmaz:
+
+- Temiz kurulum ve önceki sürümün üzerine güncelleme; ilk ve sonraki açılışlarda Python motoru ve WebView bağlantısı.
+- APK ve split paket analizi; dengeli/gelişmiş temizlik, klonlama, imzalama, çıktı doğrulama ve iptal.
+- Çıktı paylaşımı/kurulumu, özgün split kurulumu ve otomatik güncellemenin kurulum onayı.
+- Geri hareketi, döndürme, büyük ekran/pencere boyutlandırma, arka plana geçiş ve motorun yeniden başlatılması.
+- Android 17 cihazında bellek baskısı ve mümkünse 16 KB sayfalı cihazda Python'un yerel modüllerinin yüklenmesi; ayrıca eski Android sürümlerinde gerileme testi.
+
+Bu kontrol listesi tamamlanana kadar çalışma testlerinin durumu **beklemede** olarak değerlendirilir. Resmî gereksinimler: [Android 17 davranış değişiklikleri](https://developer.android.com/about/versions/17/behavior-changes-17), [tüm uygulamaları etkileyen değişiklikler](https://developer.android.com/about/versions/17/behavior-changes-all) ve [Chaquopy sürüm değişiklikleri](https://chaquo.com/chaquopy/doc/current/changelog.html).
 
 ## Termux paketi
 
