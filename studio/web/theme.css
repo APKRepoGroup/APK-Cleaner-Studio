@@ -1291,6 +1291,19 @@ html[data-theme="dark"] .result .install-action {
 }
 .manifest-note { margin-top: 12px; padding: 13px 14px; border-radius: 13px; }
 .analysis-summary { padding: 15px 16px; gap: 14px 22px; }
+.selection-summary { margin-top: 22px; padding: 18px; border: 1px solid var(--line); border-radius: 15px; background: var(--surface-soft); }
+.selection-summary h3 { margin: 0; color: var(--green); font-size: 14px; }
+.selection-summary > p { margin: 7px 0 0; font-size: 12px; line-height: 1.6; color: var(--muted); }
+.selection-summary dl { margin: 15px 0 0; }
+.selection-summary dl > div { display: grid; grid-template-columns: 125px minmax(0, 1fr); gap: 12px; padding: 10px 0; border-top: 1px solid var(--line); font-size: 12px; line-height: 1.65; }
+.selection-summary dt { color: var(--muted); }
+.selection-summary dd { margin: 0; font-weight: 650; overflow-wrap: anywhere; }
+.selection-summary > .selection-summary-note { padding-top: 12px; border-top: 1px solid var(--line); }
+.selection-summary-note.needs-selection { color: var(--orange); }
+@media (max-width: 420px) {
+  .selection-summary { padding: 14px; }
+  .selection-summary dl > div { grid-template-columns: 92px minmax(0, 1fr); gap: 10px; }
+}
 
 .working,
 .result { min-height: 510px; }

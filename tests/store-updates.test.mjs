@@ -13,7 +13,7 @@ function runtime() {
   const elements = new Map();
   const context = vm.createContext({ state: { analysis: { network_count: 0 }, operation: 'patch',
     profile: 'balanced', patchAdsSelected: false, messageTargets: [] }, ACTION_NEXT_ICON: 'icon',
-    updateAdProfileAvailability() {}, validClonePackageName: () => true,
+    updateAdProfileAvailability() {}, validClonePackageName: () => true, renderSelectionSummary() {},
     $: selector => {
       if (!elements.has(selector)) elements.set(selector, { checked: false, disabled: false, value: 'fixture',
         classList: { toggle() {} } });

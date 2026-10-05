@@ -1659,6 +1659,7 @@ function updateSplitSelection(options = state.analysis?.split_options) {
   state.splitSelection.languages = $$('[data-split-language]:checked').map((input) => input.value);
   const densities = state.splitSelection.abis.map((abi) => options?.recommended_densities?.[abi]).filter(Boolean);
   $("#densityHint").textContent = densities.length ? `Otomatik DPI: ${[...new Set(densities)].join(", ")}` : "Paket mimari ayrımı içeriyorsa en az bir işlemci mimarisi seçilmelidir.";
+  if (state.analysis) updateActionState();
 }
 
 function setOperation(operation, toggle = false) {
@@ -1804,6 +1805,64 @@ function updateAdProfileAvailability(enabled = null) {
   }
 }
 
+function processingSelectionSummary(selection) {
+  const profiles = { safe: "Güvenli", balanced: "Dengeli", deep: "Gelişmiş" };
+  const operations = { clone: "APK’yı klonla", convert: "Tek APK oluştur" };
+  const rows = [
+    ["İşlem", Object.hasOwn(operations, selection.operation) ? operations[selection.operation] : selection.patchAds ? "Reklam izlerini temizle" : "Seçili iyileştirmeler"],
+    ["Reklam temizliği", selection.patchAds ? `${Object.hasOwn(profiles, selection.profile) ? profiles[selection.profile] : "Dengeli"} profil` : "Uygulanmayacak"],
+  ];
+  if (selection.split) {
+    if (selection.operation !== "convert") rows.push(["Split paketi", "Tek APK’ya birleştirilecek"]);
+    const labels = { "arm64-v8a": "ARM64", "armeabi-v7a": "ARMv7", x86: "x86", x86_64: "x86_64" };
+    if (selection.hasAbiChoices) rows.push(["İşlemci", selection.abis.map(abi => Object.hasOwn(labels, abi) ? labels[abi] : abi).join(", ") || "Seçim yapılmadı"]);
+    if (selection.hasLanguageChoices) rows.push(["Dil paketleri", selection.languages.join(", ") || "Ek dil seçilmedi"]);
+  }
+  if (selection.operation === "clone") rows.push(["Klon paket adı", selection.clonePackage || "Henüz girilmedi"]);
+  const extras = [
+    ["stripDebug", "DEX hata ayıklama verilerini kaldır"],
+    ["restrictStoreUpdates", "Play Store güncellemesini kapat"],
+    ["normalizeDex", "DEX yapısını yeniden düzenle"],
+    ["optimizeApk", "Yamalanan APK’yı optimize et"],
+    ["deobfuscateResources", "RES kaynak korumasını kaldır"],
+  ].filter(([key]) => selection[key]).map(([, label]) => label);
+  if (selection.messageCount) extras.push(`${selection.messageCount} başlangıç çağrısını kaldır`);
+  rows.push(["Ek işlemler", extras.length ? extras.join(" · ") : "Seçilmedi"]);
+  return {
+    rows,
+    note: !selection.canRun
+      ? selection.operation === "clone" ? "Klon için geçerli ve özgün addan farklı bir paket adı gir."
+        : "Başlatmak için en az bir işlem veya iyileştirme seç."
+      : "Orijinal dosya korunur; seçilen işlemler yeni APK’ya uygulanır.",
+    needsSelection: !selection.canRun,
+  };
+}
+
+function renderSelectionSummary(patchAds, canRun) {
+  const splitOptions = state.analysis?.split_options;
+  const selectedLanguages = state.splitSelection?.languages || [];
+  const summary = processingSelectionSummary({
+    ...currentPresetOptions(), patchAds, canRun,
+    split: Boolean(state.analysis?.split_merged),
+    hasAbiChoices: Boolean(splitOptions?.abis?.length), hasLanguageChoices: Boolean(splitOptions?.languages?.length),
+    abis: state.splitSelection?.abis || [],
+    languages: selectedLanguages.map(code => splitOptions?.languages?.find(item => item.code === code)?.label || code),
+    clonePackage: $("#clonePackageName").value.trim(), messageCount: state.messageTargets.length,
+  });
+  const list = $("#selectionSummaryRows");
+  // Status polls must not replace unchanged content under the user's pointer.
+  const signature = JSON.stringify(summary);
+  if (list.dataset.selection === signature) return;
+  list.dataset.selection = signature;
+  list.replaceChildren(...summary.rows.map(([label, value]) => {
+    const row = document.createElement("div"), term = document.createElement("dt"), description = document.createElement("dd");
+    term.textContent = label; description.textContent = value;
+    row.append(term, description); return row;
+  }));
+  $("#selectionSummaryNote").textContent = summary.note;
+  $("#selectionSummaryNote").classList.toggle("needs-selection", summary.needsSelection);
+}
+
 function updateActionState() {
   if (!state.analysis) return;
   const hasAds = Number(state.analysis.network_count || 0) > 0;
@@ -1823,6 +1882,7 @@ function updateActionState() {
   } else {
     $("#cleanButton").innerHTML = `Seçili işlemleri başlat ${ACTION_NEXT_ICON}`;
   }
+  renderSelectionSummary(wantsAds, canRun);
 }
 
 function readSavedPresets() {
