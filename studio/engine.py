@@ -189,6 +189,16 @@ def _entry_fingerprint(archive: zipfile.ZipFile, name: str) -> dict:
     return {"size": info.file_size, "sha256": digest.hexdigest()}
 
 
+def _archive_manifest_identity(archive: zipfile.ZipFile) -> dict:
+    unknown = {"package_name": None, "version_code": None}
+    try:
+        if archive.getinfo("AndroidManifest.xml").file_size > MAX_MANIFEST_BYTES:
+            return unknown
+        return read_manifest_identity(archive.read("AndroidManifest.xml"))
+    except (KeyError, OSError, ValueError, zipfile.BadZipFile):
+        return unknown
+
+
 def _dex_work_path(temp: Path, kind: str, dex_name: str) -> Path:
     # Root and asset DEX entries may share a basename. Never share worker files.
     identity = hashlib.sha256(dex_name.encode("utf-8")).hexdigest()
@@ -1943,6 +1953,12 @@ def process_apk(
     with zipfile.ZipFile(apk_path) as before_archive, zipfile.ZipFile(actual_output) as after_archive:
         before_names = set(before_archive.namelist())
         after_names = set(after_archive.namelist())
+        # Compare the source and final signed output, not the requested options
+        # or a temporary manifest produced before later resource processing.
+        identity_comparison = {
+            "before": _archive_manifest_identity(before_archive),
+            "after": _archive_manifest_identity(after_archive),
+        }
         manifest_change = {
             "file": "AndroidManifest.xml",
             "before": _entry_fingerprint(before_archive, "AndroidManifest.xml"),
@@ -1990,6 +2006,7 @@ def process_apk(
         "cleaning_profile_applied": mode if patch_ads else None,
         "source_size_bytes": source_size_bytes if source_size_bytes is not None else apk_path.stat().st_size,
         "output_size_bytes": actual_output.stat().st_size,
+        "identity_comparison": identity_comparison,
         "operation": "clone" if clone_package_name else ("patch" if patch_ads or has_optional_changes else "convert"),
         "clone": {"original_package": original_package_name, "new_package": clone_package_name,
                   "changes": manifest_result.get("clone_changes", []),

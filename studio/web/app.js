@@ -2208,9 +2208,50 @@ function jobResultSummary(result) {
   };
 }
 
+function jobResultComparison(result) {
+  const size = value => typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : null;
+  const text = value => typeof value === "string" && value.length > 0 ? value : null;
+  const code = value => {
+    const decimal = typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? String(value) : text(value);
+    if (!decimal || !/^(0|[1-9][0-9]{0,18})$/.test(decimal)) return null;
+    return decimal.length < 19 || decimal <= "9223372036854775807" ? decimal : null;
+  };
+  const before = result.identity_comparison?.before, after = result.identity_comparison?.after;
+  const values = [
+    ["Dosya boyutu", size(result.source_size_bytes), size(result.output_size_bytes), humanSize],
+    ["Paket adı", text(before?.package_name), text(after?.package_name), value => value],
+    ["Sürüm kodu", code(before?.version_code), code(after?.version_code), value => value]
+  ];
+  return values.map(([label, previous, current, format]) => ({ label,
+    before: previous === null ? "—" : format(previous), after: current === null ? "—" : format(current),
+    status: previous === null || current === null ? "Bilgi eksik" : previous === current ? "Değişmedi" : "Değişti",
+    changed: previous !== null && current !== null && previous !== current
+  }));
+}
+
+function renderResultComparison(result) {
+  const rows = jobResultComparison(result);
+  $("#resultComparisonRows").replaceChildren(...rows.map(item => {
+    const row = document.createElement("tr"), label = document.createElement("th");
+    label.setAttribute("scope", "row");
+    const name = document.createElement("span"), status = document.createElement("small");
+    name.textContent = item.label; status.textContent = item.status;
+    row.className = item.changed ? "comparison-changed" : "";
+    label.append(name, status);
+    const previous = document.createElement("td"), current = document.createElement("td");
+    previous.textContent = item.before; current.textContent = item.after;
+    row.append(label, previous, current); return row;
+  }));
+  $("#resultComparisonNote").textContent = rows.some(row => row.status === "Bilgi eksik")
+    ? "— işareti, ilgili bilginin okunamadığını veya kaydedilmediğini gösterir."
+    : "Paket adı ve sürüm kodu, kaynak APK ile son çıktıdan okunmuştur.";
+}
+
 function renderResultSummary(result) {
   const summary = jobResultSummary(result);
-  $("#resultOverview").replaceChildren(...summary.rows.map(([label, value]) => {
+  renderResultComparison(result);
+  // Sizes now have one shared before/after row instead of duplicate fields.
+  $("#resultOverview").replaceChildren(...summary.rows.slice(2).map(([label, value]) => {
     const row = document.createElement("div");
     const term = document.createElement("dt"), description = document.createElement("dd");
     term.textContent = label; description.textContent = value; row.append(term, description); return row;

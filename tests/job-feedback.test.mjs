@@ -9,7 +9,7 @@ function runtime() {
   const elements = new Map();
   const disclosures = [];
   const context = vm.createContext({ humanSize: bytes => `${bytes} B`, state: { jobId: 'fixture' },
-    document: { createElement: tag => ({ tag, textContent: '', children: [], append(...children) { this.children.push(...children); } }) },
+    document: { createElement: tag => ({ tag, textContent: '', children: [], setAttribute() {}, append(...children) { this.children.push(...children); } }) },
     setInlineDisclosureOpen: (element, expanded) => disclosures.push([element, expanded]), $: id => {
     if (!elements.has(id)) {
       const classes = new Set(['hidden']);
@@ -111,8 +111,8 @@ test('conversion does not claim a cleaning profile; signing alone is not verific
 test('summary is rendered as text and every result starts with its shared disclosure closed', () => {
   const { context, elements, disclosures } = runtime();
   context.renderResultSummary({ source_size_bytes: 1, output_size_bytes: 2, cleaning_profile_applied: '<img onerror=x>' });
-  assert.equal(elements.get('#resultOverview').children.length, 4);
-  assert.equal(elements.get('#resultOverview').children[3].children[1].textContent, 'Bilgi kaydedilmedi');
+  assert.equal(elements.get('#resultOverview').children.length, 2);
+  assert.equal(elements.get('#resultOverview').children[1].children[1].textContent, 'Bilgi kaydedilmedi');
   assert.equal(disclosures[0][0], elements.get('#resultDetails'));
   assert.equal(disclosures[0][1], false);
 });

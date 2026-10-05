@@ -203,7 +203,13 @@
           <div class="success">✓</div><small>İŞLEM TAMAMLANDI</small>
           <h2 id="resultTitle">Çıktı başarıyla oluşturuldu.</h2><p>Tüm değişiklikler yeni dosyaya yazıldı; orijinal paket korunmaya devam ediyor.</p>
           <section class="result-summary" aria-label="İşlem özeti">
-            <dl id="resultOverview"></dl><p id="resultSizeChange" class="fineprint"></p>
+            <h3 id="resultComparisonTitle">Önce / Sonra</h3>
+            <table class="result-comparison" aria-labelledby="resultComparisonTitle">
+              <thead><tr><th scope="col">Alan</th><th scope="col">Önce</th><th scope="col">Sonra</th></tr></thead>
+              <tbody id="resultComparisonRows"></tbody>
+            </table>
+            <p id="resultSizeChange" class="fineprint"></p><p id="resultComparisonNote" class="fineprint"></p>
+            <dl id="resultOverview"></dl>
             <p id="resultVerification" class="result-verification"></p>
           </section>
           <details id="resultDetails" class="result-details"><summary>İşlem ayrıntıları</summary>

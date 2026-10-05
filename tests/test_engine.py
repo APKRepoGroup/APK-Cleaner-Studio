@@ -263,7 +263,7 @@ class EngineTests(unittest.TestCase):
             root = Path(name)
             source = root / "source.apk"
             with zipfile.ZipFile(source, "w") as archive:
-                archive.writestr("AndroidManifest.xml", b"manifest")
+                archive.writestr("AndroidManifest.xml", f'<manifest xmlns:android="{ANDROID_NS}" package="com.real.input" android:versionCode="41"/>')
                 archive.writestr("classes.dex", b"dex fixture")
             report = {
                 "filename": "source.apk", "size": 7, "sha256": "source-hash",
@@ -275,7 +275,14 @@ class EngineTests(unittest.TestCase):
             tools.status.return_value = {"clean_ready": True, "resource_tool": True, "manifest_tool": True, "signer": True}
             tools.zipalign = "zipalign"
             def fake_sign(_unsigned, output, _tools, _log, optimize=False):
-                shutil.copyfile(_unsigned, output)
+                # The signed output is authoritative even if intermediate
+                # report values or requested options say something different.
+                with zipfile.ZipFile(_unsigned) as src, zipfile.ZipFile(output, "w") as dst:
+                    for item in src.infolist():
+                        content = src.read(item.filename)
+                        if item.filename == "AndroidManifest.xml":
+                            content = f'<manifest xmlns:android="{ANDROID_NS}" package="com.real.output" android:versionCode="42"/>'.encode()
+                        dst.writestr(item, content)
                 return True, None
 
             with mock.patch("engine.inspect_apk") as inspect, mock.patch(
@@ -293,6 +300,10 @@ class EngineTests(unittest.TestCase):
             self.assertEqual(result["source_size_bytes"], 1234)
             self.assertEqual(result["output_size_bytes"], (root / "output" / result["output"]).stat().st_size)
             self.assertIsNone(result["cleaning_profile_applied"])
+            self.assertEqual(result["identity_comparison"], {
+                "before": {"package_name": "com.real.input", "version_code": "41"},
+                "after": {"package_name": "com.real.output", "version_code": "42"},
+            })
 
     def test_message_only_processing_is_reported_as_patch(self):
         with tempfile.TemporaryDirectory() as name:

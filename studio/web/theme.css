@@ -1384,11 +1384,22 @@ html[data-theme] .file-card .apk.has-app-icon {
 .result-summary dt { color: var(--muted); font-size: 12px; }
 .result-summary dd { margin: 5px 0 0; font-size: 14px; font-weight: 750; overflow-wrap: anywhere; }
 .result-summary .fineprint, .result-details .fineprint { font-size: 12px; line-height: 1.65; margin: 14px 0 0; }
+.result-summary h3 { margin: 0 0 14px; color: var(--green); font-size: 14px; }
+.result-comparison { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: 12px; line-height: 1.6; }
+.result-comparison th, .result-comparison td { text-align: start; vertical-align: top; padding: 12px 10px; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
+.result-comparison th:first-child { width: 26%; padding-left: 0; }
+.result-comparison th:last-child, .result-comparison td:last-child { padding-right: 0; }
+.result-comparison thead th { color: var(--muted); font-size: 11px; padding-top: 0; }
+.result-comparison tbody th { font-weight: 650; }
+.result-comparison small { display: block; margin-top: 4px; color: var(--muted); font-size: 10px; font-weight: 500; }
+.result-comparison .comparison-changed small, .result-comparison .comparison-changed td:last-child { color: var(--green); }
+.result-summary #resultOverview { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line); }
 .result-verification { font-size: 12px; line-height: 1.65; margin: 14px 0 0; padding-top: 12px; border-top: 1px solid var(--line); }
 .result-verification.verified { color: var(--green); }
 .result-details summary { cursor: pointer; font-size: 13px; font-weight: 750; }
 .result-details .stats { width: 100%; min-width: 0; margin: 16px 0 0; }
 @media (max-width: 420px) { .result-summary, .result-details { padding: 14px; } .result-summary dl { gap: 16px 12px; } }
+@media (max-width: 420px) { .result-comparison th, .result-comparison td { padding-left: 7px; padding-right: 7px; } .result-comparison th:first-child { width: 27%; } }
 
 .tools-row { padding: 8px 0; border-bottom: 1px solid color-mix(in srgb, var(--line) 72%, transparent); }
 .tools-row:last-child { border-bottom: 0; }
