@@ -1,0 +1,25 @@
+{
+  "version": "0.6.3-dev.4",
+  "source_snapshot_commit": "bf212d5347d3ff9a2aee3785767896e768146e67",
+  "release_notes_at_build": {
+    "filename": "RELEASE-NOTES-v0.6.3-dev.4.md",
+    "sha256": "759cde08f1acafb351fcb1c728751e824f1bb88a5cd06c6e6532364f7ce6e8d8"
+  },
+  "artifacts": {
+    "Android": {
+      "filename": "APK-Cleaner-Studio-v0.6.3-dev.4-Android.apk",
+      "size_bytes": 32580268,
+      "sha256": "08e73b2051be7d5fc5c9c01ffaf46976a054061dd24e08a7f24dcf2bbbbd2a7d"
+    },
+    "Windows": {
+      "filename": "APK-Cleaner-Studio-v0.6.3-dev.4-Windows.exe",
+      "size_bytes": 30661858,
+      "sha256": "d19c5e4c6e32031810710a7b2005527b7924300b57554a550e6319009b1cf295"
+    },
+    "Termux": {
+      "filename": "APK-Cleaner-Studio-v0.6.3-dev.4-Termux.zip",
+      "size_bytes": 16540177,
+      "sha256": "74daa9834b9b3f29b102155012268d8cc9cbc6183c4ea02992ed354d56aed637"
+    }
+  }
+}

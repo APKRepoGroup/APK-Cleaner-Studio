@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import signal
 import socket
@@ -18,6 +19,25 @@ ROOT = Path(__file__).resolve().parents[1]
 VERSION = "0.6.3-dev.4"
 EXE = ROOT / "outputs" / f"APK-Cleaner-Studio-v{VERSION}-Windows.exe"
 TERMUX = ROOT / "outputs" / f"APK-Cleaner-Studio-v{VERSION}-Termux.zip"
+
+
+def release_build_snapshot(root: Path = ROOT) -> dict | None:
+    """Keep tested packages immutable when commit links finalize after building."""
+    path = root / "release-assets" / f"v{VERSION}" / "package-manifest.json"
+    if not path.is_file():
+        return None
+    snapshot = json.loads(path.read_text(encoding="utf-8"))
+    if snapshot.get("version") != VERSION:
+        raise RuntimeError("Dağıtım kayıt sürümü eşleşmiyor.")
+    for platform, extension in (("Android", "apk"), ("Windows", "exe"), ("Termux", "zip")):
+        row = snapshot["artifacts"][platform]
+        expected_name = f"APK-Cleaner-Studio-v{VERSION}-{platform}.{extension}"
+        if row["filename"] != expected_name:
+            raise RuntimeError("Dağıtım kayıt dosya adı eşleşmiyor.")
+        artifact = root / "outputs" / expected_name
+        if artifact.stat().st_size != row["size_bytes"] or hashlib.sha256(artifact.read_bytes()).hexdigest() != row["sha256"]:
+            raise RuntimeError(f"Test edilen dağıtım dosyası değişmiş: {expected_name}")
+    return snapshot
 
 
 def free_port() -> int:
@@ -43,6 +63,7 @@ def fetch_text(url: str) -> str:
 
 
 def audit_termux() -> dict:
+    snapshot = release_build_snapshot()
     forbidden_suffixes = (".pyc", ".pem", ".key", ".part", ".tmp")
     forbidden_credentials = {"signing.properties", "apk-repo.jks", "apk-cleaner-studio-release.p12"}
     allowed_pkcs12 = {"studio/tools/output-signing.p12"}
@@ -72,6 +93,11 @@ def audit_termux() -> dict:
             "RELEASE-NOTES-v0.6.3-dev.4.md", "VERSION.txt",
         ):
             source = ROOT / relative
+            if snapshot and relative == snapshot["release_notes_at_build"]["filename"]:
+                expected = snapshot["release_notes_at_build"]["sha256"]
+                if hashlib.sha256(archive.read(relative)).hexdigest() != expected:
+                    raise RuntimeError("Termux paketinin derleme anındaki sürüm notları değişmiş.")
+                continue
             if archive.read(relative) != source.read_bytes():
                 raise RuntimeError(f"Termux paketi güncel kaynakla eşleşmiyor: {relative}")
         if VERSION.encode() not in archive.read("VERSION.txt"):
@@ -80,7 +106,8 @@ def audit_termux() -> dict:
         for stale in (b"0.5.3", b"development / test"):
             if stale in combined:
                 raise RuntimeError(f"Termux paketinde eski sürüm metni bulundu: {stale.decode()}")
-        return {"entries": len(names), "size": TERMUX.stat().st_size, "leaked_runtime_files": 0}
+        return {"entries": len(names), "size": TERMUX.stat().st_size, "leaked_runtime_files": 0,
+                "immutable_build_snapshot_verified": snapshot is not None}
 
 
 def audit_windows() -> dict:
