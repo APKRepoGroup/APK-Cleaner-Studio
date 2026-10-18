@@ -1401,6 +1401,15 @@ def cancel_clean_job(job_id: str, requester_id: str, requester_is_local: bool) -
     return True
 
 
+def notify_job_outcome(job_id: str, status: str, filename: str, event_id: str) -> None:
+    """Best effort only; notification/permission failures must never change a job result."""
+    if not ANDROID_RUNTIME or status not in {"done", "error"} or not JOB_ID.fullmatch(job_id):
+        return
+    try:
+        from java import jclass
+        jclass("com.apkcleaner.studio.JobNotifications").publish(job_id, status, str(filename)[:240], event_id)
+    except Exception:
+        pass
 
 
 def _execute_clean_job(job_id: str, payload: dict) -> None:
@@ -1410,6 +1419,8 @@ def _execute_clean_job(job_id: str, payload: dict) -> None:
     filename = analysis.get("filename", "paket.apk")
     last_stage = "İşlem seçenekleri denetleniyor"
     journal = JobProgressJournal()
+    outcome = None
+    notification_event = uuid.uuid4().hex
     with _ACTIVE_JOBS_LOCK:
         cancel_event = _JOB_CANCEL_EVENTS.setdefault(job_id, threading.Event())
         _JOB_THREADS[job_id] = threading.get_ident()
@@ -1517,6 +1528,7 @@ def _execute_clean_job(job_id: str, payload: dict) -> None:
                 "filename": filename, "result": result,
                 "events": journal.record("Çıktı APK hazır", 100),
             })
+            outcome = "done"
     except JobCancelled as exc:
         shutil.rmtree(job / "output", ignore_errors=True)
         shutil.rmtree(job / "prepared-selected", ignore_errors=True)
@@ -1550,6 +1562,8 @@ def _execute_clean_job(job_id: str, payload: dict) -> None:
                 **({} if cancelled else {"failure": {key: details[key] for key in ("message", "stage", "operation", "profile")}}),
                 "events": journal.record(message, 0),
             })
+            if not cancelled:
+                outcome = "error"
         if cancelled:
             shutil.rmtree(job / "output", ignore_errors=True)
             shutil.rmtree(job / "prepared-selected", ignore_errors=True)
@@ -1558,6 +1572,10 @@ def _execute_clean_job(job_id: str, payload: dict) -> None:
             _ACTIVE_JOBS.discard(job_id)
             _JOB_CANCEL_EVENTS.pop(job_id, None)
             _JOB_THREADS.pop(job_id, None)
+        if outcome is not None:
+            notify_job_outcome(job_id, outcome, filename, notification_event)
+
+
 def processing_selection(payload: dict) -> dict:
     """Bounded, private job configuration; the worker receives this exact snapshot."""
     operation = payload.get("operation", "patch")

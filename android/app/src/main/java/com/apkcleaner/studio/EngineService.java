@@ -25,6 +25,7 @@ public final class EngineService extends Service {
     private static final String TAG = "APKCleanerEngine";
     public static final int PORT = 8765;
     public static final String ACTION_STOP = "com.apkcleaner.studio.STOP";
+    public static final String ACTION_CONFIRM_STOP = "com.apkcleaner.studio.CONFIRM_STOP";
     public static volatile boolean ready = false;
     public static volatile String startupError = "";
     private static final String CHANNEL_ID = "apk_cleaner_engine";
@@ -42,6 +43,7 @@ public final class EngineService extends Service {
         startupError = "";
         try {
             EmbeddedToolRunner.initialize(this);
+            JobNotifications.initialize(this);
             createNotificationChannel();
             startForeground(31, notification(getString(R.string.engine_starting)));
         } catch (Throwable error) {
@@ -56,9 +58,10 @@ public final class EngineService extends Service {
 
     @Override public int onStartCommand(Intent intent, int flags, int startId) {
         if (intent != null && ACTION_STOP.equals(intent.getAction())) {
-            stopEngine();
-            stopSelf();
-            return START_NOT_STICKY;
+            // A cached notification from an older version must not bypass confirmation.
+            // Only the explicit Activity action below can ask the user and close the app.
+            getSystemService(NotificationManager.class).notify(31,
+                    notification(getString(R.string.engine_ready)));
         }
         ensureEngineRunning();
         // Android bellek baskısı altında foreground servisini sonlandırırsa motoru
@@ -120,8 +123,9 @@ public final class EngineService extends Service {
         Intent open = new Intent(this, MainActivity.class);
         PendingIntent content = PendingIntent.getActivity(this, 1, open,
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
-        Intent stop = new Intent(this, EngineService.class).setAction(ACTION_STOP);
-        PendingIntent stopAction = PendingIntent.getService(this, 2, stop,
+        Intent stop = new Intent(this, MainActivity.class).setAction(ACTION_CONFIRM_STOP)
+                .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        PendingIntent stopAction = PendingIntent.getActivity(this, 2, stop,
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
         return new Notification.Builder(this, CHANNEL_ID)
                 .setSmallIcon(R.mipmap.ic_launcher)

@@ -3,6 +3,7 @@ package com.apkcleaner.studio;
 import android.Manifest;
 import android.annotation.SuppressLint;
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
 import android.content.pm.PackageManager;
@@ -122,6 +123,12 @@ public final class MainActivity extends Activity {
     private boolean activityVisible;
     private volatile boolean closed;
     private volatile int viewGeneration;
+    private boolean bridgeReady;
+    private volatile String pendingNotificationJob;
+    private String pendingEngineStop;
+    private boolean engineStopPromptDelivered;
+    private boolean engineStopConfirmed;
+    private AlertDialog engineStopFallback;
     private final ThreadLocal<Integer> taskGeneration = new ThreadLocal<>();
     private Button rendererRetry;
     private final AtomicBoolean installedPackagesLoading = new AtomicBoolean(false);
@@ -144,6 +151,8 @@ public final class MainActivity extends Activity {
         ((ThreadPoolExecutor) io).setKeepAliveTime(15, TimeUnit.SECONDS);
         ((ThreadPoolExecutor) io).allowCoreThreadTimeOut(true);
         if (state != null) {
+            pendingNotificationJob = state.getString("pending_notification_job");
+            pendingEngineStop = state.getString("pending_engine_stop");
             pendingDownloadUrl = state.getString(STATE_DOWNLOAD_URL);
             pendingDownloadMime = state.getString(STATE_DOWNLOAD_MIME);
             pendingDownloadFilename = state.getString(STATE_DOWNLOAD_NAME);
@@ -176,6 +185,71 @@ public final class MainActivity extends Activity {
             DiagnosticRecorder.record(this, "startup", error);
             showStartupError(error);
         }
+        handleNotificationIntent(getIntent());
+    }
+
+    @Override protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        handleNotificationIntent(intent);
+    }
+
+    private void handleNotificationIntent(Intent intent) {
+        if (intent != null && JobNotifications.ACTION_RESULT.equals(intent.getAction())) {
+            String jobId = intent.getStringExtra(JobNotifications.EXTRA_JOB);
+            intent.setAction(null);
+            if (jobId != null && jobId.matches("[a-f0-9]{32}")) queueNotificationJob(jobId);
+        }
+        if (intent != null && EngineService.ACTION_CONFIRM_STOP.equals(intent.getAction())) {
+            intent.setAction(null); // Rotation/resume must not repeat a consumed action.
+            if (pendingEngineStop == null) pendingEngineStop = UUID.randomUUID().toString();
+        }
+        publishPendingEngineStop();
+        publishPendingJobNotification();
+        if (pendingEngineStop != null) {
+            final String token = pendingEngineStop;
+            getWindow().getDecorView().postDelayed(() -> {
+                if (closed || isFinishing() || engineStopPromptDelivered || !token.equals(pendingEngineStop)) return;
+                // The engine/WebView may itself be unavailable: confirmation must still work.
+                engineStopPromptDelivered = true;
+                engineStopFallback = new AlertDialog.Builder(this)
+                        .setTitle(R.string.engine_stop_title).setMessage(R.string.engine_stop_message)
+                        .setNegativeButton(R.string.engine_stop_keep, (dialog, which) -> resolveEngineStop(token, false))
+                        .setPositiveButton(R.string.engine_stop_confirm, (dialog, which) -> resolveEngineStop(token, true))
+                        .setOnCancelListener(dialog -> resolveEngineStop(token, false)).show();
+            }, 8000);
+        }
+    }
+
+    private void publishPendingJobNotification() {
+        if (!bridgeReady || webView == null || pendingNotificationJob == null) return;
+        String jobId = takeNotificationJob();
+        if (jobId == null) return;
+        webView.evaluateJavascript("globalThis.onJobNotification?.(" + JSONObject.quote(jobId) + ")", null);
+    }
+
+    private synchronized void queueNotificationJob(String jobId) { pendingNotificationJob = jobId; }
+
+    private synchronized String takeNotificationJob() {
+        String jobId = pendingNotificationJob;
+        pendingNotificationJob = null;
+        return jobId;
+    }
+
+    private void publishPendingEngineStop() {
+        if (!bridgeReady || webView == null || pendingEngineStop == null || engineStopPromptDelivered) return;
+        engineStopPromptDelivered = true;
+        webView.evaluateJavascript("globalThis.onEngineStopRequested?.(" + JSONObject.quote(pendingEngineStop) + ")", null);
+    }
+
+    private void resolveEngineStop(String token, boolean confirmed) {
+        if (pendingEngineStop == null || !pendingEngineStop.equals(token) || !engineStopPromptDelivered) return;
+        pendingEngineStop = null;
+        engineStopPromptDelivered = false;
+        if (!confirmed) return;
+        engineStopConfirmed = true;
+        // onDestroy stops the service; suppress recovery before finishing the Activity.
+        finishAndRemoveTask();
     }
 
     // Results from native work must never target a closed or replaced WebView.
@@ -224,6 +298,9 @@ public final class MainActivity extends Activity {
             disposeWebView(failed);
             return;
         }
+        bridgeReady = false;
+        engineStopPromptDelivered = engineStopFallback != null && engineStopFallback.isShowing();
+        handleNotificationIntent(null);
         viewGeneration++;
         webView = null;
         cancelFileSelection();
@@ -294,6 +371,8 @@ public final class MainActivity extends Activity {
     }
 
     private void buildUi() {
+        bridgeReady = false;
+        engineStopPromptDelivered = false;
         root = new FrameLayout(this);
         boolean light = "light".equals(nativeTheme());
         root.setBackgroundColor(light ? Color.rgb(242, 245, 239) : Color.rgb(7, 16, 13));
@@ -358,6 +437,13 @@ public final class MainActivity extends Activity {
             @Override public boolean onRenderProcessGone(WebView view, RenderProcessGoneDetail detail) {
                 showRendererRecovery(view, detail.didCrash());
                 return true;
+            }
+
+            @Override public void onPageStarted(WebView view, String url, Bitmap favicon) {
+                if (view != webView) return;
+                bridgeReady = false;
+                engineStopPromptDelivered = engineStopFallback != null && engineStopFallback.isShowing();
+                handleNotificationIntent(null);
             }
 
             @Override public void onPageFinished(WebView view, String url) {
@@ -466,7 +552,7 @@ public final class MainActivity extends Activity {
     }
 
     private void ensureEngineService() {
-        if (closed) return;
+        if (closed || engineStopConfirmed) return;
         Intent service = new Intent(this, EngineService.class);
         try {
             if (Build.VERSION.SDK_INT >= 26) startForegroundService(service); else startService(service);
@@ -610,6 +696,24 @@ public final class MainActivity extends Activity {
     }
 
     private void handleBack() {
+        // Back dismisses a notification confirmation; it must not finish/stop the app.
+        if (pendingEngineStop != null) {
+            if (engineStopFallback != null && engineStopFallback.isShowing()) engineStopFallback.cancel();
+            else if (bridgeReady && engineStopPromptDelivered && webView != null) {
+                webView.evaluateJavascript("globalThis.cancelEngineStopPrompt?.()", null);
+            } else { pendingEngineStop = null; engineStopPromptDelivered = false; }
+            return;
+        }
+        if (bridgeReady && webView != null) {
+            final WebView current = webView;
+            current.evaluateJavascript("globalThis.closeTransientMenu?.() === true", handled -> {
+                if (closed || isFinishing() || webView != current) return;
+                if (!"true".equals(handled)) navigateBack();
+            });
+        } else navigateBack();
+    }
+
+    private void navigateBack() {
         if (webView != null && webView.canGoBack()) webView.goBack(); else finish();
     }
 
@@ -621,6 +725,19 @@ public final class MainActivity extends Activity {
                 }
                 publishBackgroundPolicy(); // Recheck, never assume consent from opening a screen.
             });
+        }
+        @JavascriptInterface public void uiReady() {
+            postToUi(() -> { bridgeReady = true; publishPendingEngineStop(); publishPendingJobNotification(); });
+        }
+
+        /** Called once before automatic session restore so a notification takes priority. */
+        @JavascriptInterface public String consumeNotificationJob() {
+            String jobId = takeNotificationJob();
+            return jobId == null ? "" : jobId;
+        }
+
+        @JavascriptInterface public void resolveEngineStop(String token, boolean confirmed) {
+            postToUi(() -> MainActivity.this.resolveEngineStop(token, confirmed));
         }
         @JavascriptInterface public void requestBackgroundPolicy() {
             postToUi(() -> publishBackgroundPolicy());
@@ -1585,6 +1702,8 @@ public final class MainActivity extends Activity {
     }
 
     @Override protected void onSaveInstanceState(Bundle state) {
+        state.putString("pending_notification_job", pendingNotificationJob);
+        state.putString("pending_engine_stop", pendingEngineStop);
         super.onSaveInstanceState(state);
         state.putString(STATE_DOWNLOAD_URL, pendingDownloadUrl);
         state.putString(STATE_DOWNLOAD_MIME, pendingDownloadMime);
@@ -1633,6 +1752,7 @@ public final class MainActivity extends Activity {
     @Override protected void onResume() {
         super.onResume();
         activityVisible = true;
+        JobNotifications.setUiVisible(true);
         ensureEngineService();
         if (webView != null) webView.onResume();
         publishUiVisibility();
@@ -1641,6 +1761,7 @@ public final class MainActivity extends Activity {
 
     @Override protected void onPause() {
         activityVisible = false;
+        JobNotifications.setUiVisible(false);
         publishUiVisibility();
         // Pause rendering, not the Python service or a pending analyze/clean request.
         // pauseTimers() is deliberately avoided: it affects every WebView and can
@@ -1662,6 +1783,7 @@ public final class MainActivity extends Activity {
 
     @Override protected void onDestroy() {
         closed = true;
+        if (engineStopFallback != null) { engineStopFallback.dismiss(); engineStopFallback = null; }
         if (activeInstance.get() == this) activeInstance = new WeakReference<>(null);
         getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         viewGeneration++;

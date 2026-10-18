@@ -6,6 +6,17 @@
     <string name="engine_ready">Yerel motor hazır</string>
     <string name="engine_starting">Yerel motor başlatılıyor…</string>
     <string name="engine_stop">Durdur</string>
+    <string name="engine_stop_title">Motor durdurulsun mu?</string>
+    <string name="engine_stop_message">Yerel işlem motoru durdurulacak ve uygulama kapatılacak. Devam eden işlemler yarıda kalabilir; tamamlanmamış çıktılar kullanılamaz. Orijinal paketler korunur.</string>
+    <string name="engine_stop_keep">Vazgeç</string>
+    <string name="engine_stop_confirm">Durdur ve kapat</string>
+    <string name="job_channel_name">İşlem sonuçları</string>
+    <string name="job_channel_description">Uygulama arka plandayken tamamlanan veya başarısız olan paket işlemleri.</string>
+    <string name="job_done">Çıktı hazır</string>
+    <string name="job_failed">İşlem tamamlanamadı</string>
+    <string name="job_done_text">Sonucu görüntülemek için dokunun.</string>
+    <string name="job_failed_text">Hata ayrıntılarını görüntülemek için dokunun.</string>
+    <string name="job_result_private">Bir paket işleminin sonucu hazır.</string>
     <string name="loading">APK Cleaner Studio hazırlanıyor…</string>
     <string name="load_error">Yerel motor başlatılamadı.</string>
     <string name="renderer_closed">Arayüz kapandı. Yeniden açabilirsin; paket işlemlerine geçmişten ulaşabilirsin.</string>

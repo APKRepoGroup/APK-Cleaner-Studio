@@ -437,6 +437,23 @@ function confirmAction(title, message, confirmText = "Onayla", destructive = fal
   return openAppDialog({ title, message, confirmText, destructive });
 }
 
+let engineStopPrompt = false;
+globalThis.cancelEngineStopPrompt = () => { if (engineStopPrompt) closeAppDialog(false); };
+globalThis.onEngineStopRequested = async (token) => {
+  const bridge = globalThis.AndroidThemeBridge;
+  if (engineStopPrompt || typeof token !== "string" || !bridge?.resolveEngineStop) return;
+  engineStopPrompt = true;
+  let approved = false;
+  try {
+    approved = Boolean(await confirmAction("Motor durdurulsun mu?", "Yerel işlem motoru durdurulacak ve uygulama kapatılacak. Devam eden işlemler yarıda kalabilir; tamamlanmamış çıktılar kullanılamaz. Orijinal paketler korunur.", "Durdur ve kapat", true));
+  } finally {
+    // Let the shared close animation finish before Android removes the Activity.
+    if (approved) await Promise.allSettled(($("#appDialog").getAnimations?.() || []).map(animation => animation.finished));
+    engineStopPrompt = false;
+    bridge.resolveEngineStop(token, approved);
+  }
+};
+
 function promptAction(title, message, value = "") {
   return openAppDialog({ title, message, confirmText: "Kaydet", eyebrow: "CİHAZ BİLGİSİ", mode: "prompt", value });
 }
@@ -2721,6 +2738,17 @@ async function restoreJobSession(jobId = rememberedActiveJob()) {
   }
 }
 
+globalThis.onJobNotification = async (jobId) => {
+  if (typeof jobId !== "string" || !/^[a-f0-9]{32}$/.test(jobId)) return;
+  if (state.jobRunning || state.selectionBusy || state.sessionRestoreInFlight) {
+    if (state.jobId === jobId) focusProcessingView("#workingView");
+    else toast("Başka bir işlem açık. Bildirimin sonucuna işlem geçmişinden ulaşabilirsin.");
+    return;
+  }
+  await restoreJobSession(jobId);
+  $(".workspace")?.scrollIntoView({ block: "start", behavior: motionMedia.matches ? "auto" : "smooth" });
+};
+
 function restoreInitialJobSession() {
   let notificationJob = "";
   try { notificationJob = globalThis.AndroidThemeBridge?.consumeNotificationJob?.() || ""; } catch {}
@@ -3087,6 +3115,7 @@ $("#batterySettingsButton").addEventListener("click", requestBatteryExemption);
 $("#batteryDismiss").addEventListener("click", dismissBatteryNotice);
 $("#batteryAppSettingsButton").addEventListener("click", () => openBatterySettings(true));
 revealReadyInterface();
+globalThis.AndroidThemeBridge?.uiReady?.();
 uiScheduler.add("status", refreshStatus, 10000);
 uiScheduler.add("history", refreshHistory, 30000);
 uiScheduler.add("background-policy", requestBackgroundPolicy, 10000);

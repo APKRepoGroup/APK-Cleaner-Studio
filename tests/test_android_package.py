@@ -247,6 +247,9 @@ class AndroidPackageTests(unittest.TestCase):
             names = archive.namelist()
             abis = {name.split("/")[1] for name in names if name.startswith("lib/")}
             self.assertEqual(abis, {"arm64-v8a", "armeabi-v7a"})
+            native_code = b"".join(archive.read(name) for name in names if re.fullmatch(r"classes\d*\.dex", name))
+            for descriptor in (b"Lcom/apkcleaner/studio/JobNotifications;", b"Lcom/apkcleaner/studio/BackgroundPolicy;"):
+                self.assertIn(descriptor, native_code, "Yeni yerel bildirim/pil bileşeni APK içinde bulunamadı.")
             self.assertIn("assets/output-signing.p12", names)
             app_archive = zipfile.ZipFile(io.BytesIO(archive.read("assets/chaquopy/app.imy")))
             embedded = set(app_archive.namelist())
