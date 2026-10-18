@@ -24,11 +24,14 @@
   },
   "include": [
     "next-env.d.ts",
-    "**/*.ts",
-    "**/*.tsx",
+    "app/**/*.ts",
+    "app/**/*.tsx",
+    "worker/**/*.ts",
+    "next.config.ts",
+    "vite.config.ts",
     ".next/types/**/*.ts",
     ".next/dev/types/**/*.ts",
-    "**/*.mts"
+    "app/**/*.mts"
   ],
   "exclude": ["node_modules"]
 }

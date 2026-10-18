@@ -2,7 +2,7 @@
 param(
   [ValidateSet("Debug", "Release")]
   [string]$Variant = "Debug",
-  [string]$OutputName = "APK-Cleaner-Studio-v0.6.3-dev.4-Android.apk",
+  [string]$OutputName = "APK-Cleaner-Studio-v0.6.3-dev.5-Android.apk",
   [switch]$Offline
 )
 
@@ -58,6 +58,8 @@ if (-not $env:APK_CLEANER_SHORT_PATH_BUILD -and $ProjectRoot.Length -gt 80) {
   $ProjectDrive = "$($Free[0]):"
   $SdkDrive = "$($Free[1]):"
   $PreviousSdkRoot = $env:ANDROID_SDK_ROOT
+  $PreviousJavaHome = $env:JAVA_HOME
+  $PreviousPath = $env:Path
   try {
     & subst.exe $ProjectDrive $ProjectRoot
     if ($LASTEXITCODE -ne 0) { throw "$ProjectDrive kısa proje yolu kurulamadı." }
@@ -68,6 +70,10 @@ if (-not $env:APK_CLEANER_SHORT_PATH_BUILD -and $ProjectRoot.Length -gt 80) {
     & "$ProjectDrive\android\build-android.ps1" -Variant $Variant -OutputName $OutputName -Offline:$Offline
     return
   } finally {
+    # Recursive short-path builds select R:\.tools as JAVA_HOME. Restore the
+    # physical JDK before removing SUBST so subsequent checks can still use Java.
+    $env:JAVA_HOME = $PreviousJavaHome
+    $env:Path = $PreviousPath
     Remove-Item Env:APK_CLEANER_SHORT_PATH_BUILD -ErrorAction SilentlyContinue
     if ($null -eq $PreviousSdkRoot) {
       Remove-Item Env:ANDROID_SDK_ROOT -ErrorAction SilentlyContinue
