@@ -664,6 +664,10 @@ public final class MainActivity extends Activity {
 
         /** Packages the selected installed app and streams it to the existing local analysis endpoint. */
         @JavascriptInterface public void importInstalledPackage(String packageName) {
+            importInstalledPackageWithRequest(packageName, "");
+        }
+
+        @JavascriptInterface public void importInstalledPackageWithRequest(String packageName, String requestId) {
             executeIo(() -> {
                 File staged = null;
                 try {
@@ -693,12 +697,13 @@ public final class MainActivity extends Activity {
                     }
                     String response = uploadForAnalysis(staged);
                     JSONObject payload = new JSONObject(response);
+                    payload.put("request_id", requestId);
                     payload.put("native_file", new JSONObject()
                             .put("name", staged.getName()).put("size", staged.length()));
                     publishInstalledImport(payload.toString());
                 } catch (Exception error) {
                     try {
-                        publishInstalledImport(new JSONObject().put("error",
+                        publishInstalledImport(new JSONObject().put("request_id", requestId).put("error",
                                 messageOf(error, "Yüklü uygulama alınamadı.")).toString());
                     } catch (Exception ignored) {}
                 } finally {

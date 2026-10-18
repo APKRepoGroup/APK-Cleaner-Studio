@@ -2,6 +2,7 @@ const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
 const state = {
   appearanceIcon: "", appearanceGeneration: 0, appearanceLoading: false,
+  selectionGeneration: 0, selectionBusy: false, nativeImportRequest: null,
   file: null, profile: "balanced", operation: "patch", patchAdsSelected: true, jobId: null, analysis: null, toolchain: null,
   splitSelection: { abis: [], languages: [] },
   messageTargets: [], messageCandidates: [],
@@ -724,11 +725,21 @@ function installedPackageFilename(item) {
 
 function processInstalledApp(item) {
   if (!item) return;
+  if (state.jobRunning) { toast("Önce mevcut işlemin tamamlanmasını bekle."); return; }
+  if (state.nativeImportRequest) { toast("Önce seçilen uygulamanın hazırlanmasını bekle."); return; }
+  const generation = beginPackageSelection();
+  const requestId = `${clientId}-${generation}-${Date.now()}`;
+  state.nativeImportRequest = { generation, requestId };
   closeInstalledApps();
   state.file = { name: installedPackageFilename(item), size: 0, installed: true };
   prepareAnalysisView(state.file.name, 0, Boolean(item.splits));
-  try { globalThis.AndroidThemeBridge.importInstalledPackage(item.package); }
-  catch { toast("Yüklü uygulama alınamadı."); reset(); }
+  try {
+    if (globalThis.AndroidThemeBridge.importInstalledPackageWithRequest) globalThis.AndroidThemeBridge.importInstalledPackageWithRequest(item.package, requestId);
+    else globalThis.AndroidThemeBridge.importInstalledPackage(item.package);
+  } catch {
+    state.nativeImportRequest = null;
+    if (isCurrentPackageSelection(generation)) { toast("Yüklü uygulama alınamadı."); reset(); }
+  }
 }
 
 function openInstalledApps() {
@@ -1322,10 +1333,14 @@ function refreshInstallHistory() {
 }
 
 async function loadHistoryJob(jobId) {
+  if (state.jobRunning) { toast("Önce mevcut işlemin tamamlanmasını bekle."); return; }
+  const generation = beginPackageSelection();
   try {
     const response = await apiFetch(`/api/jobs/${jobId}/reuse`, { method: "POST", cache: "no-store", headers: clientHeaders() });
     const data = await response.json();
+    if (!isCurrentPackageSelection(generation)) return;
     if (!response.ok) throw new Error(data.error || "Eski işlem açılamadı.");
+    state.selectionBusy = false;
     const analysis = data.analysis;
     state.file = null; state.jobId = data.job_id; state.analysis = analysis; state.operation = "patch";
     clearJobFailure();
@@ -1343,7 +1358,7 @@ async function loadHistoryJob(jobId) {
     setStep(2); showView("#analysisView");
     $(".workspace").scrollIntoView({ behavior: "smooth", block: "start" });
     toast("Eski işlem yeniden açıldı; seçenekleri değiştirip tekrar çalıştırabilirsin.");
-  } catch (error) { toast(error.message); }
+  } catch (error) { if (isCurrentPackageSelection(generation)) { state.selectionBusy = false; toast(userErrorMessage(error)); } }
 }
 
 async function refreshStatus() {
@@ -2159,6 +2174,17 @@ async function deleteSavedPreset() {
   toast("İşlem profili silindi.");
 }
 
+function beginPackageSelection() {
+  state.selectionGeneration = (state.selectionGeneration || 0) + 1;
+  state.selectionBusy = true;
+  state.jobId = null; state.analysis = null; state.jobSelection = null;
+  return state.selectionGeneration;
+}
+
+function isCurrentPackageSelection(generation) {
+  return generation === state.selectionGeneration && !state.jobRunning;
+}
+
 function prepareAnalysisView(name, size, split = false) {
   resetAppAppearance();
   clearJobFailure();
@@ -2187,27 +2213,40 @@ function applyAnalysisResult(data) {
 }
 
 globalThis.onInstalledPackageImported = (payload) => {
+  const pending = state.nativeImportRequest;
+  if (!pending) return;
   try {
     const data = JSON.parse(payload);
+    if (data.request_id && data.request_id !== pending.requestId) return;
+    state.nativeImportRequest = null;
+    if (!isCurrentPackageSelection(pending.generation)) return;
     if (data.error) throw new Error(data.error);
     const file = data.native_file || { name: "installed-app.apk", size: 0 };
     state.file = { name: file.name, size: Number(file.size || 0), installed: true };
     prepareAnalysisView(file.name, Number(file.size || 0), isSplit(file.name));
     applyAnalysisResult(data);
-  } catch (error) { toast(error.message || "Yüklü uygulama alınamadı."); reset(); }
+    state.selectionBusy = false;
+  } catch (error) {
+    state.nativeImportRequest = null;
+    if (isCurrentPackageSelection(pending.generation)) { toast(userErrorMessage(error, "Yüklü uygulama alınamadı.")); reset(); }
+  }
 };
 
 async function acceptFile(file) {
+  if (state.jobRunning) return toast("Önce mevcut işlemin tamamlanmasını bekle.");
   const ext = file ? extension(file.name) : "";
   if (!file || !ext) return toast("Lütfen .apk, .apks, .apkm veya .xapk dosyası seç.");
   if (file.size > MAX_UPLOAD_BYTES) return toast("Paket 1 GB sınırını aşıyor.");
+  const generation = beginPackageSelection();
   state.file = file; prepareAnalysisView(file.name, file.size, isSplit(file.name));
   const form = new FormData(); form.append("package", file);
   try {
     const response = await apiFetch("/api/analyze", { method: "POST", headers: clientHeaders(), body: form }); const data = await response.json();
+    if (!isCurrentPackageSelection(generation)) return;
     if (!response.ok) throw new Error(data.error || "Analiz başarısız.");
     applyAnalysisResult(data);
-  } catch (error) { toast(error.message); reset(); }
+    state.selectionBusy = false;
+  } catch (error) { if (isCurrentPackageSelection(generation)) { toast(userErrorMessage(error)); reset(); } }
 }
 
 function renderProgress(value) {
@@ -2519,7 +2558,7 @@ async function waitForJobResult(initialResult = null) {
 }
 
 async function runJob() {
-  if (!state.jobId || state.jobRunning) return;
+  if (!state.jobId || state.jobRunning || state.selectionBusy || state.preflightBusy || state.sessionRestoreInFlight) return;
   if (state.appearanceLoading) { toast("Simge hazırlanıyor; tamamlanmasını bekle."); return; }
   const hasAds = Number(state.analysis?.network_count || 0) > 0;
   const patchAds = hasAds && ((state.operation === "patch" && state.patchAdsSelected) || (state.operation !== "patch" && $("#patchAds").checked));
@@ -2592,6 +2631,11 @@ async function cancelJob() {
 }
 
 function reset() {
+  if (state.jobRunning) { toast("Önce mevcut işlemin tamamlanmasını bekle."); return; }
+  state.selectionGeneration = (state.selectionGeneration || 0) + 1;
+  state.selectionBusy = false;
+  state.jobSelection = null;
+  if (state.jobId && !state.jobRunning) forgetActiveJob(state.jobId);
   resetAppAppearance();
   Object.assign(state, { file: null, jobId: null, analysis: null, profile: "balanced", operation: "patch", patchAdsSelected: true, splitSelection: { abis: [], languages: [] }, messageTargets: [], messageCandidates: [], pollInFlight: false, jobRunning: false, outputUrl: "", outputFilename: "", nativeInstallBusy: false, nativeShareBusy: false, nativeSplitInstallBusy: false, splitInstallRequestJobId: null, splitInstallSubmitted: false, installedSharePackage: "" });
   setJobRunning(false);
