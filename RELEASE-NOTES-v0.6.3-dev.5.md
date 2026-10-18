@@ -1,45 +1,43 @@
-## 0.6.3-dev.5 — Geliştirme taslağı
+## 0.6.3-dev.5 (2026-10-18)
 
 ### ✨ Yeni Özellikler
 
-- Pil uyarısının açıklaması iki paragrafa ayrıldı. Kullanıcının seçimiyle Android'in pil optimizasyonu muafiyeti onayı doğrudan açılır; cihazda ayrı arka plan kısıtlaması kalırsa uyarı korunur ve uygulama ayarlarına erişim sunulur.
+- Android'de pil kısıtlaması uyarısı ve sistem onayıyla arka planda çalışma izni isteme özelliği eklendi. ([e489cb8](https://github.com/APKRepoGroup/APK-Cleaner-Studio/commit/e489cb8aed617f8b7e1cee23cd4dd7b319a8ec6a))
 
-- Android'de uygulama arka plandayken tamamlanan veya başarısız olan işlemler için sonuç bildirimi eklendi. Bildirime dokunularak ilgili işin sonucu açılabilir. Bildirim izinleri ve kilit ekranı gizliliği korunur; arayüz açıkken ek bildirim gösterilmez.
+- Android'de arka plandaki işlemler için sonuç bildirimi ve bildirime dokunarak ilgili işleme dönme desteği eklendi. ([d9cc020](https://github.com/APKRepoGroup/APK-Cleaner-Studio/commit/d9cc02030729d1602165af07d77b22afba6c7ef2))
 
-- İşlem geçmişine uygulama/dosya/paket adına göre arama, durum filtreleri ve sayfalama eklendi. Arama yalnız son görünen kayıtlarda değil, saklanan ve erişim izni bulunan tüm işlemlerde yapılır.
-  Durum seçimi, açık/koyu temayı izleyen ve ortak açılma/kapanma animasyonunu kullanan uygulama içi bir pencereye taşındı.
+- İşlem geçmişine uygulama, dosya ve paket adına göre arama, sayfalama ve temaya uyumlu durum filtresi eklendi. ([03a8808](https://github.com/APKRepoGroup/APK-Cleaner-Studio/commit/03a8808d28248ea390b5574a42be8e63f214cecc))
+
+- İşlem öncesi boş alan kontrolü eklendi; yetersiz depolama için uyarı ve kritik dolulukta başlatma engeli getirildi. ([1d051d7](https://github.com/APKRepoGroup/APK-Cleaner-Studio/commit/1d051d75e85ceda95f298252c94e66f3a99fcaf5))
+
+### 🛠️ İyileştirmeler
+
+- İşlem adımları, son adıma dönüş düğmesi ve otomatik gizlenen kaydırma çubuğu içeren tek günlükte birleştirildi. ([dee7e10](https://github.com/APKRepoGroup/APK-Cleaner-Studio/commit/dee7e100cf214617099ba24314786d6f9db7a2ba))
+
+- Devam eden işleme ekran yeniden açıldığında veya geçmişten dönülebilir; kayıtlı ayarlar **İşlem seçenekleri** bölümünde gösterilir. ([64e8ae8](https://github.com/APKRepoGroup/APK-Cleaner-Studio/commit/64e8ae8b9166ff7a94b3683fc1175b0fa1190d1c))
+
+- Pil uyarısına animasyonlu, oturumluk kapatma eklendi; kısıtlamalar sürüyorsa sonraki açılışta yeniden gösterilir.
+
+- Android açılış animasyonu cihazın açık/koyu temasına uyumlu hâle getirildi.
+
+- Özel Teşekkürler alanında uzun kullanıcı adlarının mobil yerleşimi düzeltildi. ([322c85c](https://github.com/APKRepoGroup/APK-Cleaner-Studio/commit/322c85cd6542b5b68d57ad99355ccf042ed512b5))
 
 ### 🐛 Hata Düzeltmeleri
 
-- Android açılış ekranı cihazın açık/koyu temasını izler. Açık tema için arka plan, yazı ve sistem çubuğu renkleri eklendi; koyu temadaki mevcut renkler ve animasyon süreleri korundu.
-  Android 12 ve sonrasında animasyondan önce görünen ayrı büyük logo kaldırıldı; animasyon başlangıcı ilk çizim/sistem katmanının kapanışıyla eşleştirildi.
-  Animasyondan önce boş ekranda beklemeye yol açan Python hazırlığı ana iş parçacığından servis çalışanına taşındı; animasyon ilk çizimde başlatılırken motor arka planda hazırlanır.
+- Android'de animasyondan önceki ayrı logo ve boş ekran beklemesi giderildi; motor animasyon sırasında hazırlanıyor. ([c5692a5](https://github.com/APKRepoGroup/APK-Cleaner-Studio/commit/c5692a5a701d44d53d6be4f8b9f33f002531d8ef))
 
-- Özel Teşekkürler alanında uzun test kullanıcısı adı, diğer kartların ölçüleri değiştirilmeden mobil görünümde tek satıra sığdırıldı.
+- Android'de uygulama simgelerinin bulanıklığı ve çerçeve hizası düzeltildi; eski geçmiş önizlemeleri yenilendi. ([bcac449](https://github.com/APKRepoGroup/APK-Cleaner-Studio/commit/bcac4494a156e235689ed8bc2f9798a0c8c8f1df))
 
-- Android'de analiz ve işlem ekranlarındaki uygulama simgelerinin çözünürlüğü artırıldı; simgelerin çerçeve içindeki hizası düzeltildi. Geçmişten yeniden açılan APK'ların eski küçük simge önizlemesi de yenilenir. Kurulu uygulama listesinin küçük simge önbelleği korundu.
+- İşlem iptaline onay eklendi; tamamlanma ve iptal isteklerinin çakışmasından kaynaklanan durum hataları düzeltildi. ([64e8ae8](https://github.com/APKRepoGroup/APK-Cleaner-Studio/commit/64e8ae8b9166ff7a94b3683fc1175b0fa1190d1c))
 
+- Android bildirimindeki **Durdur** eylemine motoru kapatmadan önce onay adımı eklendi. ([d9cc020](https://github.com/APKRepoGroup/APK-Cleaner-Studio/commit/d9cc02030729d1602165af07d77b22afba6c7ef2))
 
-- Android'de pil optimizasyonu veya arka plan kısıtlaması etkin olduğunda uyarı ve ayarlara erişim eklendi. Ayarlardan dönüşte durum yeniden denetlenir. Güncelleme paneliyle aynı X simgesi ve kapanış animasyonu kullanılarak uyarı yalnız o açılış için kapatılabilir; sonraki açılışta kısıtlamalar sürüyorsa yeniden görünür. Mobil görünümde açıklama, simgeli başlığın altında tam genişlikte ortalanır.
+- Paket seçimi, geçmişten açma ve Android'den uygulama alma sırasında eski yanıtların yeni seçimi bozması engellendi. ([b3d032f](https://github.com/APKRepoGroup/APK-Cleaner-Studio/commit/b3d032f07c7c0c45bc08b7ba11155fd41b79f86a))
 
-- İşlem adımları tek, sabit yükseklikte ve kaydırılabilir bir günlükte birleştirildi. Yeni adımlar takip edilirken eski kayıtları inceleyen kullanıcının kaydırma konumu korunur; son adıma tek dokunuşla dönülebilir. Kaydırma çubuğu diğer menülerle aynı otomatik gizlenme davranışını kullanır.
+- Bağlantı kesintilerinde ilerleme bilgileri korunur; yeniden bağlanma ve erişilemeyen kayıtlarda sonsuz bekleme sorunları düzeltildi.
 
-- İşlemi iptal etmeden önce kullanıcı onayı eklendi. Onay penceresi açıkken tamamlanan veya değişen işlemlere yanlışlıkla iptal isteği gönderilmesi önlendi.
+- Yarım kalan işlemlerin durumu ve çıktı erişimi düzeltildi; başarısız veya tamamlanmamış çıktılar indirilebilir dosya olarak sunulmaz.
 
-- Android bildirimindeki “Durdur” eylemine onay eklendi. Kullanıcı onay vermeden motor kapatılmaz; arayüz yüklenemese bile onay ekranına erişilebilir.
+> **Test sürümü:** Bu sürüm hatalar içerebilir. Kararlı sürümü tercih ediyorsanız v0.6.2'yi kullanmaya devam edebilirsiniz.
 
-- Tamamlanma ile iptal isteğinin çakıştığı durumlarda işlem sonucunun yeniden “İptal ediliyor” durumuna dönmesi engellendi.
-
-- Ekran yeniden açıldığında devam eden işleme yeniden bağlanma ve işlem geçmişinden “İşleme dön” desteği eklendi. Motor kapanmışsa yarım kalan kayıtlar açık bir açıklamayla işaretlenir; işlem kendiliğinden yeniden çalıştırılmaz ve tamamlanmamış çıktılar hazır dosya olarak gösterilmez.
-
-- İşlem öncesinde çıktı ve geçici çalışma alanlarının boş kapasitesi denetlenir. Kritik dolulukta işlem başlatılmaz; tahmini alan yetersizse veya kapasite okunamazsa devam etmeden önce uyarı ve onay gösterilir. Depolama yönetimine uyarıdan doğrudan erişilebilir.
-
-- Art arda paket seçimlerinde geciken analiz yanıtlarının veya hatalarının son seçilen paketi değiştirmesi engellendi. Geçmiş kayıtları ve Android'den uygulama alma sonuçları da seçim kimliğiyle denetlenir; çalışan işlem yeni bir paket seçimiyle değiştirilemez.
-
-- İşlem ekranında bağlantı kaybı ve geciken durum yanıtları açıkça gösterilir. Son ilerleme bilgileri korunur; yeniden bağlantı için işlem baştan çalıştırılmaz. Silinmiş veya erişim izni olmayan kayıtlar sonsuz beklemeye neden olmaz.
-
-- İşleme yeniden bağlanıldığında işlem türü, temizlik profili, ek yamalar, klon adı, görünüm ve split seçimleri ilgili işin kayıtlı seçeneklerinden geri yüklenir. İşlem ekranına aynı ortak animasyonu kullanan “İşlem seçenekleri” alanı eklendi. Eski kayıtta seçenek bilgisi yoksa varsayılanlar önceki seçimler gibi sunulmaz.
-
-- Tamamlanmamış veya başarısız işlerin çıktılarına eski/doğrudan indirme bağlantısıyla erişilmesi engellendi. Sonuç raporu yalnız tamamlanan işlerde sunulur; hata raporuna erişim korunur ve geçersiz çıktı yolları reddedilir.
-
-Bu dosya yerel sürüm notu taslağıdır; sürüm henüz yayımlanmadı.
+**Tam değişiklik kaydı:** [v0.6.3-dev.4...v0.6.3-dev.5](https://github.com/APKRepoGroup/APK-Cleaner-Studio/compare/v0.6.3-dev.4...v0.6.3-dev.5)
