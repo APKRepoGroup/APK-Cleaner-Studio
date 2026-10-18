@@ -42,6 +42,8 @@ from engine import (
     merge_split_package,
     process_apk,
     reset_tool_cancellation,
+    storage_preflight,
+    require_processing_space,
     terminate_active_tools,
 )
 from setup_tools import install as install_tools
@@ -1459,6 +1461,7 @@ def _execute_clean_job(job_id: str, payload: dict) -> None:
             split_source = job / source_path if source_path else Path("missing")
             if not split_source.is_file():
                 raise ValueError("Kaynak split paketi bulunamadı.")
+            require_processing_space(split_source, job / "prepared-selected", split=True)
             if split_selection is None:
                 options = analysis.get("split_options") or {}
                 split_selection = {
@@ -1472,6 +1475,7 @@ def _execute_clean_job(job_id: str, payload: dict) -> None:
             selected_split_rebuilt = True
         if not prepared.is_file():
             raise ValueError("Hazırlanan APK bulunamadı.")
+        require_processing_space(prepared, job / "output")
 
         progress("Yerel işlem motoru hazırlanıyor", 4)
         original_source = job / analysis.get("source_path", prepared_path or "missing")
@@ -1893,6 +1897,14 @@ class StudioHandler(BaseHTTPRequestHandler):
                 return
             if action == "state":
                 self.send_json(read_json(job / "state.json", {"status": "unknown"}))
+            elif action == "preflight":
+                analysis = read_json(job / "analysis.json")
+                source_name = analysis.get("source_path") or analysis.get("prepared_path")
+                source = (job / source_name).resolve() if isinstance(source_name, str) else None
+                if source is None or not source.is_relative_to(job.resolve()) or not source.is_file():
+                    self.send_json({"error": "Kaynak paket bulunamadı."}, HTTPStatus.NOT_FOUND)
+                    return
+                self.send_json(storage_preflight(source, job / "output", split=bool(analysis.get("split_merged"))))
             elif action == "session":
                 analysis = read_json(job / "analysis.json")
                 if not analysis:

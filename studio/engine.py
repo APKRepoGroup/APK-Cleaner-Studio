@@ -84,6 +84,54 @@ def _temporary_directory(prefix: str) -> tempfile.TemporaryDirectory:
         tempfile.tempdir = directory
     return tempfile.TemporaryDirectory(prefix=prefix, dir=directory)
 
+def storage_preflight(source: Path, output_dir: Path, *, split: bool = False) -> dict:
+    """Read-only, approximate working-space check; never reserve or delete user data."""
+    size = source.stat().st_size
+    expanded = size
+    try:
+        with zipfile.ZipFile(source) as archive:
+            expanded = max(size, min(MAX_ARCHIVE_EXPANDED_BYTES, sum(item.file_size for item in archive.infolist())))
+    except (OSError, ValueError, zipfile.BadZipFile):
+        pass  # Existing archive validation remains authoritative.
+    temporary_root = Path(os.environ.get("APK_CLEANER_TEMP_ROOT", RUNTIME / "tmp")) if os.environ.get("APK_CLEANER_ANDROID") == "1" else Path(tempfile.gettempdir())
+    reserve = 32 * 1024 * 1024
+    groups: dict[int, dict] = {}
+    unknown = False
+    for label, target, suggested in (("Çıktı alanı", output_dir, size * (3 if split else 2)),
+                                      ("Geçici işlem alanı", temporary_root, expanded * 2)):
+        try:
+            directory = target.resolve()
+            while not directory.exists() and directory != directory.parent:
+                directory = directory.parent
+            device = directory.stat().st_dev
+            free = shutil.disk_usage(directory).free
+            group = groups.setdefault(device, {"areas": [], "free_bytes": free, "recommended_bytes": reserve, "minimum_bytes": reserve})
+            group["areas"].append(label)
+            group["free_bytes"] = min(group["free_bytes"], free)
+            group["recommended_bytes"] += suggested
+        except (OSError, ValueError):
+            unknown = True
+    volumes = list(groups.values())
+    blocked = any(row["free_bytes"] < row["minimum_bytes"] for row in volumes)
+    warning = any(row["free_bytes"] < row["recommended_bytes"] for row in volumes)
+    status = "blocked" if blocked else "unknown" if unknown or not volumes else "warning" if warning else "ok"
+    messages = {
+        "blocked": "İşlem alanı kritik düzeyde dolu. Depolama Yönetimi'nden yer açıp yeniden deneyin.",
+        "warning": "Boş alan, tahmini çalışma alanından düşük. İşlem sırasında depolama hatası oluşabilir; önce yer açmanız önerilir.",
+        "unknown": "Boş alan denetlenemedi. Devam etmeden önce cihazın depolama alanını kontrol edin.",
+        "ok": "Şu anki boş alan, tahmini çalışma alanını karşılıyor.",
+    }
+    limiting = min(volumes, key=lambda row: row["free_bytes"] - row["recommended_bytes"]) if volumes else {}
+    return {"status": status, "message": messages[status], "estimated": True,
+            "free_bytes": limiting.get("free_bytes"), "recommended_bytes": limiting.get("recommended_bytes"), "volumes": volumes}
+
+
+def require_processing_space(source: Path, output_dir: Path, *, split: bool = False) -> None:
+    report = storage_preflight(source, output_dir, split=split)
+    if report["status"] == "blocked":
+        raise RuntimeError(report["message"])
+
+
 INSTALL_SOURCE_MARKERS = {
     "Play Integrity API": (b"com/google/android/play/core/integrity", b"IntegrityManager"),
     "Paket yükleme kaynağı denetimi": (b"getInstallerPackageName", b"getInstallSourceInfo"),
@@ -1698,6 +1746,7 @@ def process_apk(
     app_appearance: dict | None = None,
 ) -> dict:
     appearance = validate_appearance(app_appearance)
+    require_processing_space(apk_path, output_dir)
     if not isinstance(restrict_store_updates, bool):
         raise ValueError("Play Store güncelleme seçeneği geçersiz.")
     if mode not in {"safe", "balanced", "deep"}:

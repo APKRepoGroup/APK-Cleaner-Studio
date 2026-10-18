@@ -241,7 +241,7 @@ class LocalRequestSecurityTests(unittest.TestCase):
             job.mkdir()
             owner = client_identity("10.10.30.44", {"X-Client-ID": "owner-client-123"})
             write_json(job / "analysis.json", {"owner_id": owner})
-            for action in ("state", "report", "download"):
+            for action in ("state", "session", "preflight", "report", "download"):
                 handler = StudioHandler.__new__(StudioHandler)
                 handler.path = f"/api/jobs/{job_id}/{action}"
                 handler.client_address = ("10.10.30.45", 12345)

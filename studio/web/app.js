@@ -2194,6 +2194,7 @@ function isCurrentPackageSelection(generation) {
 
 function prepareAnalysisView(name, size, split = false) {
   $("#selectionRestoreNote").classList.add("hidden");
+  $("#storagePreflight").classList.add("hidden");
   resetAppAppearance();
   clearJobFailure();
   $("#restrictStoreUpdates").checked = false;
@@ -2746,6 +2747,33 @@ async function renderCompletedJob(result) {
   if (!result.signed) toast(result.sign_warning || "Çıktı imzalanamadı.");
 }
 
+function processingSelectionKey() {
+  return JSON.stringify([state.jobId, state.operation, state.profile, state.patchAdsSelected, state.appearanceGeneration,
+    state.splitSelection, state.messageTargets,
+    ...["#patchAds", "#stripDebug", "#normalizeDex", "#optimizeApk", "#restrictStoreUpdates", "#deobfuscateResources"].map(selector => $(selector).checked),
+    $("#customAppName").value, $("#clonePackageName").value]);
+}
+
+async function checkProcessingSpace(jobId) {
+  const response = await apiFetch(`/api/jobs/${jobId}/preflight`, { cache: "no-store", headers: clientHeaders() });
+  const report = await response.json();
+  if (!response.ok) throw new Error(report.error || "Boş alan kontrol edilemedi.");
+  if (state.jobId !== jobId) return false;
+  const panel = $("#storagePreflight");
+  panel.classList.toggle("hidden", report.status === "ok");
+  if (report.status === "ok") return true;
+  $("#storagePreflightMessage").textContent = report.message || "Boş alan denetlenemedi. Depolama alanını kontrol edin.";
+  const validSize = value => Number.isSafeInteger(value) && value >= 0;
+  const sizes = validSize(report.free_bytes) && validSize(report.recommended_bytes)
+    ? `Kullanılabilir: ${humanSize(report.free_bytes)} · Önerilen boş alan: yaklaşık ${humanSize(report.recommended_bytes)}. Gereksinim pakete ve seçilen işlemlere göre değişebilir.` : "";
+  $("#storagePreflightSizes").textContent = sizes;
+  if (report.status === "blocked") {
+    panel.scrollIntoView({ behavior: "smooth", block: "center" });
+    return false;
+  }
+  return Boolean(await confirmAction("Depolama alanını kontrol edin", `${$("#storagePreflightMessage").textContent}${sizes ? `\n\n${sizes}` : ""}\n\nYine de devam etmek istiyor musunuz?`, "Yine de devam et"));
+}
+
 async function runJob() {
   if (!state.jobId || state.jobRunning || state.selectionBusy || state.preflightBusy || state.sessionRestoreInFlight) return;
   if (state.appearanceLoading) { toast("Simge hazırlanıyor; tamamlanmasını bekle."); return; }
@@ -2758,6 +2786,16 @@ async function runJob() {
   if (state.toolchain && (!state.toolchain.signer || (needsDex && !state.toolchain.dex_tools) || (needsManifest && !state.toolchain.manifest_tool) || (needsResources && !state.toolchain.resource_tool))) {
     toast("İşlem için önce eksik bileşenleri hazırla."); $("#toolCard").scrollIntoView({ behavior: "smooth", block: "center" }); return;
   }
+  const checkedJobId = state.jobId;
+  const checkedSelection = processingSelectionKey();
+  state.preflightBusy = true;
+  const startButton = $("#cleanButton");
+  startButton.disabled = true;
+  try {
+    if (!await checkProcessingSpace(checkedJobId) || state.jobId !== checkedJobId) return;
+    if (processingSelectionKey() !== checkedSelection) { toast("Seçenekler değişti. Lütfen işlemi yeniden başlatın."); return; }
+  } catch (error) { toast(userErrorMessage(error, "Boş alan kontrol edilemedi. Yeniden deneyin.")); return; }
+  finally { state.preflightBusy = false; startButton.disabled = false; }
   setJobRunning(true);
   rememberActiveJob(state.jobId);
   clearJobFailure();
@@ -2910,6 +2948,10 @@ $("#deletePresetButton").addEventListener("click", deleteSavedPreset);
 });
 $("#cleanButton").addEventListener("click", runJob); $("#resetButton").addEventListener("click", reset); $("#againButton").addEventListener("click", reset);
 $("#cancelJobButton").addEventListener("click", cancelJob);
+$("#storagePreflightManage").addEventListener("click", () => {
+  setInlineDisclosureOpen($("#storageCard"), true);
+  refreshStorage(); $("#storageCard").scrollIntoView({ behavior: "smooth", block: "center" });
+});
 progressElements.log.addEventListener("scroll", syncProgressLogFollow, { passive: true });
 $("#progressLogLatest").addEventListener("click", scrollProgressLogToEnd);
 $("#reportButton").addEventListener("click", () => openReportViewer($("#reportButton").dataset.jobId || state.jobId, state.analysis?.filename || "Paket işlem raporu"));
