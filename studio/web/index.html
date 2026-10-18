@@ -216,12 +216,9 @@
           <div class="bar"><i id="progressBar"></i></div>
           <section class="working-activity" aria-label="İşlem adımları">
             <div class="source-preserved">✓ Orijinal paket korunuyor</div>
-            <h3>Son işlem adımları</h3>
-            <ol id="liveLog" class="activity-list"></ol>
-            <details id="workingDetails"><summary>İşlem ayrıntıları</summary>
-              <p id="workingLogNote" class="fineprint">Bu işlemde kaydedilen aşamalar.</p>
-              <ol id="workingFullLog" class="activity-list activity-history" tabindex="0" aria-label="Kaydedilen işlem adımları"></ol>
-            </details>
+            <div class="activity-heading"><h3 id="workingLogTitle">İşlem günlüğü</h3><button id="progressLogLatest" class="text-button hidden" type="button">Son adıma dön</button></div>
+            <ol id="liveLog" class="activity-list activity-history auto-hide-scrollbar" tabindex="0" aria-labelledby="workingLogTitle" aria-describedby="workingLogNote"></ol>
+            <p id="workingLogNote" class="fineprint">Bu işlemde kaydedilen aşamalar.</p>
           </section>
           <button id="cancelJobButton" class="secondary cancel-job" type="button">İşlemi iptal et</button>
         </section>

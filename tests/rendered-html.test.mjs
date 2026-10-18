@@ -279,6 +279,7 @@ test("ships the current local studio interface", async () => {
   assert.match(theme, /@property --studio-scroll-thumb[\s\S]*?syntax: "<color>"/i);
   assert.match(theme, /\.auto-hide-scrollbar\s*\{[\s\S]*?transition: --studio-scroll-thumb 300ms ease-out/i);
   assert.match(script, /function enableAutoHideScrollbar\(element\)[\s\S]*?setTimeout\([\s\S]*?650\)/i);
+  assert.match(theme, /@supports selector\(::-webkit-scrollbar\)\s*\{\s*\.auto-hide-scrollbar\s*\{[^}]*scrollbar-width: auto;[^}]*scrollbar-color: auto;/i);
   assert.match(script, /refreshStatus\(\);\s*refreshHistory\(\);/i);
   assert.doesNotMatch(script, /revealReadySidebar/i);
   assert.doesNotMatch(theme, /\.workspace-architecture/i);

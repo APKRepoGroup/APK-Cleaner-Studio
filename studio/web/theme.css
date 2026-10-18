@@ -1410,10 +1410,11 @@ html[data-theme] .file-card .apk.has-app-icon {
 .activity-list li + li { border-top: 1px solid var(--line); }
 .activity-time { color: var(--muted); font-variant-numeric: tabular-nums; }
 #liveLog li:last-child { color: var(--green); }
-#workingDetails { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
-#workingDetails summary { cursor: pointer; font-size: 12px; font-weight: 750; }
+.activity-heading { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; min-height: 46px; }
+.activity-heading h3 { margin: 0; }
+.activity-heading .text-button { margin: 0; padding: 8px 0; font-size: 11px; color: var(--green); }
 .working #workingLogNote { margin: 12px 0; font-size: 11px; line-height: 1.6; }
-.activity-history { max-height: 240px; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+.activity-history { height: 240px; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; scrollbar-width: thin; }
 .activity-history:focus-visible { outline: 2px solid var(--green); outline-offset: 3px; border-radius: 5px; }
 .success {
   border-color: color-mix(in srgb, var(--green) 45%, #0d1515);
@@ -2045,6 +2046,12 @@ html[data-theme="dark"] .option input:checked + span {
 }
 .auto-hide-scrollbar.is-scrollbar-active {
   --studio-scroll-thumb: color-mix(in srgb, var(--muted) 72%, var(--line));
+}
+/* Blink/WebKit's native overlay may disappear before our idle delay expires.
+   Use the styled 8px lane on those engines; retain standard styling elsewhere.
+   Non-auto standard properties override the WebKit pseudo-element rules. */
+@supports selector(::-webkit-scrollbar) {
+  .auto-hide-scrollbar { scrollbar-width: auto; scrollbar-color: auto; }
 }
 .auto-hide-scrollbar::-webkit-scrollbar {
   width: 8px;

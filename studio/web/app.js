@@ -95,16 +95,31 @@ function enableAutoHideScrollbar(element) {
   if (!element || element.dataset.autoHideScrollbar === "ready") return;
   element.dataset.autoHideScrollbar = "ready";
   let hideTimer = 0;
+  let pointerActive = false, touchActive = false;
   const reveal = () => {
     element.classList.add("is-scrollbar-active");
     clearTimeout(hideTimer);
+    // The idle delay starts after release, not while a thumb/finger is held.
+    if (pointerActive || touchActive) return;
     hideTimer = setTimeout(() => element.classList.remove("is-scrollbar-active"), 650);
   };
   element.addEventListener("scroll", reveal, { passive: true });
+  element.addEventListener("scrollend", reveal, { passive: true });
   element.addEventListener("wheel", reveal, { passive: true });
-  element.addEventListener("touchstart", reveal, { passive: true });
-  element.addEventListener("pointerdown", reveal, { passive: true });
+  element.addEventListener("touchstart", () => { touchActive = true; reveal(); }, { passive: true });
+  element.addEventListener("pointerdown", () => { pointerActive = true; reveal(); }, { passive: true });
   element.addEventListener("keydown", reveal);
+  const endPointer = () => { if (pointerActive) { pointerActive = false; reveal(); } };
+  const endTouch = () => { if (touchActive) { touchActive = false; reveal(); } };
+  // Releasing outside the scrolling area must still start the same idle timer.
+  window.addEventListener("pointerup", endPointer, { passive: true });
+  window.addEventListener("pointercancel", endPointer, { passive: true });
+  window.addEventListener("touchend", endTouch, { passive: true });
+  window.addEventListener("touchcancel", endTouch, { passive: true });
+  window.addEventListener("blur", () => {
+    if (!pointerActive && !touchActive) return;
+    pointerActive = false; touchActive = false; reveal();
+  });
 }
 
 $$('.auto-hide-scrollbar').forEach(enableAutoHideScrollbar);
@@ -2238,15 +2253,25 @@ function renderProgressActivity(message, events) {
     row.append(time, text);
     return row;
   };
-  progressElements.log.replaceChildren(...state.progressEvents.slice(-4).map(makeRow));
-  const history = $("#workingFullLog");
+  const history = progressElements.log;
   const atBottom = history.scrollHeight - history.clientHeight - history.scrollTop < 24;
   const scrollTop = history.scrollTop;
   history.replaceChildren(...state.progressEvents.map(makeRow));
   history.scrollTop = atBottom ? history.scrollHeight : scrollTop;
+  syncProgressLogFollow();
   $("#workingLogNote").textContent = state.progressEvents[0]?.id > 1
     ? "Uzun işlemlerde son 120 aşama kaydı gösterilir. Ayrıntılı sonuç raporu işlem sonunda hazırlanır."
     : "Kaydedilen aşamalar ve işlem başlangıcından itibaren geçen süre. Ayrıntılı sonuç raporu işlem sonunda hazırlanır.";
+}
+
+function syncProgressLogFollow() {
+  const log = progressElements.log;
+  $("#progressLogLatest").classList.toggle("hidden", log.scrollHeight - log.clientHeight - log.scrollTop < 24);
+}
+
+function scrollProgressLogToEnd() {
+  progressElements.log.scrollTop = progressElements.log.scrollHeight;
+  syncProgressLogFollow();
 }
 
 function updateProgress(progress, message, events) {
@@ -2272,9 +2297,8 @@ function resetProgress() {
   state.progressEvents = [];
   state.progressLogSignature = "";
   progressElements.log.replaceChildren();
-  $("#workingFullLog").replaceChildren();
-  $("#workingFullLog").scrollTop = 0;
-  setInlineDisclosureOpen($("#workingDetails"), false);
+  progressElements.log.scrollTop = 0;
+  $("#progressLogLatest").classList.add("hidden");
   renderProgress(0);
 }
 
@@ -2648,6 +2672,8 @@ $("#deletePresetButton").addEventListener("click", deleteSavedPreset);
 });
 $("#cleanButton").addEventListener("click", runJob); $("#resetButton").addEventListener("click", reset); $("#againButton").addEventListener("click", reset);
 $("#cancelJobButton").addEventListener("click", cancelJob);
+progressElements.log.addEventListener("scroll", syncProgressLogFollow, { passive: true });
+$("#progressLogLatest").addEventListener("click", scrollProgressLogToEnd);
 $("#reportButton").addEventListener("click", () => openReportViewer($("#reportButton").dataset.jobId || state.jobId, state.analysis?.filename || "Paket işlem raporu"));
 $("#installButton").addEventListener("click", () => {
   if (!state.outputUrl) return toast("Kurulacak çıktı bulunamadı.");
