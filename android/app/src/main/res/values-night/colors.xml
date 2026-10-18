@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="splash_background_color">#07100D</color>
+    <color name="splash_gradient_top">#07100D</color>
+    <color name="splash_gradient_center">#0B1713</color>
+    <color name="splash_gradient_bottom">#101815</color>
+    <color name="splash_title">#EEF5F1</color>
+    <color name="splash_tagline">#66B797</color>
+    <color name="splash_glow">#4EC4FF2B</color>
+    <bool name="splash_light_bars">false</bool>
+</resources>

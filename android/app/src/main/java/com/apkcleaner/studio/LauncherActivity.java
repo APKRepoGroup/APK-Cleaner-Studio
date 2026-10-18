@@ -9,10 +9,13 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.ViewTreeObserver;
 import android.view.WindowInsets;
+import android.view.WindowInsetsController;
 import android.view.animation.AccelerateDecelerateInterpolator;
 import android.view.animation.DecelerateInterpolator;
 import android.view.animation.OvershootInterpolator;
@@ -23,14 +26,25 @@ import android.widget.TextView;
 
 public final class LauncherActivity extends Activity {
     private final Handler handler = new Handler(Looper.getMainLooper());
-    private long startedAt;
+    private long launchStartedAt;
+    private long animationStartedAt;
+    private Runnable splashAnimation;
+    private boolean splashAnimationStarted;
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
-        getWindow().setStatusBarColor(Color.rgb(7, 16, 13));
-        getWindow().setNavigationBarColor(Color.rgb(7, 16, 13));
-        startedAt = System.currentTimeMillis();
+        launchStartedAt = SystemClock.uptimeMillis();
+        if (Build.VERSION.SDK_INT >= 31) {
+            // Remove the mandatory system cover without a second logo/fade animation.
+            getSplashScreen().setOnExitAnimationListener(splash -> {
+                splash.remove();
+                startSplashAnimation();
+            });
+        }
+        getWindow().setStatusBarColor(getColor(R.color.splash_background_color));
+        getWindow().setNavigationBarColor(getColor(R.color.splash_background_color));
         buildSplash();
+        applySplashSystemBars();
         Intent service = new Intent(this, EngineService.class);
         if (Build.VERSION.SDK_INT >= 26) startForegroundService(service); else startService(service);
         handler.post(this::awaitEngine);
@@ -73,7 +87,7 @@ public final class LauncherActivity extends Activity {
         glowShape.setShape(GradientDrawable.OVAL);
         glowShape.setGradientType(GradientDrawable.RADIAL_GRADIENT);
         glowShape.setGradientRadius(dp(70));
-        glowShape.setColors(new int[] {Color.argb(78, 196, 255, 43), Color.TRANSPARENT});
+        glowShape.setColors(new int[] {getColor(R.color.splash_glow), Color.TRANSPARENT});
         logoGlow.setBackground(glowShape);
         logoGlow.setAlpha(0f);
         emblem.addView(logoGlow, new FrameLayout.LayoutParams(dp(140), dp(140), Gravity.CENTER));
@@ -81,11 +95,15 @@ public final class LauncherActivity extends Activity {
         ImageView icon = new ImageView(this);
         icon.setImageResource(R.mipmap.ic_launcher);
         icon.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+        icon.setScaleX(.72f);
+        icon.setScaleY(.72f);
+        icon.setRotation(-4f);
+        icon.setAlpha(0f);
         emblem.addView(icon, new FrameLayout.LayoutParams(dp(112), dp(112), Gravity.CENTER));
 
         TextView title = new TextView(this);
         title.setText(R.string.app_name);
-        title.setTextColor(Color.rgb(238, 245, 241));
+        title.setTextColor(getColor(R.color.splash_title));
         title.setTextSize(25);
         title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         title.setGravity(Gravity.CENTER);
@@ -94,7 +112,7 @@ public final class LauncherActivity extends Activity {
 
         TextView tagline = new TextView(this);
         tagline.setText(R.string.splash_tagline);
-        tagline.setTextColor(Color.rgb(102, 183, 151));
+        tagline.setTextColor(getColor(R.color.splash_tagline));
         tagline.setTextSize(11);
         tagline.setLetterSpacing(.16f);
         tagline.setAllCaps(true);
@@ -120,26 +138,57 @@ public final class LauncherActivity extends Activity {
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         setContentView(root);
         root.requestApplyInsets();
-
-        content.animate().alpha(1f).translationY(0f).setDuration(430)
+        splashAnimation = () -> {
+            content.animate().alpha(1f).translationY(0f).setDuration(430)
                 .setInterpolator(new DecelerateInterpolator()).start();
-        icon.setScaleX(.72f);
-        icon.setScaleY(.72f);
-        icon.setRotation(-4f);
-        icon.setAlpha(0f);
-        icon.animate().scaleX(1f).scaleY(1f).rotation(0f).alpha(1f).setDuration(620)
+            icon.animate().scaleX(1f).scaleY(1f).rotation(0f).alpha(1f).setDuration(620)
                 .setInterpolator(new OvershootInterpolator(.58f)).start();
+            logoGlow.animate().scaleX(1f).scaleY(1f).alpha(.34f).setStartDelay(90).setDuration(720)
+                .setInterpolator(new DecelerateInterpolator()).start();
+            progress.animate().scaleX(1f).setStartDelay(170).setDuration(760)
+                .setInterpolator(new AccelerateDecelerateInterpolator()).start();
+        };
         logoGlow.setScaleX(.68f);
         logoGlow.setScaleY(.68f);
-        logoGlow.animate().scaleX(1f).scaleY(1f).alpha(.34f).setStartDelay(90).setDuration(720)
-                .setInterpolator(new DecelerateInterpolator()).start();
-        progress.animate().scaleX(1f).setStartDelay(170).setDuration(760)
-                .setInterpolator(new AccelerateDecelerateInterpolator()).start();
+        root.getViewTreeObserver().addOnPreDrawListener(new ViewTreeObserver.OnPreDrawListener() {
+            @Override public boolean onPreDraw() {
+                root.getViewTreeObserver().removeOnPreDrawListener(this);
+                // Prepare the animation for this first draw, not one frame later.
+                // The system exit callback and this fallback share the once-only guard.
+                startSplashAnimation();
+                return true;
+            }
+        });
+    }
+
+    private void startSplashAnimation() {
+        if (splashAnimationStarted || splashAnimation == null || isFinishing() || isDestroyed()) return;
+        splashAnimationStarted = true;
+        animationStartedAt = SystemClock.uptimeMillis();
+        Runnable animation = splashAnimation;
+        splashAnimation = null;
+        animation.run();
+    }
+
+    private void applySplashSystemBars() {
+        boolean light = getResources().getBoolean(R.bool.splash_light_bars);
+        if (Build.VERSION.SDK_INT >= 30) {
+            WindowInsetsController controller = getWindow().getDecorView().getWindowInsetsController();
+            int mask = WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS | WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS;
+            if (controller != null) controller.setSystemBarsAppearance(light ? mask : 0, mask);
+        } else {
+            int mask = View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
+            if (Build.VERSION.SDK_INT >= 27) mask |= View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
+            int flags = getWindow().getDecorView().getSystemUiVisibility();
+            getWindow().getDecorView().setSystemUiVisibility(light ? flags | mask : flags & ~mask);
+        }
     }
 
     private void awaitEngine() {
-        long elapsed = System.currentTimeMillis() - startedAt;
-        if ((EngineService.ready && elapsed >= 720) || elapsed >= 30000 || !EngineService.startupError.isEmpty()) {
+        long now = SystemClock.uptimeMillis();
+        long visibleElapsed = splashAnimationStarted ? now - animationStartedAt : 0;
+        if ((EngineService.ready && splashAnimationStarted && visibleElapsed >= 720)
+                || now - launchStartedAt >= 30000 || !EngineService.startupError.isEmpty()) {
             startActivity(new Intent(this, MainActivity.class)
                     .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP));
             overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out);
@@ -154,6 +203,7 @@ public final class LauncherActivity extends Activity {
     }
 
     @Override protected void onDestroy() {
+        splashAnimation = null;
         handler.removeCallbacksAndMessages(null);
         super.onDestroy();
     }

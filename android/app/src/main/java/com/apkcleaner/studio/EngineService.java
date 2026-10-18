@@ -12,6 +12,7 @@ import android.util.Log;
 
 import com.chaquo.python.PyObject;
 import com.chaquo.python.Python;
+import com.chaquo.python.android.AndroidPlatform;
 
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -100,6 +101,14 @@ public final class EngineService extends Service {
 
     private void startPythonServer() {
         try {
+            // Do not initialize Python in Application.onCreate: that blocks the
+            // first Activity frame behind the system's otherwise empty cover.
+            // This method runs on the process-wide serialized engine executor.
+            if (!Python.isStarted()) {
+                Python.start(new AndroidPlatform(getApplicationContext()));
+            }
+            // A stop can arrive while the interpreter is being initialized.
+            if (stopping) return;
             PyObject module = Python.getInstance().getModule("android_entry");
             boolean started = module.callAttr("start", getFilesDir().getAbsolutePath(), PORT).toBoolean();
             if (stopping) return;

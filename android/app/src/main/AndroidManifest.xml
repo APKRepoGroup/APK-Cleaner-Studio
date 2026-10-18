@@ -17,7 +17,6 @@
         tools:ignore="QueryAllPackagesPermission" />
 
     <application
-        android:name="com.chaquo.python.android.PyApplication"
         android:allowBackup="false"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="false"

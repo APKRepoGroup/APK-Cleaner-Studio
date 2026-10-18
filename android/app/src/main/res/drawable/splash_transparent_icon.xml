@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Explicit drawable: omitting the icon lets Android fall back to the launcher logo. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp"
+    android:viewportWidth="240" android:viewportHeight="240">
+    <path android:fillColor="@android:color/transparent"
+        android:pathData="M0,0 L240,0 L240,240 L0,240 Z" />
+</vector>

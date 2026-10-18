@@ -1,4 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="studio_background">#07100D</color>
+    <color name="splash_background_color">#F2F5EF</color>
+    <color name="splash_gradient_top">#F2F5EF</color>
+    <color name="splash_gradient_center">#E7F0E9</color>
+    <color name="splash_gradient_bottom">#F6F8F3</color>
+    <color name="splash_title">#14231D</color>
+    <color name="splash_tagline">#32775D</color>
+    <color name="splash_glow">#4E66B797</color>
+    <bool name="splash_light_bars">true</bool>
 </resources>

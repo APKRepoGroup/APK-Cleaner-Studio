@@ -14,9 +14,9 @@
 
     <style name="Theme.APKCleanerStudio.Splash" parent="android:style/Theme.Material.Light.NoActionBar">
         <item name="android:fontFamily">sans</item>
-        <item name="android:windowLightStatusBar">false</item>
-        <item name="android:statusBarColor">@color/studio_background</item>
-        <item name="android:navigationBarColor">@color/studio_background</item>
+        <item name="android:windowLightStatusBar">@bool/splash_light_bars</item>
+        <item name="android:statusBarColor">@color/splash_background_color</item>
+        <item name="android:navigationBarColor">@color/splash_background_color</item>
         <item name="android:windowBackground">@drawable/splash_background</item>
         <item name="android:windowNoTitle">true</item>
     </style>
