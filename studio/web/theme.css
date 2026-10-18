@@ -2692,10 +2692,15 @@ body.modal-scroll-locked {
   .tester-list .tester-avatar { flex-basis: 28px; width: 28px; height: 28px; }
   .tester-list .tester-label { gap: 0; }
   .tester-list .tester-label small { font-size: 8px; }
+  .tester-list .tester-label--muharrem { align-self: stretch; margin-inline: -2px; }
+  .tester-list .tester-label--muharrem b { white-space: nowrap; overflow-wrap: normal; font-size: inherit; line-height: inherit; letter-spacing: inherit; }
 }
 @media (min-width: 760px) {
   .tester-team { justify-self: start; width: min(100%, 750px); }
   .tester-list { grid-template-columns: repeat(4, minmax(0, 180px)); gap: 10px; justify-content: start; }
+}
+@media (max-width: 375px) {
+  .tester-list { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(70px, 1fr) minmax(0, 1fr); }
 }
 @media (min-width: 721px) {
   .supporter-disclosure { padding: 0; border: 0; background: transparent; }
