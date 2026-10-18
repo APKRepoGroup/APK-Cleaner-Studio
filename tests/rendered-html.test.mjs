@@ -273,7 +273,7 @@ test("ships the current local studio interface", async () => {
   assert.match(html, /id="toolList" class="auto-hide-scrollbar"/i);
   assert.match(html, /id="clientList" class="client-list auto-hide-scrollbar"/i);
   assert.match(theme, /\.side-data-card\s*\{[\s\S]*?max-height:\s*430px/i);
-  assert.match(theme, /\.side-data-card\.storage-card,\s*\.side-data-card\.install-history-card\s*\{[^}]*display:\s*block;[^}]*max-height:\s*none;/i);
+  assert.match(theme, /\.side-data-card\.storage-card,\s*\.side-data-card\.history-card,\s*\.side-data-card\.install-history-card\s*\{[^}]*display:\s*block;[^}]*max-height:\s*none;/i);
   assert.match(theme, /\.storage-list,\.install-history-list\s*\{[^}]*max-height:\s*280px;[^}]*overflow:\s*auto;/i);
   assert.match(theme, /html\[data-embedded="android"\] #toolCard\s*\{\s*display:\s*flex !important;/i);
   assert.match(theme, /@property --studio-scroll-thumb[\s\S]*?syntax: "<color>"/i);

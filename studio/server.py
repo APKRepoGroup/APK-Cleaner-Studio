@@ -19,6 +19,7 @@ import threading
 import time
 import traceback
 import uuid
+import unicodedata
 import webbrowser
 from email import policy
 from email.message import Message
@@ -1233,6 +1234,36 @@ def list_job_history(requester_id: str, requester_is_local: bool, limit: int | N
     return rows[:limit]
 
 
+def history_search_key(value: str) -> str:
+    # Dotless/dotted I are equivalent for file/package names as well as Turkish labels.
+    return unicodedata.normalize("NFKC", value).casefold().replace("i\u0307", "i").replace("ı", "i")
+
+
+def job_history_page(requester_id: str, requester_is_local: bool, query: dict) -> dict:
+    search = str(query.get("q", [""])[0]).strip()[:160]
+    status = str(query.get("status", ["all"])[0])
+    allowed = {"all", "done", "error", "cancelled", "active", "ready", "interrupted"}
+    if status not in allowed:
+        raise ValueError("İşlem geçmişi filtresi geçersiz.")
+    try:
+        offset = max(0, int(query.get("offset", ["0"])[0]))
+        limit = max(1, min(50, int(query.get("limit", ["20"])[0])))
+    except (TypeError, ValueError, OverflowError):
+        raise ValueError("İşlem geçmişi sayfası geçersiz.") from None
+    needle = history_search_key(search)
+    # Filter *all authorized records*, before pagination; older matches must not disappear.
+    rows = [row for row in list_job_history(requester_id, requester_is_local, None)
+            if (not needle or any(needle in history_search_key(str(row.get(key) or ""))
+                                  for key in ("filename", "app_name", "package_name")))
+            and (status == "all" or status == row["status"]
+                 or status == "active" and row["status"] in {"working", "cancelling", "analyzing"}
+                 or status == "interrupted" and row["interrupted"])]
+    total = len(rows)
+    offset = min(offset, ((total - 1) // limit) * limit) if total else 0
+    return {"jobs": rows[offset:offset + limit], "total": total, "offset": offset,
+            "limit": limit, "has_more": offset + limit < total}
+
+
 def list_job_storage(requester_id: str, requester_is_local: bool) -> dict:
     """Summarize only visible, app-owned job files; never follow symlinks."""
     rows = []
@@ -1895,7 +1926,10 @@ class StudioHandler(BaseHTTPRequestHandler):
                                  query.get("download") == ["1"])
             return
         if path == "/api/history":
-            self.send_json({"jobs": list_job_history(requester_id, requester_is_local)})
+            try:
+                self.send_json(job_history_page(requester_id, requester_is_local, parse_qs(parsed.query)))
+            except ValueError as exc:
+                self.send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
             return
         if path == "/api/storage":
             self.send_json(list_job_storage(requester_id, requester_is_local))

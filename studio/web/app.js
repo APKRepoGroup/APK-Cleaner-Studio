@@ -4,6 +4,7 @@ const state = {
   appearanceIcon: "", appearanceGeneration: 0, appearanceLoading: false,
   selectionGeneration: 0, selectionBusy: false, nativeImportRequest: null,
   jobSelection: null,
+  historyOffset: 0, historyGeneration: 0, historyQueued: false, historyInFlight: false,
   file: null, profile: "balanced", operation: "patch", patchAdsSelected: true, jobId: null, analysis: null, toolchain: null,
   splitSelection: { abis: [], languages: [] },
   messageTargets: [], messageCandidates: [],
@@ -1233,17 +1234,61 @@ function historyTime(value) {
   return Number.isNaN(date.getTime()) ? "—" : date.toLocaleString("tr-TR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
 }
 
-function renderHistory(jobs = []) {
+function openHistoryStatus() {
+  const dialog = $("#historyStatusDialog");
+  if (!dialog.classList.contains("hidden")) return;
+  const options = $$('[data-history-status]');
+  for (const option of options) option.setAttribute("aria-pressed", String(option.dataset.historyStatus === $("#historyStatusFilter").value));
+  $("#historyStatusButton").setAttribute("aria-expanded", "true");
+  modalMotion.open(dialog); lockPageScroll("history-status");
+  requestAnimationFrame(() => options.find(option => option.getAttribute("aria-pressed") === "true")?.focus());
+}
+
+function closeHistoryStatus() {
+  const dialog = $("#historyStatusDialog");
+  if (dialog.classList.contains("hidden")) return;
+  $("#historyStatusButton").setAttribute("aria-expanded", "false");
+  modalMotion.close(dialog, () => { unlockPageScroll("history-status"); $("#historyStatusButton").focus({ preventScroll: true }); });
+}
+
+globalThis.closeTransientMenu = () => {
+  if ($("#historyStatusDialog").classList.contains("hidden")) return false;
+  closeHistoryStatus(); return true;
+};
+
+function chooseHistoryStatus(option) {
+  if (!option?.matches('[data-history-status]')) return;
+  $("#historyStatusFilter").value = option.dataset.historyStatus;
+  const label = option.textContent.trim();
+  $("#historyStatusLabel").textContent = label;
+  $("#historyStatusButton").setAttribute("aria-label", `İşlem durumu: ${label}`);
+  closeHistoryStatus(); changeHistoryFilter();
+}
+
+function historyFilterKey() {
+  return JSON.stringify([$("#historySearch")?.value.trim() || "", $("#historyStatusFilter")?.value || "all", state.historyOffset]);
+}
+
+function renderHistory(jobs = [], page = {}) {
   const list = $("#historyList");
   if (!list) return;
-  const signature = JSON.stringify(jobs);
+  const filtered = Boolean($("#historySearch")?.value.trim() || $("#historyStatusFilter")?.value !== "all");
+  const total = Number.isFinite(page.total) ? page.total : jobs.length;
+  const offset = Number.isFinite(page.offset) ? page.offset : 0;
+  state.historyOffset = offset;
+  const signature = JSON.stringify([jobs, total, offset, filtered]);
+  $("#historyTitle").textContent = total ? `${total} ${filtered ? "eşleşen işlem" : "kayıtlı işlem"}` : filtered ? "Eşleşen işlem yok" : "Henüz işlem geçmişi yok";
+  $("#historyPagination").classList.toggle("hidden", total <= 20);
+  $("#historyPrevious").disabled = offset === 0;
+  $("#historyNext").disabled = !page.has_more;
+  $("#historyPageInfo").textContent = total ? `${offset + 1}–${offset + jobs.length} / ${total}` : "";
   if (renderHistory.signature === signature) return;
   renderHistory.signature = signature;
   list.setAttribute("aria-busy", "false");
-  $("#historyTitle").textContent = jobs.length ? `${jobs.length} son işlem` : "Henüz işlem geçmişi yok";
+  const scrollTop = list.scrollTop;
   list.innerHTML = jobs.length ? jobs.map((job) => `
     <article class="history-row">
-      <div><b>${escapeHTML(job.filename)}</b><small>${historyTime(job.updated_at)} · ${job.status === "done" ? "Tamamlandı" : job.status === "error" ? "Hata" : "Hazır"}</small></div>
+      <div><b title="${escapeHTML(job.filename)}">${escapeHTML(job.filename)}</b>${job.app_name || job.package_name ? `<small class="history-identity">${escapeHTML([job.app_name, job.package_name].filter(Boolean).join(" · "))}</small>` : ""}<small>${historyTime(job.updated_at)} · ${job.interrupted ? "Yarıda kaldı" : ({ done: "Tamamlandı", error: "Hata", ready: "Hazır", working: "İşleniyor", cancelling: "İptal ediliyor", analyzing: "Analiz ediliyor", cancelled: "İptal edildi" })[job.status] || "Durum bilinmiyor"}</small></div>
       <nav>
         ${["working", "cancelling"].includes(job.status) ? `<button type="button" data-history-follow="${escapeHTML(job.job_id)}">İşleme dön</button>` : ""}
         ${job.can_reuse ? `<button type="button" data-history-reuse="${escapeHTML(job.job_id)}">Tekrar işle</button>` : ""}
@@ -1252,7 +1297,8 @@ function renderHistory(jobs = []) {
         ${job.has_output ? `<a href="/api/jobs/${escapeHTML(job.job_id)}/download?filename=${encodeURIComponent(job.output_filename || "APK-Cleaner-Studio-output.apk")}" download="${escapeHTML(job.output_filename || "APK-Cleaner-Studio-output.apk")}">İndir</a>` : ""}
         ${job.can_delete ? `<button type="button" class="history-delete" data-history-delete="${escapeHTML(job.job_id)}" data-history-name="${escapeHTML(job.filename)}">Sil</button>` : ""}
       </nav>
-    </article>`).join("") : `<p class="fineprint">Tamamladığın paketler burada görünür. Kayıtlar yalnızca bu yerel cihazda tutulur.</p>`;
+    </article>`).join("") : `<p class="fineprint">${filtered ? "Arama veya durum filtresiyle eşleşen kayıt bulunamadı." : "Tamamladığın paketler burada görünür. Kayıtlar yalnızca bu yerel cihazda tutulur."}</p>`;
+  list.scrollTop = scrollTop;
   $$('[data-history-reuse]').forEach((button) => button.addEventListener("click", () => loadHistoryJob(button.dataset.historyReuse)));
   $$('[data-history-follow]').forEach((button) => button.addEventListener("click", () => restoreJobSession(button.dataset.historyFollow)));
   $$('[data-history-report]').forEach((button) => button.addEventListener("click", () => openReportViewer(button.dataset.historyReport, button.dataset.historyName)));
@@ -1266,20 +1312,52 @@ async function deleteHistoryJob(jobId, filename) {
     const response = await apiFetch(`/api/jobs/${jobId}/delete`, { method: "POST", headers: clientHeaders() });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || "İşlem kaydı silinemedi.");
-    renderHistory(data.jobs || []);
+    state.historyGeneration++;
+    await refreshHistory();
     toast("İşlem kaydı ve ilişkili dosyalar silindi.");
   } catch (error) { toast(error.message); }
 }
 
 async function refreshHistory() {
-  if (!isUiActive() || state.historyInFlight) return;
+  if (!isUiActive()) return;
+  if (state.historyInFlight) { state.historyQueued = true; return; }
   state.historyInFlight = true;
+  state.historyQueued = false;
+  const generation = state.historyGeneration, filterKey = historyFilterKey();
+  const list = $("#historyList"), message = $("#historySearchState");
+  list.setAttribute("aria-busy", "true"); list.inert = true;
+  message.textContent = "İşlem geçmişi yükleniyor…";
+  $("#historyRetry").classList.add("hidden");
   try {
-    const response = await apiFetch("/api/history", { cache: "no-store", headers: clientHeaders(), signal: uiReadController.signal });
+    const query = new URLSearchParams({ q: $("#historySearch").value.trim(), status: $("#historyStatusFilter").value, offset: String(state.historyOffset), limit: "20" });
+    const response = await apiFetch(`/api/history?${query}`, { cache: "no-store", headers: clientHeaders(), signal: uiReadController.signal });
     const data = await response.json();
-    if (response.ok) renderHistory(data.jobs || []);
-  } catch {}
-  finally { state.historyInFlight = false; }
+    if (generation !== state.historyGeneration || filterKey !== historyFilterKey()) return;
+    if (!response.ok) throw new Error("Geçmiş yüklenemedi.");
+    renderHistory(data.jobs || [], data);
+    message.textContent = "";
+  } catch (error) {
+    if (error.name !== "AbortError" && generation === state.historyGeneration && filterKey === historyFilterKey()) {
+      message.textContent = "İşlem geçmişi yüklenemedi. Yeniden deneyebilirsin.";
+      $("#historyRetry").classList.remove("hidden");
+    }
+  } finally {
+    state.historyInFlight = false;
+    list.setAttribute("aria-busy", "false"); list.inert = false;
+    if (state.historyQueued && isUiActive()) refreshHistory();
+  }
+}
+
+let historySearchTimer = 0;
+function changeHistoryFilter(debounce = false) {
+  clearTimeout(historySearchTimer);
+  state.historyGeneration++; state.historyOffset = 0;
+  renderHistory.signature = "";
+  $("#historyList").innerHTML = "";
+  $("#historyPagination").classList.add("hidden");
+  $("#historySearchState").textContent = "İşlem geçmişi yükleniyor…";
+  if (debounce) historySearchTimer = setTimeout(refreshHistory, 180);
+  else refreshHistory();
 }
 
 async function refreshStorage() {
@@ -3064,6 +3142,7 @@ $("#messageReview").addEventListener("click", (event) => { if (event.target === 
 containModalTouch("#messageReview", ".message-review-body");
 document.addEventListener("keydown", (event) => {
   if (event.key !== "Escape") return;
+  if (globalThis.closeTransientMenu()) { event.preventDefault(); return; }
   if (!$("#messageReview").classList.contains("hidden")) closeMessageReview();
   else if (!$("#diagnosticViewer").classList.contains("hidden")) closeDiagnosticViewer();
   else if (!$("#installedApps").classList.contains("hidden")) closeInstalledApps();
@@ -3109,6 +3188,32 @@ renderSavedPresets();
 if (!embeddedAndroid) registerClientDetails();
 refreshStatus(); refreshHistory();
 restoreInitialJobSession();
+$("#historyFilters").addEventListener("submit", event => { event.preventDefault(); changeHistoryFilter(); });
+$("#historySearch").addEventListener("input", () => changeHistoryFilter(true));
+$("#historyStatusFilter").addEventListener("change", () => changeHistoryFilter());
+$("#historyStatusButton").addEventListener("click", openHistoryStatus);
+$("#historyStatusClose").addEventListener("click", closeHistoryStatus);
+$("#historyStatusDialog").addEventListener("click", event => {
+  if (event.target === event.currentTarget) closeHistoryStatus();
+  else chooseHistoryStatus(event.target.closest('[data-history-status]'));
+});
+$("#historyStatusDialog").addEventListener("keydown", event => {
+  const options = $$('[data-history-status]'), focusables = [$("#historyStatusClose"), ...options];
+  if (event.key === "Tab") {
+    event.preventDefault();
+    const index = focusables.indexOf(document.activeElement);
+    focusables[(index + (event.shiftKey ? -1 : 1) + focusables.length) % focusables.length].focus();
+  } else if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
+    event.preventDefault();
+    const index = options.indexOf(document.activeElement);
+    const next = event.key === "Home" ? 0 : event.key === "End" ? options.length - 1 : (index + (event.key === "ArrowUp" ? -1 : 1) + options.length) % options.length;
+    options[next].focus();
+  }
+});
+containModalTouch("#historyStatusDialog", ".history-status-options");
+$("#historyRetry").addEventListener("click", refreshHistory);
+$("#historyPrevious").addEventListener("click", () => { state.historyGeneration++; state.historyOffset = Math.max(0, state.historyOffset - 20); $("#historyList").scrollTop = 0; refreshHistory(); });
+$("#historyNext").addEventListener("click", () => { state.historyGeneration++; state.historyOffset += 20; $("#historyList").scrollTop = 0; refreshHistory(); });
 checkForUpdates();
 requestBackgroundPolicy();
 $("#batterySettingsButton").addEventListener("click", requestBatteryExemption);

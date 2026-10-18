@@ -289,7 +289,18 @@
           </details>
         </section>
         <section id="clientCard" class="side-card side-data-card clients"><small>YEREL AĞ OTURUMLARI</small><h3 id="clientTitle">Bağlanan cihazlar denetleniyor</h3><div id="clientList" class="client-list auto-hide-scrollbar" aria-live="polite" aria-busy="true"><div class="client-row client-skeleton" aria-hidden="true"><span class="client-dot"></span><div><b>Cihaz bilgileri hazırlanıyor</b><small>Yerel oturum denetleniyor</small><nav class="client-actions"><span></span><span></span></nav></div><time><strong>DENETLENİYOR</strong><small>İLK —</small><b>SON —</b></time></div></div><p class="fineprint client-privacy">Durum 10 saniyede bir yenilenir. Bağlantısı kesilen cihaz 5 dakika sonra listeden kaldırılır; verdiğin görünen ad yalnızca bu cihazda saklanır. Dış ağ bağlantılarında mümkün olduğunda genel IPv4 adresi gösterilir.</p></section>
-        <section id="historyCard" class="side-card side-data-card history-card"><small>ESKİ İŞLEMLER</small><h3 id="historyTitle">İşlem geçmişi denetleniyor</h3><div id="historyList" class="history-list auto-hide-scrollbar" aria-live="polite" aria-busy="true"><article class="history-row history-skeleton" aria-hidden="true"><div><b>İşlem kayıtları hazırlanıyor</b><small>Yerel geçmiş denetleniyor</small></div><nav><span></span><span></span></nav></article><article class="history-row history-skeleton" aria-hidden="true"><div><b>Önceki paketler yükleniyor</b><small>Rapor ve çıktı bilgileri hazırlanıyor</small></div><nav><span></span><span></span><span></span></nav></article><article class="history-row history-skeleton" aria-hidden="true"><div><b>Yerel kayıtlar okunuyor</b><small>Bu işlem yalnızca cihazında gerçekleşir</small></div><nav><span></span><span></span></nav></article></div><button id="diagnosticButton" class="secondary diagnostic-open" type="button">Hata raporu oluştur</button><p class="fineprint">Hata raporunu önce inceleyebilir, istersen indirebilirsin. Kayıtlar bu cihazda tutulur.</p></section>
+        <section id="historyCard" class="side-card side-data-card history-card">
+          <small>ESKİ İŞLEMLER</small><h3 id="historyTitle">İşlem geçmişi denetleniyor</h3>
+          <form id="historyFilters" class="history-filters" role="search" aria-label="İşlem geçmişinde ara">
+            <label>Uygulama veya paket<input id="historySearch" type="search" maxlength="160" placeholder="Ad veya paket adı" autocomplete="off" spellcheck="false" aria-controls="historyList"></label>
+            <label>İşlem durumu<input id="historyStatusFilter" type="hidden" value="all"><button id="historyStatusButton" type="button" aria-label="İşlem durumu: Tümü" aria-haspopup="dialog" aria-controls="historyStatusDialog" aria-expanded="false"><span id="historyStatusLabel">Tümü</span><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></button></label>
+          </form>
+          <p id="historySearchState" class="history-search-state" role="status"></p>
+          <button id="historyRetry" class="secondary history-retry hidden" type="button">Yeniden dene</button>
+          <div id="historyList" class="history-list auto-hide-scrollbar" aria-live="polite" aria-busy="true"><article class="history-row history-skeleton" aria-hidden="true"><div><b>İşlem kayıtları hazırlanıyor</b><small>Yerel geçmiş denetleniyor</small></div><nav><span></span><span></span></nav></article><article class="history-row history-skeleton" aria-hidden="true"><div><b>Önceki paketler yükleniyor</b><small>Rapor ve çıktı bilgileri hazırlanıyor</small></div><nav><span></span><span></span><span></span></nav></article><article class="history-row history-skeleton" aria-hidden="true"><div><b>Yerel kayıtlar okunuyor</b><small>Bu işlem yalnızca cihazında gerçekleşir</small></div><nav><span></span><span></span></nav></article></div>
+          <nav id="historyPagination" class="history-pagination hidden" aria-label="İşlem geçmişi sayfaları"><button id="historyPrevious" type="button">Önceki</button><span id="historyPageInfo"></span><button id="historyNext" type="button">Sonraki</button></nav>
+          <button id="diagnosticButton" class="secondary diagnostic-open" type="button">Hata raporu oluştur</button><p class="fineprint">Hata raporunu önce inceleyebilir, istersen indirebilirsin. Kayıtlar bu cihazda tutulur.</p>
+        </section>
         <details id="storageCard" class="side-card side-data-card storage-card"><summary>DEPOLAMA YÖNETİMİ <span>Yerel dosyaları incele</span></summary><h3 id="storageTitle">Kullanılan alan hesaplanıyor</h3><p id="storageTotals" class="fineprint"></p><div id="storageList" class="storage-list auto-hide-scrollbar" aria-live="polite"></div><button id="storageCleanButton" class="secondary" type="button" disabled>Seçilen kayıtları temizle</button><div id="nativeCacheStorage" class="native-cache-storage hidden"><b>Android kurulum önbelleği</b><small id="nativeCacheTotals"></small><button id="nativeCacheCleanButton" class="secondary" type="button">Eski önbelleği temizle</button></div><p class="fineprint">Seçtiğin işlem kaydı, kaynağı, çıktısı ve çalışma dosyalarıyla birlikte silinir. Devam eden işlemler korunur.</p></details>
         <details id="installHistoryCard" class="side-card side-data-card install-history-card hidden"><summary>KURULUM GEÇMİŞİ <span>Doğrudan split kurulumları</span></summary><h3>Android kurulum sonuçları</h3><div id="installHistoryList" class="install-history-list auto-hide-scrollbar" aria-live="polite"></div><p class="fineprint">Yalnızca doğrudan split kurulumları bu cihazda kaydedilir. Normal APK kurulum ekranının sonucu Android tarafından uygulamaya bildirilmez.</p></details>
         <section class="privacy"><span>⌾</span><div><b>Cihazında ve özel</b><p>Paket uzak bir sunucuya gönderilmez; analiz ve düzenleme işlemleri bu cihazda tamamlanır.</p></div></section>
@@ -413,6 +424,20 @@
         <label class="installed-apps-search"><span>Uygulama ara</span><input id="installedAppsSearch" type="search" autocomplete="off" placeholder="Ad veya paket adı"></label>
         <p>Seçilen uygulamanın kurulum paketi yalnızca cihazında hazırlanır. Split bileşenleri varsa birlikte alınır.</p>
         <div id="installedAppsList" class="installed-apps-list" aria-live="polite"></div>
+      </div>
+    </section>
+  </div>
+  <div id="historyStatusDialog" class="report-viewer hidden" role="presentation" aria-hidden="true">
+    <section class="report-viewer-card history-filter-card" role="dialog" aria-modal="true" aria-labelledby="historyStatusTitle">
+      <header><div><small>İŞLEM GEÇMİŞİ</small><h2 id="historyStatusTitle">Duruma göre filtrele</h2></div><button id="historyStatusClose" type="button" aria-label="Filtreyi kapat">×</button></header>
+      <div class="history-status-options auto-hide-scrollbar" role="group" aria-label="İşlem durumu">
+        <button type="button" data-history-status="all" aria-pressed="true">Tümü<i aria-hidden="true"></i></button>
+        <button type="button" data-history-status="done" aria-pressed="false">Tamamlandı<i aria-hidden="true"></i></button>
+        <button type="button" data-history-status="error" aria-pressed="false">Hata<i aria-hidden="true"></i></button>
+        <button type="button" data-history-status="cancelled" aria-pressed="false">İptal edildi<i aria-hidden="true"></i></button>
+        <button type="button" data-history-status="interrupted" aria-pressed="false">Yarıda kaldı<i aria-hidden="true"></i></button>
+        <button type="button" data-history-status="active" aria-pressed="false">Devam ediyor<i aria-hidden="true"></i></button>
+        <button type="button" data-history-status="ready" aria-pressed="false">Hazır<i aria-hidden="true"></i></button>
       </div>
     </section>
   </div>

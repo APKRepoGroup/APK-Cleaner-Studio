@@ -2040,6 +2040,29 @@ html[data-theme="dark"] .option input:checked + span {
   max-height: 300px;
   overflow: auto;
 }
+.history-filters { display: flex; flex-wrap: wrap; gap: 10px; margin: 0 0 8px; }
+.history-filters label { flex: 1 1 110px; min-width: 0; color: var(--muted); font-size: 10px; font-weight: 700; }
+.history-filters label:first-child { flex-basis: 140px; }
+.history-filters :is(input, select) { display: block; box-sizing: border-box; width: 100%; min-width: 0; min-height: 38px; margin-top: 6px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); color: var(--ink); font: inherit; font-size: 11px; }
+.history-filters :is(input, select):focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
+.history-search-state { margin: 0 0 8px; color: var(--muted); font-size: 10px; line-height: 1.5; }
+.history-search-state:empty { display: none; }
+.history-pagination { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 10px 0; font-size: 10px; color: var(--muted); }
+.history-pagination button { padding: 7px 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); color: var(--ink); font: inherit; cursor: pointer; }
+.history-pagination button:disabled { opacity: .45; cursor: default; }
+.history-card .history-identity { overflow-wrap: anywhere; line-height: 1.5; }
+.history-retry { margin-bottom: 10px; }
+.history-filters input[type="hidden"] { display: none; }
+#historyStatusButton { display: flex; align-items: center; justify-content: space-between; gap: 8px; box-sizing: border-box; width: 100%; min-height: 38px; margin-top: 6px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); color: var(--ink); font: inherit; font-size: 11px; cursor: pointer; }
+#historyStatusButton svg { width: 15px; height: 15px; flex: none; }
+.history-filter-card { width: min(420px, 100%); }
+.history-filter-card h2 { font-size: 19px; }
+.history-status-options { display: grid; gap: 7px; max-height: min(60dvh, 440px); overflow: auto; padding: 16px; }
+.history-status-options button { display: flex; justify-content: space-between; align-items: center; gap: 12px; width: 100%; min-height: 45px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-soft); color: var(--ink); font: inherit; font-size: 13px; text-align: start; cursor: pointer; }
+.history-status-options button[aria-pressed="true"] { border-color: var(--green); background: color-mix(in srgb, var(--green) 10%, var(--surface)); }
+.history-status-options i { flex: none; width: 16px; height: 16px; border: 1.5px solid var(--muted); border-radius: 50%; }
+.history-status-options button[aria-pressed="true"] i { border-color: var(--green); background: var(--green); box-shadow: inset 0 0 0 4px var(--surface); }
+.history-status-options button:focus-visible, #historyStatusButton:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
 
 /* Kaydırılabilir yan kartlar bütün platformlarda aynı, sakin çubuğu kullanır.
    Alan ölçüsü sabit kalır; kullanıcı etkileşimi bittikten sonra yalnızca tutamaç gizlenir. */
@@ -2356,6 +2379,7 @@ html[data-theme="dark"] .topbar::before {
   /* Açılır kartların eylem ve açıklamaları 430 px sınırına sığmayabilir.
      Kart doğal yüksekliğinde kalsın; yalnızca kayıt listesi kaydırılsın. */
   .side-data-card.storage-card,
+  .side-data-card.history-card,
   .side-data-card.install-history-card {
     display: block;
     max-height: none;
@@ -2378,6 +2402,7 @@ html[data-theme="dark"] .topbar::before {
   .network-card.network-card--scrollable .network-list {
     padding-right: 7px;
   }
+  .history-card > .history-list { max-height: 300px; }
 }
 .client-skeleton,
 .history-skeleton { pointer-events: none; }
