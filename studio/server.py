@@ -47,6 +47,7 @@ from engine import (
 from setup_tools import install as install_tools
 from updater import check_for_updates, stage_update
 from device_catalog import DeviceCatalog
+from package_icon import extract_apk_icon
 
 
 _JSON_WRITE_LOCK = threading.Lock()
@@ -1252,6 +1253,12 @@ def clone_job_for_reuse(job_id: str, requester_id: str, requester_is_local: bool
         # Başlangıç çağrısı onayları özgün işin DEX konumlarına aittir.
         # Yeni işte kullanıcı yeniden karşılaştırma yapmadan taşınmamalıdır.
         cloned_analysis.pop("approved_message_targets", None)
+        # Older Android analyses cached a 72px preview. Refresh only this new
+        # job's cosmetic metadata, never the source archive or history record.
+        if ANDROID_RUNTIME and not cloned_analysis.get("split_merged"):
+            icon = extract_apk_icon(cloned_source)
+            if icon:
+                cloned_analysis["app_icon"] = icon
         write_json(new_job / "analysis.json", cloned_analysis)
         write_json(new_job / "state.json", {
             "status": "ready", "message": "Geçmiş kaynak yeniden işlemeye hazır",

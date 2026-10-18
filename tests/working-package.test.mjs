@@ -12,6 +12,17 @@ test('real icons have rounded square frames, without the old dark rectangular fi
   assert.match(css, /html\[data-theme\] \.file-card \.apk\.has-app-icon\s*\{[^}]*height: 46px[^}]*border-radius: 14px[^}]*overflow: hidden[^}]*background: transparent/s);
   assert.match(css, /\.working-package-icon\.has-app-icon\s*\{[^}]*height: 40px[^}]*border-radius: 12px[^}]*overflow: hidden/s);
   assert.match(css, /\.package-app-icon\s*\{[^}]*object-fit: contain[^}]*border-radius: inherit/s);
+  assert.match(css, /html\[data-theme\] \.file-card \.apk\.has-app-icon\s*\{[^}]*border: 0;[^}]*margin: 0; padding: 0/s);
+});
+
+test('Android renders the selected archive at high density without inflating the installed-app cache', async () => {
+  const activity = await readFile(new URL('../android/app/src/main/java/com/apkcleaner/studio/MainActivity.java', import.meta.url), 'utf8');
+  const runner = await readFile(new URL('../android/app/src/main/java/com/apkcleaner/studio/EmbeddedToolRunner.java', import.meta.url), 'utf8');
+  assert.match(runner, /getDrawableForDensity\([\s\S]*?DENSITY_XXXHIGH, null\), 256\)/);
+  assert.match(activity, /return drawableDataUri\(drawable, 72\)/);
+  assert.match(activity, /Paint\.FILTER_BITMAP_FLAG/);
+  assert.match(activity, /drawable\.setBounds\(previousBounds\)/);
+  assert.match(activity, /bitmap\.recycle\(\)/);
 });
 
 function runtime() {

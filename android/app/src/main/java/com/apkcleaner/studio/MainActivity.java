@@ -1315,9 +1315,13 @@ public final class MainActivity extends Activity {
     }
 
     static String drawableDataUri(Drawable drawable) throws IOException {
-        // 72 px, 42 CSS px kartlarda keskin kalırken ikon kodlama yükünü ve
-        // WebView köprü verisini 96 px'e göre belirgin biçimde azaltır.
-        final int size = 72;
+        // Keep the hundred-entry installed-app cache small. Selected source
+        // icons use the separate high-resolution overload below.
+        return drawableDataUri(drawable, 72);
+    }
+
+    static String drawableDataUri(Drawable drawable, int size) throws IOException {
+        if (size < 72 || size > 256) throw new IOException("Geçersiz simge boyutu.");
         if (drawable == null) throw new IOException("Uygulama ikonu bulunamadı.");
         drawable = drawable.mutate();
         Rect previousBounds = new Rect(drawable.getBounds());
@@ -1333,6 +1337,8 @@ public final class MainActivity extends Activity {
             drawable.jumpToCurrentState();
             drawable.setBounds(0, 0, logicalSize, logicalSize);
             Canvas canvas = new Canvas(bitmap);
+            canvas.setDrawFilter(new android.graphics.PaintFlagsDrawFilter(0,
+                    android.graphics.Paint.ANTI_ALIAS_FLAG | android.graphics.Paint.FILTER_BITMAP_FLAG));
             canvas.scale(size / (float) logicalSize, size / (float) logicalSize);
             drawable.draw(canvas);
             if (!bitmap.compress(Bitmap.CompressFormat.PNG, 90, output)) {

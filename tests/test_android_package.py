@@ -79,7 +79,7 @@ class AndroidPackageTests(unittest.TestCase):
         self.assertIn("listInstalledPackages", activity)
         self.assertIn("requestInstalledPackages", activity)
         self.assertIn("loadInstalledPackages(false);", activity)
-        self.assertIn("final int size = 72;", activity)
+        self.assertIn("return drawableDataUri(drawable, 72);", activity)
         self.assertIn("getApplicationIcon", activity)
         self.assertIn("onInstalledPackagesLoaded", activity)
         self.assertIn("importInstalledPackage", activity)

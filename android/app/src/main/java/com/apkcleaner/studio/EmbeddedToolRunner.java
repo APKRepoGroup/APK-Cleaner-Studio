@@ -123,7 +123,9 @@ public final class EmbeddedToolRunner {
             info.applicationInfo.sourceDir = apkPath;
             info.applicationInfo.publicSourceDir = apkPath;
             android.content.res.Resources resources = manager.getResourcesForApplication(info.applicationInfo);
-            return MainActivity.drawableDataUri(resources.getDrawable(info.applicationInfo.icon, null));
+            // Select a high-density source before rasterizing, not after downsampling.
+            return MainActivity.drawableDataUri(resources.getDrawableForDensity(
+                    info.applicationInfo.icon, android.util.DisplayMetrics.DENSITY_XXXHIGH, null), 256);
         } catch (Exception error) {
             Log.w(TAG, "APK ikonu okunamadı; varsayılan paket simgesi kullanılacak", error);
             return "";

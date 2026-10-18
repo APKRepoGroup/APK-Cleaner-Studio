@@ -151,7 +151,8 @@ class PackageIconTests(unittest.TestCase):
         native = (ROOT / "android/app/src/main/java/com/apkcleaner/studio/EmbeddedToolRunner.java").read_text(encoding="utf-8")
         self.assertIn("info.applicationInfo.sourceDir = apkPath", native)
         self.assertIn("info.applicationInfo.publicSourceDir = apkPath", native)
-        self.assertIn("resources.getDrawable(info.applicationInfo.icon, null)", native)
+        self.assertIn("resources.getDrawableForDensity(", native)
+        self.assertIn("android.util.DisplayMetrics.DENSITY_XXXHIGH, null), 256)", native)
         self.assertIn("MainActivity.drawableDataUri", native)
         self.assertIn('"package_icon.py"', (ROOT / "packaging/sync_android.py").read_text(encoding="utf-8"))
 
