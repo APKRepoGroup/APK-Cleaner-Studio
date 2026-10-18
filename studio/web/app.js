@@ -125,13 +125,97 @@ function syncUiActivity() {
     state.progressFrame = 0;
     state.progressLastTick = 0;
     modalMotion.settle();
+    settleBatteryNoticeDismissal();
     return;
   }
   if (uiReadController.signal.aborted) uiReadController = new AbortController();
   for (const resolve of uiWaiters) resolve();
   uiWaiters.clear();
   refreshStatus(); refreshHistory();
+  requestBackgroundPolicy();
   if (state.displayedProgress < state.targetProgress) updateProgress(state.targetProgress, progressElements.phase.textContent);
+}
+
+// Battery policy is native-only. Dismissal lives in this document, never in storage.
+function requestBackgroundPolicy() {
+  if (document.documentElement.dataset.embedded !== "android") return;
+  try { globalThis.AndroidThemeBridge?.requestBackgroundPolicy?.(); } catch {}
+}
+
+let batteryNoticeDismissed = false;
+let batteryNoticeAnimation = null;
+
+function settleBatteryNoticeDismissal() {
+  const notice = $("#batteryNotice");
+  if (!notice || !batteryNoticeDismissed) return;
+  notice.classList.add("hidden");
+  const animation = batteryNoticeAnimation;
+  batteryNoticeAnimation = null;
+  animation?.cancel();
+  notice.classList.remove("is-closing");
+  notice.inert = false;
+}
+
+function dismissBatteryNotice() {
+  const notice = $("#batteryNotice");
+  if (!notice || batteryNoticeDismissed || notice.classList.contains("hidden")) return;
+  batteryNoticeDismissed = true;
+  if (motionMedia.matches || !isUiActive() || typeof notice.animate !== "function") {
+    settleBatteryNoticeDismissal(); return;
+  }
+  const style = getComputedStyle(notice);
+  notice.classList.add("is-closing");
+  notice.inert = true;
+  const animation = notice.animate([
+    { height: `${notice.getBoundingClientRect().height}px`, opacity: 1, transform: "translateY(0)",
+      paddingTop: style.paddingTop, paddingBottom: style.paddingBottom,
+      marginTop: style.marginTop, marginBottom: style.marginBottom,
+      borderTopWidth: style.borderTopWidth, borderBottomWidth: style.borderBottomWidth },
+    { height: "0px", opacity: 0, transform: "translateY(-6px)", paddingTop: "0px", paddingBottom: "0px",
+      marginTop: "0px", marginBottom: "0px", borderTopWidth: "0px", borderBottomWidth: "0px" },
+  ], { ...INLINE_REFLOW_MOTION, fill: "both" });
+  batteryNoticeAnimation = animation;
+  animation.finished.then(() => {
+    if (batteryNoticeAnimation === animation) settleBatteryNoticeDismissal();
+  }, () => {
+    if (batteryNoticeAnimation === animation) settleBatteryNoticeDismissal();
+  });
+}
+
+globalThis.onBackgroundPolicy = (payload) => {
+  const notice = $("#batteryNotice");
+  if (!notice || document.documentElement.dataset.embedded !== "android") return;
+  let policy;
+  try { policy = typeof payload === "string" ? JSON.parse(payload) : payload; } catch { policy = null; }
+  const known = policy?.known === true && typeof policy.backgroundRestricted === "boolean" && typeof policy.ignoringOptimizations === "boolean";
+  const unrestricted = known && !policy.backgroundRestricted && policy.ignoringOptimizations;
+  if (batteryNoticeDismissed) {
+    if (!batteryNoticeAnimation) notice.classList.add("hidden");
+    return;
+  }
+  notice.classList.toggle("hidden", unrestricted);
+  $("#batteryLead").textContent = !known
+    ? "Arka plan izinleri doğrulanamadı. Lütfen uygulamanın pil ve arka plan ayarlarını kontrol edin."
+    : policy.ignoringOptimizations && policy.backgroundRestricted
+      ? "Pil optimizasyonu kapalı. Arka planda çalışma kısıtlamasını uygulama ayarlarından kaldırın."
+      : "APK Cleaner Studio için arka planda çalışma izni verin.";
+  $("#batterySettingsButton").textContent = known && policy.ignoringOptimizations && policy.backgroundRestricted
+    ? "Arka plan iznini düzenle" : "Arka planda çalışmaya izin ver";
+};
+
+function requestBatteryExemption() {
+  if (document.documentElement.dataset.embedded !== "android") return;
+  try {
+    const bridge = globalThis.AndroidThemeBridge;
+    if (bridge?.requestBatteryExemption) bridge.requestBatteryExemption();
+    else openBatterySettings(); // Compatibility with older native shells.
+  } catch { toast("Sistem onayı açılamadı. Uygulama ayarlarından pil kullanımını kontrol et."); }
+}
+
+function openBatterySettings(appDetails = false) {
+  if (document.documentElement.dataset.embedded !== "android") return;
+  try { globalThis.AndroidThemeBridge?.openBatterySettings?.(appDetails); }
+  catch { toast("Pil ayarları açılamadı. Cihaz ayarlarından uygulamanın pil kullanımını kontrol et."); }
 }
 
 globalThis.setNativeVisibility = (visible) => {
@@ -2691,8 +2775,13 @@ renderSavedPresets();
 if (!embeddedAndroid) registerClientDetails();
 refreshStatus(); refreshHistory();
 checkForUpdates();
+requestBackgroundPolicy();
+$("#batterySettingsButton").addEventListener("click", requestBatteryExemption);
+$("#batteryDismiss").addEventListener("click", dismissBatteryNotice);
+$("#batteryAppSettingsButton").addEventListener("click", () => openBatterySettings(true));
 revealReadyInterface();
 uiScheduler.add("status", refreshStatus, 10000);
 uiScheduler.add("history", refreshHistory, 30000);
+uiScheduler.add("background-policy", requestBackgroundPolicy, 10000);
 uiScheduler.add("updates", checkForUpdates, 6 * 60 * 60 * 1000);
 uiScheduler.setActive(isUiActive());

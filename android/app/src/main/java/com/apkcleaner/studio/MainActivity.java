@@ -364,6 +364,7 @@ public final class MainActivity extends Activity {
                 if (closed || view != webView) return;
                 publishStatusInset();
                 publishUiVisibility();
+                publishBackgroundPolicy();
                 loading.setVisibility(View.GONE);
                 webView.setVisibility(View.VISIBLE);
             }
@@ -613,6 +614,26 @@ public final class MainActivity extends Activity {
     }
 
     private final class ThemeBridge {
+        @JavascriptInterface public void requestBatteryExemption() {
+            postToUi(() -> {
+                if (!BackgroundPolicy.requestExemption(MainActivity.this)) {
+                    Toast.makeText(MainActivity.this, "Sistem onayı açılamadı. Uygulama ayarlarından pil kullanımını kontrol et.", Toast.LENGTH_LONG).show();
+                }
+                publishBackgroundPolicy(); // Recheck, never assume consent from opening a screen.
+            });
+        }
+        @JavascriptInterface public void requestBackgroundPolicy() {
+            postToUi(() -> publishBackgroundPolicy());
+        }
+
+        @JavascriptInterface public void openBatterySettings(boolean appDetails) {
+            postToUi(() -> {
+                if (!BackgroundPolicy.openSettings(MainActivity.this, appDetails)) {
+                    Toast.makeText(MainActivity.this, "Pil ayarları açılamadı. Cihaz ayarlarından uygulamanın pil kullanımını kontrol et.", Toast.LENGTH_LONG).show();
+                }
+            });
+        }
+
         @JavascriptInterface public void setTheme(String theme) {
             if (!"light".equals(theme) && !"dark".equals(theme)) return;
             postToUi(() -> applySystemTheme(theme));
@@ -1594,6 +1615,11 @@ public final class MainActivity extends Activity {
         handleBack();
     }
 
+    private void publishBackgroundPolicy() {
+        if (webView != null) webView.evaluateJavascript(
+                "globalThis.onBackgroundPolicy?.(" + BackgroundPolicy.status(this) + ")", null);
+    }
+
     private void publishUiVisibility() {
         if (webView != null) webView.evaluateJavascript(
                 "globalThis.setNativeVisibility?.(" + activityVisible + ")", null);
@@ -1605,6 +1631,7 @@ public final class MainActivity extends Activity {
         ensureEngineService();
         if (webView != null) webView.onResume();
         publishUiVisibility();
+        publishBackgroundPolicy();
     }
 
     @Override protected void onPause() {

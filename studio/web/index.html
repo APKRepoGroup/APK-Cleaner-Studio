@@ -38,6 +38,16 @@
     <button id="updateDismiss" type="button" aria-label="Güncelleme bildirimini bu açılış için kapat" title="Bu açılış için kapat"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
   </section>
 
+  <section id="batteryNotice" class="battery-notice hidden" aria-labelledby="batteryTitle">
+    <div class="battery-heading">
+    <svg class="battery-mark" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="17" height="12" rx="3"/><path d="M22 10v4M12 8l-3 5h4l-2 3"/></svg>
+    <b id="batteryTitle">Pil optimizasyonunu kapat</b>
+    <button id="batteryDismiss" type="button" aria-label="Pil uyarısını bu açılış için kapat" title="Bu açılış için kapat"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
+    </div>
+    <div id="batteryText"><p id="batteryLead">APK Cleaner Studio için arka planda çalışma izni verin.</p><p><span class="battery-phrase">Pil kısıtlamaları,</span> işlem motorunun ve bileşenlerin çalışmasını kesintiye uğratarak hatalara neden olabilir.</p></div>
+    <div class="battery-actions"><button id="batterySettingsButton" type="button" class="secondary">Arka planda çalışmaya izin ver</button><button id="batteryAppSettingsButton" type="button" class="text-button">Uygulama ayarları</button></div>
+  </section>
+
   <main>
     <section class="hero">
       <div class="eyebrow">◆ &nbsp; YEREL ANDROID PAKET İŞLEME STÜDYOSU</div>
