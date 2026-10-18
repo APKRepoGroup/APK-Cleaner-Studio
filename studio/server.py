@@ -48,9 +48,11 @@ from setup_tools import install as install_tools
 from updater import check_for_updates, stage_update
 from device_catalog import DeviceCatalog
 from package_icon import extract_apk_icon
+from app_appearance import validate_appearance
 
 
 _JSON_WRITE_LOCK = threading.Lock()
+_INTERRUPTED_STATE_FALLBACKS: dict[Path, dict] = {}
 ANDROID_RUNTIME = os.environ.get("APK_CLEANER_ANDROID") == "1"
 if not ANDROID_RUNTIME:
     from local_tls import ensure_local_tls, root_is_trusted_on_windows, trust_root_on_windows
@@ -738,6 +740,7 @@ def write_json(path: Path, payload: dict) -> None:
             except OSError:
                 pass
             temp.replace(path)
+            _INTERRUPTED_STATE_FALLBACKS.pop(path.resolve(), None)
         finally:
             try:
                 temp.unlink(missing_ok=True)
@@ -747,6 +750,9 @@ def write_json(path: Path, payload: dict) -> None:
 
 def read_json(path: Path, fallback: dict | None = None) -> dict:
     with _JSON_WRITE_LOCK:
+        recovered = _INTERRUPTED_STATE_FALLBACKS.get(path.resolve())
+        if recovered is not None:
+            return dict(recovered)
         try:
             content = path.read_text(encoding="utf-8")
         except FileNotFoundError:
@@ -755,6 +761,50 @@ def read_json(path: Path, fallback: dict | None = None) -> dict:
         return json.loads(content)
     except json.JSONDecodeError:
         return fallback or {}
+
+
+def reconcile_interrupted_jobs() -> int:
+    """At engine startup, settle persisted work with no surviving worker. Never replay it."""
+    if not JOBS.is_dir():
+        return 0
+    changed = 0
+    for job in JOBS.iterdir():
+        if job.is_symlink() or not job.is_dir() or not JOB_ID.fullmatch(job.name):
+            continue
+        with _ACTIVE_JOBS_LOCK:
+            if job.name in _ACTIVE_JOBS or job.name in _SCANNING_JOBS:
+                continue
+            try:
+                state = read_json(job / "state.json")
+                analysis = read_json(job / "analysis.json")
+            except OSError:
+                continue  # An unreadable old job must not prevent the engine from starting.
+            if not isinstance(state, dict) or not isinstance(analysis, dict):
+                continue
+            if state.get("status") not in {"analyzing", "working", "cancelling"}:
+                continue
+            message = "Yerel motorun kapanması nedeniyle işlem yarıda kaldı. Kaynak paket korundu; işlemi yeniden başlatabilirsin."
+            details = failure_diagnostic(RuntimeError(message), analysis=analysis)
+            details["stage"] = diagnostic_error(RuntimeError(state.get("message") or "İşlem sürüyordu"))
+            interrupted = {
+                "status": "error", "interrupted": True, "message": message, "progress": 0,
+                "filename": state.get("filename") or analysis.get("filename", "paket.apk"),
+                "failure": {key: details[key] for key in ("message", "stage", "operation", "profile")},
+                "events": state.get("events", []),
+            }
+            try:
+                write_json(job / "state.json", interrupted)
+            except OSError:
+                # A full/read-only disk must not leave a dead job appearing live.
+                # A later successful state write clears this process-local fallback.
+                with _JSON_WRITE_LOCK:
+                    _INTERRUPTED_STATE_FALLBACKS[(job / "state.json").resolve()] = interrupted
+            try:
+                write_json(job / "diagnostic.json", details)
+            except OSError:
+                pass  # The compact failure explanation is already in the job state.
+            changed += 1
+    return changed
 
 
 def cleanup_stale_jobs(root: Path = JOBS, max_age_seconds: int = JOB_RETENTION_SECONDS) -> int:
@@ -1133,12 +1183,14 @@ def job_visible_to(job: Path, requester_id: str, requester_is_local: bool) -> bo
     return bool(analysis.get("owner_id") and analysis.get("owner_id") == requester_id)
 
 
-def list_job_history(requester_id: str, requester_is_local: bool, limit: int = 20) -> list[dict]:
+def list_job_history(requester_id: str, requester_is_local: bool, limit: int | None = 20) -> list[dict]:
     rows: list[dict] = []
     if not JOBS.is_dir():
         return rows
+    with _ACTIVE_JOBS_LOCK:
+        busy = _ACTIVE_JOBS | _SCANNING_JOBS
     for job in JOBS.iterdir():
-        if not job.is_dir() or not JOB_ID.fullmatch(job.name) or not job_visible_to(job, requester_id, requester_is_local):
+        if job.is_symlink() or not job.is_dir() or not JOB_ID.fullmatch(job.name) or not job_visible_to(job, requester_id, requester_is_local):
             continue
         analysis = read_json(job / "analysis.json")
         state = read_json(job / "state.json")
@@ -1146,27 +1198,34 @@ def list_job_history(requester_id: str, requester_is_local: bool, limit: int = 2
             continue
         result = read_json(job / "output" / "report.json")
         source_path = analysis.get("source_path")
+        source_path = source_path if isinstance(source_path, str) and Path(source_path).name == source_path else None
         source = job / source_path if source_path else Path("missing")
         created_at = float(analysis.get("created_at") or (source.stat().st_mtime if source.is_file() else job.stat().st_mtime))
         updated_at = (job / "state.json").stat().st_mtime if (job / "state.json").is_file() else created_at
         output_name = result.get("output")
+        output_name = output_name if isinstance(output_name, str) and Path(output_name).name == output_name else None
         output = job / "output" / output_name if output_name else Path("missing")
+        package_info = analysis.get("package_info")
+        package_info = package_info if isinstance(package_info, dict) else {}
         rows.append({
             "job_id": job.name,
             "filename": analysis.get("filename", "paket.apk"),
+            "app_name": str(package_info.get("app_name") or "")[:240],
+            "package_name": str(analysis.get("package_name") or package_info.get("package_name") or "")[:240],
             "source_type": analysis.get("source_type", "apk"),
             "size": analysis.get("size", 0),
             "status": state.get("status", "unknown"),
+            "interrupted": bool(state.get("interrupted")),
             "created_at": created_at,
             "updated_at": updated_at,
             "mode": result.get("mode"),
             "operation": result.get("operation"),
             "duration_seconds": result.get("duration_seconds"),
-            "can_reuse": source.is_file(),
-            "can_delete": state.get("status") not in {"analyzing", "working"},
-            "has_report": (job / "output" / "report.txt").is_file(),
-            "has_output": output.is_file(),
-            "output_filename": output.name if output.is_file() else "",
+            "can_reuse": source.is_file() and job.name not in busy and state.get("status") not in {"analyzing", "working", "cancelling"},
+            "can_delete": job.name not in busy and state.get("status") not in {"analyzing", "working", "cancelling"},
+            "has_report": state.get("status") == "done" and (job / "output" / "report.txt").is_file(),
+            "has_output": state.get("status") == "done" and output.is_file(),
+            "output_filename": output.name if state.get("status") == "done" and output.is_file() else "",
         })
     rows.sort(key=lambda row: row["updated_at"], reverse=True)
     return rows[:limit]
@@ -1204,7 +1263,7 @@ def list_job_storage(requester_id: str, requester_is_local: bool) -> dict:
             totals[category] += amount
         state = read_json(job / "state.json")
         rows.append({"job_id": job.name, "filename": analysis.get("filename", "paket.apk"),
-                     "sizes": sizes, "can_delete": job.name not in busy and state.get("status") not in {"analyzing", "working"}})
+                     "sizes": sizes, "can_delete": job.name not in busy and state.get("status") not in {"analyzing", "working", "cancelling"}})
     rows.sort(key=lambda row: sum(row["sizes"].values()), reverse=True)
     return {"jobs": rows, "totals": totals}
 
@@ -1321,21 +1380,25 @@ def cancel_clean_job(job_id: str, requester_id: str, requester_is_local: bool) -
     if not job_visible_to(job, requester_id, requester_is_local):
         raise PermissionError("Bu işlemi iptal etme yetkin yok.")
     with _ACTIVE_JOBS_LOCK:
+        current = read_json(job / "state.json")
+        if job_id not in _ACTIVE_JOBS or current.get("status") in {"done", "error", "cancelled"}:
+            return False
         event = _JOB_CANCEL_EVENTS.get(job_id)
         thread_id = _JOB_THREADS.get(job_id)
-        active = job_id in _ACTIVE_JOBS
         if event:
             event.set()
-    if thread_id is not None:
-        terminate_active_tools(thread_id)
-    if active:
-        current = read_json(job / "state.json")
         write_json(job / "state.json", {
             "status": "cancelling", "message": "İşlem güvenli biçimde durduruluyor",
             "progress": current.get("progress", 0), "filename": current.get("filename", "paket.apk"),
             "events": current.get("events", []),
         })
-    return active
+    # Never write a non-terminal state after releasing the lifecycle lock:
+    # the worker can finish while tool shutdown is in progress.
+    if thread_id is not None:
+        terminate_active_tools(thread_id)
+    return True
+
+
 
 
 def _execute_clean_job(job_id: str, payload: dict) -> None:
@@ -1351,14 +1414,15 @@ def _execute_clean_job(job_id: str, payload: dict) -> None:
 
     def progress(message: str, percent: int) -> None:
         nonlocal last_stage
-        if cancel_event.is_set():
-            raise JobCancelled("İşlem kullanıcı tarafından iptal edildi.")
-        last_stage = message
-        write_json(job / "state.json", {
-            "status": "working", "message": message,
-            "progress": min(99, max(0, int(percent))), "filename": filename,
-            "events": journal.record(message, percent),
-        })
+        with _ACTIVE_JOBS_LOCK:
+            if cancel_event.is_set():
+                raise JobCancelled("İşlem kullanıcı tarafından iptal edildi.")
+            last_stage = message
+            write_json(job / "state.json", {
+                "status": "working", "message": message,
+                "progress": min(99, max(0, int(percent))), "filename": filename,
+                "events": journal.record(message, percent),
+            })
 
     try:
         reset_tool_cancellation()
@@ -1441,29 +1505,32 @@ def _execute_clean_job(job_id: str, payload: dict) -> None:
             clone_package_name=clone_package_name,
             app_appearance=payload.get("app_appearance"),
         )
-        if cancel_event.is_set():
-            raise JobCancelled("İşlem kullanıcı tarafından iptal edildi.")
-        write_json(job / "state.json", {
-            "status": "done", "message": "Çıktı APK hazır", "progress": 100,
-            "filename": filename, "result": result,
-            "events": journal.record("Çıktı APK hazır", 100),
-        })
+        with _ACTIVE_JOBS_LOCK:
+            if cancel_event.is_set():
+                raise JobCancelled("İşlem kullanıcı tarafından iptal edildi.")
+            write_json(job / "state.json", {
+                "status": "done", "message": "Çıktı APK hazır", "progress": 100,
+                "filename": filename, "result": result,
+                "events": journal.record("Çıktı APK hazır", 100),
+            })
     except JobCancelled as exc:
         shutil.rmtree(job / "output", ignore_errors=True)
         shutil.rmtree(job / "prepared-selected", ignore_errors=True)
-        write_json(job / "state.json", {
-            "status": "cancelled", "message": str(exc), "progress": 0, "filename": filename,
-            "events": journal.record("İşlem kullanıcı tarafından iptal edildi.", 0),
-        })
+        with _ACTIVE_JOBS_LOCK:
+            write_json(job / "state.json", {
+                "status": "cancelled", "message": str(exc), "progress": 0, "filename": filename,
+                "events": journal.record("İşlem kullanıcı tarafından iptal edildi.", 0),
+            })
     except Exception as exc:
         if cancel_event.is_set():
             shutil.rmtree(job / "output", ignore_errors=True)
             shutil.rmtree(job / "prepared-selected", ignore_errors=True)
-            write_json(job / "state.json", {
-                "status": "cancelled", "message": "İşlem kullanıcı tarafından iptal edildi.",
-                "progress": 0, "filename": filename,
-                "events": journal.record("İşlem kullanıcı tarafından iptal edildi.", 0),
-            })
+            with _ACTIVE_JOBS_LOCK:
+                write_json(job / "state.json", {
+                    "status": "cancelled", "message": "İşlem kullanıcı tarafından iptal edildi.",
+                    "progress": 0, "filename": filename,
+                    "events": journal.record("İşlem kullanıcı tarafından iptal edildi.", 0),
+                })
             return
         details = failure_diagnostic(exc, analysis=analysis, payload=payload)
         details["stage"] = diagnostic_error(RuntimeError(last_stage))
@@ -1471,16 +1538,52 @@ def _execute_clean_job(job_id: str, payload: dict) -> None:
             write_json(job / "diagnostic.json", details)
         except OSError:
             pass  # Reporting must never mask the original job failure.
-        write_json(job / "state.json", {
-            "status": "error", "message": details["message"], "progress": 0, "filename": filename,
-            "failure": {key: details[key] for key in ("message", "stage", "operation", "profile")},
-            "events": journal.record(details["message"], 0),
-        })
+        with _ACTIVE_JOBS_LOCK:
+            cancelled = cancel_event.is_set()
+            message = "İşlem kullanıcı tarafından iptal edildi." if cancelled else details["message"]
+            write_json(job / "state.json", {
+                "status": "cancelled" if cancelled else "error", "message": message, "progress": 0, "filename": filename,
+                **({} if cancelled else {"failure": {key: details[key] for key in ("message", "stage", "operation", "profile")}}),
+                "events": journal.record(message, 0),
+            })
+        if cancelled:
+            shutil.rmtree(job / "output", ignore_errors=True)
+            shutil.rmtree(job / "prepared-selected", ignore_errors=True)
     finally:
         with _ACTIVE_JOBS_LOCK:
             _ACTIVE_JOBS.discard(job_id)
             _JOB_CANCEL_EVENTS.pop(job_id, None)
             _JOB_THREADS.pop(job_id, None)
+def processing_selection(payload: dict) -> dict:
+    """Bounded, private job configuration; the worker receives this exact snapshot."""
+    operation = payload.get("operation", "patch")
+    profile = payload.get("profile", "balanced")
+    if operation not in ("patch", "clone", "convert") or profile not in ("safe", "balanced", "deep"):
+        raise ValueError("İşlem veya temizlik profili geçersiz.")
+    selected = {"schema": 1, "operation": operation, "profile": profile}
+    for key in ("patch_ads", "strip_debug", "normalize_dex", "optimize_apk", "restrict_store_updates", "deobfuscate_resources", "normalize_resources"):
+        value = payload.get(key, operation == "patch" if key == "patch_ads" else False)
+        if not isinstance(value, bool):
+            raise ValueError("İşlem seçenekleri geçersiz.")
+        selected[key] = value
+    clone = payload.get("clone_package_name")
+    if clone is not None and (not isinstance(clone, str) or len(clone) > 200):
+        raise ValueError("Klon paket adı geçersiz.")
+    selected["clone_package_name"] = clone
+    selected["app_appearance"] = validate_appearance(payload.get("app_appearance"))
+    targets = payload.get("message_targets") or []
+    if not isinstance(targets, list) or len(targets) > 1000 or any(not isinstance(item, str) or len(item) > 1024 for item in targets):
+        raise ValueError("Başlangıç çağrısı seçimi geçersiz.")
+    selected["message_targets"] = list(targets)
+    split = payload.get("split_selection")
+    if split is not None:
+        if not isinstance(split, dict) or set(split) - {"abis", "languages"}:
+            raise ValueError("Split seçimi geçersiz.")
+        split = {key: split.get(key, []) for key in ("abis", "languages")}
+        if any(not isinstance(values, list) or len(values) > 128 or any(not isinstance(item, str) or len(item) > 80 for item in values) for values in split.values()):
+            raise ValueError("Split seçimi geçersiz.")
+    selected["split_selection"] = split
+    return selected
 
 
 def start_clean_job(job_id: str, payload: dict) -> tuple[str, dict | None]:
@@ -1491,25 +1594,30 @@ def start_clean_job(job_id: str, payload: dict) -> tuple[str, dict | None]:
     analysis = read_json(job / "analysis.json")
     if not analysis:
         raise ValueError("İş analizi bulunamadı.")
-    state = read_json(job / "state.json")
     with _ACTIVE_JOBS_LOCK:
         if _SCANNING_JOBS:
             raise ValueError("Başlangıç çağrısı taraması tamamlanana kadar bekle.")
         if job_id in _ACTIVE_JOBS:
             return "working", None
+        state = read_json(job / "state.json")
         if state.get("status") == "done":
             result = state.get("result") or read_json(job / "output" / "report.json")
             return "done", result or None
-        _ACTIVE_JOBS.add(job_id)
-        _JOB_CANCEL_EVENTS[job_id] = threading.Event()
+        selected = processing_selection(payload)
+        if analysis.get("split_merged") and selected["split_selection"] is None:
+            options = analysis.get("split_options") or {}
+            selected["split_selection"] = {"abis": list(options.get("abis") or []), "languages": [item["code"] for item in (options.get("languages") or [])]}
+        write_json(job / "selection.json", selected)
         write_json(job / "state.json", {
             "status": "working", "message": "İşlem sıraya alındı", "progress": 2,
             "filename": analysis.get("filename", "paket.apk"),
         })
+        _ACTIVE_JOBS.add(job_id)
+        _JOB_CANCEL_EVENTS[job_id] = threading.Event()
     try:
         threading.Thread(
             target=_execute_clean_job,
-            args=(job_id, dict(payload)),
+            args=(job_id, selected),
             name=f"apk-job-{job_id[:8]}",
             daemon=True,
         ).start()
@@ -1517,6 +1625,10 @@ def start_clean_job(job_id: str, payload: dict) -> tuple[str, dict | None]:
         with _ACTIVE_JOBS_LOCK:
             _ACTIVE_JOBS.discard(job_id)
             _JOB_CANCEL_EVENTS.pop(job_id, None)
+            write_json(job / "state.json", {
+                "status": "error", "message": "İşlem başlatılamadı. Yerel motoru kontrol edip yeniden dene.",
+                "progress": 0, "filename": analysis.get("filename", "paket.apk"),
+            })
         raise
     return "working", None
 
@@ -1767,7 +1879,7 @@ class StudioHandler(BaseHTTPRequestHandler):
             self.send_json(list_job_storage(requester_id, requester_is_local))
             return
 
-        match = re.fullmatch(r"/api/jobs/([a-f0-9]{32})/(state|download|report|source|diagnostic)", path)
+        match = re.fullmatch(r"/api/jobs/([a-f0-9]{32})/(state|session|preflight|download|report|source|diagnostic)", path)
         if match:
             job_id, action = match.groups()
             job = JOBS / job_id
@@ -1781,6 +1893,15 @@ class StudioHandler(BaseHTTPRequestHandler):
                 return
             if action == "state":
                 self.send_json(read_json(job / "state.json", {"status": "unknown"}))
+            elif action == "session":
+                analysis = read_json(job / "analysis.json")
+                if not analysis:
+                    self.send_json({"error": "İşlem analizi bulunamadı."}, HTTPStatus.NOT_FOUND)
+                    return
+                state = read_json(job / "state.json", {"status": "unknown"})
+                if state.get("status") == "done" and not state.get("result"):
+                    state["result"] = read_json(job / "output" / "report.json")
+                self.send_json({"job_id": job_id, "analysis": analysis, "job": state, "selection": read_json(job / "selection.json") or None})
             elif action == "diagnostic":
                 if not requester_is_local:
                     self.send_json({"error": "Hata raporu yalnızca bu cihazda açılabilir."}, HTTPStatus.FORBIDDEN)
@@ -1788,8 +1909,26 @@ class StudioHandler(BaseHTTPRequestHandler):
                 query = parse_qs(parsed.query)
                 self.send_diagnostic(diagnostic_report(job, query.get("identifiers") == ["1"]),
                                      query.get("download") == ["1"])
-            elif action == "report":
-                self.send_file(job / "output" / "report.txt", "apk-cleaner-report.txt")
+            elif action in {"report", "download"}:
+                state = read_json(job / "state.json")
+                if not isinstance(state, dict) or state.get("status") != "done":
+                    self.send_json({"error": "İşlem tamamlanmadı. Çıktı ve sonuç raporu henüz kullanıma hazır değil."}, HTTPStatus.CONFLICT)
+                    return
+                if action == "report":
+                    name, download_name = "report.txt", "apk-cleaner-report.txt"
+                else:
+                    result = state.get("result") or read_json(job / "output" / "report.json")
+                    name = result.get("output") if isinstance(result, dict) else None
+                    if not isinstance(name, str) or not name or "/" in name or "\\" in name or Path(name).suffix.lower() != ".apk":
+                        self.send_json({"error": "Tamamlanmış çıktı dosyası bulunamadı."}, HTTPStatus.NOT_FOUND)
+                        return
+                    download_name = name
+                output_root = (job / "output").resolve()
+                target = output_root / name
+                if not target.resolve().is_relative_to(output_root) or not target.is_file():
+                    self.send_json({"error": "Tamamlanmış çıktı veya sonuç raporu bulunamadı."}, HTTPStatus.NOT_FOUND)
+                    return
+                self.send_file(target, download_name)
             elif action == "source":
                 if not requester_is_local:
                     self.send_json({"error": "Özgün paket yalnızca yerel Android uygulamasından kurulabilir."}, HTTPStatus.FORBIDDEN)
@@ -1803,10 +1942,6 @@ class StudioHandler(BaseHTTPRequestHandler):
                     self.send_json({"error": "Özgün paket bulunamadı."}, 404)
                     return
                 self.send_file(job / name, analysis.get("filename"), "application/zip")
-            else:
-                result = read_json(job / "output" / "report.json")
-                name = result.get("output")
-                self.send_file(job / "output" / name if name else Path("missing"), name)
             return
 
         relative = "index.html" if path in {"", "/"} else path.lstrip("/")
@@ -2148,6 +2283,7 @@ def serve(host: str, port: int, open_browser: bool, trust_prompt: bool = True, p
     except OSError:
         pass
     cleanup_stale_jobs()
+    reconcile_interrupted_jobs()
     # Public reverse-proxy origins are learned only for this process. A user's
     # private hostname is never loaded from or written to disk.
     _PUBLIC_HTTPS_ORIGIN = ""

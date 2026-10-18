@@ -1404,6 +1404,13 @@ html[data-theme] .file-card .apk.has-app-icon {
   .battery-mark { width: 26px; height: 26px; }
 }
 .source-preserved { color: var(--green); font-size: 12px; }
+.working-selection { width: min(100%, 625px); margin: 0 0 24px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface-soft); text-align: start; }
+.working-selection summary { font-size: 12px; font-weight: 700; cursor: pointer; }
+.working-selection dl > div { display: grid; grid-template-columns: minmax(90px, .7fr) minmax(0, 1.3fr); gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--line); font-size: 12px; overflow-wrap: anywhere; }
+.working-selection dt { color: var(--muted); }.working-selection dd { margin: 0; }
+.job-connection-notice { width: min(100%, 625px); margin: 0 0 16px; padding: 16px; border: 1px solid var(--orange); border-radius: 14px; background: var(--surface-soft); text-align: start; }
+.job-connection-notice b { color: var(--orange); font-size: 13px; }
+.job-connection-notice p { margin: 8px 0 0; font-size: 12px; line-height: 1.65; }
 .working-activity h3 { margin: 16px 0 10px; font-size: 12px; }
 .activity-list { list-style: none; margin: 0; padding: 0; }
 .activity-list li { display: grid; grid-template-columns: 42px minmax(0, 1fr); gap: 9px; padding: 8px 0; font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }

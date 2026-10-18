@@ -3,12 +3,13 @@ const $$ = (selector) => [...document.querySelectorAll(selector)];
 const state = {
   appearanceIcon: "", appearanceGeneration: 0, appearanceLoading: false,
   selectionGeneration: 0, selectionBusy: false, nativeImportRequest: null,
+  jobSelection: null,
   file: null, profile: "balanced", operation: "patch", patchAdsSelected: true, jobId: null, analysis: null, toolchain: null,
   splitSelection: { abis: [], languages: [] },
   messageTargets: [], messageCandidates: [],
   displayedProgress: 0, targetProgress: 0, progressFrame: 0, progressLastTick: 0,
-  progressEvents: [], progressLogSignature: "",
-  pollInFlight: false, jobRunning: false, statusInFlight: false,
+  progressEvents: [], progressLogSignature: "", sessionRestoreInFlight: false, preflightBusy: false,
+  pollInFlight: false, jobRunning: false, statusInFlight: false, cancelPromptOpen: false, cancelDialog: null,
   installedApps: [], installedAppsLoading: false, installedAppsReady: false, selectedInstalledPackage: "", installedSharePackage: "",
   outputUrl: "", outputFilename: "", nativeInstallBusy: false, nativeShareBusy: false, nativeSplitInstallBusy: false,
   splitInstallPlan: null, splitInstallRequestJobId: null, splitInstallSubmitted: false,
@@ -21,9 +22,12 @@ const THEME_KEY = "apk-cleaner-theme";
 const CLIENT_ID_KEY = "apk-cleaner-client-id";
 const CLIENT_COOKIE_NAME = "apk_cleaner_client_id";
 const SAVED_PRESETS_KEY = "apk-cleaner-processing-presets-v1";
+const ACTIVE_JOB_KEY = "apk-cleaner-active-job-v1";
 const ACTION_NEXT_ICON = '<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h15m-6-6 6 6-6 6"/></svg>';
 function setJobRunning(active) {
   state.jobRunning = Boolean(active);
+  if (!state.jobRunning) $("#jobConnectionNotice")?.classList.add("hidden");
+  if (!state.jobRunning && state.cancelDialog && activeDialog === state.cancelDialog) closeAppDialog(false);
   for (const selector of ["#customAppName", "#customAppIcon", "#clearAppAppearance", "#selectAppIcon"]) {
     const control = $(selector); if (control) control.disabled = state.jobRunning || Boolean(state.toolchain && !state.toolchain.manifest_tool);
   }
@@ -1224,6 +1228,7 @@ function renderHistory(jobs = []) {
     <article class="history-row">
       <div><b>${escapeHTML(job.filename)}</b><small>${historyTime(job.updated_at)} · ${job.status === "done" ? "Tamamlandı" : job.status === "error" ? "Hata" : "Hazır"}</small></div>
       <nav>
+        ${["working", "cancelling"].includes(job.status) ? `<button type="button" data-history-follow="${escapeHTML(job.job_id)}">İşleme dön</button>` : ""}
         ${job.can_reuse ? `<button type="button" data-history-reuse="${escapeHTML(job.job_id)}">Tekrar işle</button>` : ""}
         ${job.has_report ? `<button type="button" data-history-report="${escapeHTML(job.job_id)}" data-history-name="${escapeHTML(job.filename)}">Rapor</button>` : ""}
         ${job.status === "error" ? `<button type="button" data-history-diagnostic="${escapeHTML(job.job_id)}">Hata raporu</button>` : ""}
@@ -1232,6 +1237,7 @@ function renderHistory(jobs = []) {
       </nav>
     </article>`).join("") : `<p class="fineprint">Tamamladığın paketler burada görünür. Kayıtlar yalnızca bu yerel cihazda tutulur.</p>`;
   $$('[data-history-reuse]').forEach((button) => button.addEventListener("click", () => loadHistoryJob(button.dataset.historyReuse)));
+  $$('[data-history-follow]').forEach((button) => button.addEventListener("click", () => restoreJobSession(button.dataset.historyFollow)));
   $$('[data-history-report]').forEach((button) => button.addEventListener("click", () => openReportViewer(button.dataset.historyReport, button.dataset.historyName)));
   $$('[data-history-diagnostic]').forEach((button) => button.addEventListener("click", () => openDiagnosticViewer(button.dataset.historyDiagnostic)));
   $$('[data-history-delete]').forEach((button) => button.addEventListener("click", () => deleteHistoryJob(button.dataset.historyDelete, button.dataset.historyName)));
@@ -1342,6 +1348,7 @@ async function loadHistoryJob(jobId) {
     if (!response.ok) throw new Error(data.error || "Eski işlem açılamadı.");
     state.selectionBusy = false;
     const analysis = data.analysis;
+    $("#selectionRestoreNote").classList.add("hidden");
     state.file = null; state.jobId = data.job_id; state.analysis = analysis; state.operation = "patch";
     clearJobFailure();
     $("#restrictStoreUpdates").checked = false;
@@ -1721,7 +1728,7 @@ function renderTools(tools) {
   $("#optimizeApk").closest(".option").classList.toggle("option-unavailable", !tools.zipalign);
   $("#restrictStoreUpdates").disabled = !tools.manifest_tool;
   $("#restrictStoreUpdates").closest(".option").classList.toggle("option-unavailable", !tools.manifest_tool);
-  if (!tools.manifest_tool) $("#restrictStoreUpdates").checked = false;
+  if (!tools.manifest_tool && !state.jobSelection) $("#restrictStoreUpdates").checked = false;
   for (const selector of ["#customAppName", "#customAppIcon", "#selectAppIcon", "#clearAppAppearance"]) {
     $(selector).disabled = state.jobRunning || !tools.manifest_tool;
   }
@@ -2186,6 +2193,7 @@ function isCurrentPackageSelection(generation) {
 }
 
 function prepareAnalysisView(name, size, split = false) {
+  $("#selectionRestoreNote").classList.add("hidden");
   resetAppAppearance();
   clearJobFailure();
   $("#restrictStoreUpdates").checked = false;
@@ -2196,6 +2204,7 @@ function prepareAnalysisView(name, size, split = false) {
 }
 
 function applyAnalysisResult(data) {
+  state.jobSelection = null;
   resetAppAppearance();
   $("#restrictStoreUpdates").checked = false;
   state.messageTargets = []; state.messageCandidates = [];
@@ -2328,6 +2337,7 @@ function updateProgress(progress, message, events) {
 }
 
 function resetProgress() {
+  $("#jobConnectionNotice")?.classList.add("hidden");
   if (state.progressFrame) cancelAnimationFrame(state.progressFrame);
   state.progressFrame = 0;
   state.displayedProgress = 0;
@@ -2511,17 +2521,40 @@ function renderResultSummary(result) {
   setInlineDisclosureOpen(details, false);
 }
 
+function showJobConnectionNotice(visible) {
+  $("#jobConnectionNotice")?.classList.toggle("hidden", !visible);
+}
+
 async function pollJob() {
   if (!isUiActive() || !state.jobId || state.pollInFlight) return null;
+  const jobId = state.jobId;
   state.pollInFlight = true;
+  const controller = new AbortController();
+  const suspended = () => controller.abort();
+  uiReadController.signal.addEventListener("abort", suspended, { once: true });
+  const delayed = setTimeout(() => { if (isUiActive() && state.jobId === jobId) showJobConnectionNotice(true); }, 4000);
+  const timeout = setTimeout(() => controller.abort(), 12000);
   try {
-    const response = await apiFetch(`/api/jobs/${state.jobId}/state`, { cache: "no-store", headers: clientHeaders() });
+    const response = await apiFetch(`/api/jobs/${jobId}/state`, { cache: "no-store", headers: clientHeaders(), signal: controller.signal });
     const data = await response.json();
+    if (state.jobId !== jobId || !isUiActive()) return null;
+    if ([403, 404].includes(response.status)) {
+      showJobConnectionNotice(false);
+      return { status: "error", message: response.status === 404 ? "İşlem kaydı bulunamadı. İşlem geçmişini kontrol edin." : "Bu işlemin durumunu görüntüleme izni yok." };
+    }
     if (!response.ok) throw new Error(data.error || "İş durumu alınamadı.");
+    if (!["working", "cancelling", "done", "error", "cancelled"].includes(data.status)) throw new Error("İşlem durumu doğrulanamadı.");
+    showJobConnectionNotice(false);
     if (["working", "cancelling", "done"].includes(data.status)) updateProgress(data.progress || 0, data.message || "İşleniyor", data.events);
     return data;
-  } catch { return null; }
-  finally { state.pollInFlight = false; }
+  } catch {
+    if (isUiActive() && state.jobId === jobId) showJobConnectionNotice(true);
+    return null;
+  } finally {
+    clearTimeout(delayed); clearTimeout(timeout);
+    uiReadController.signal.removeEventListener("abort", suspended);
+    state.pollInFlight = false;
+  }
 }
 
 const wait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
@@ -2557,6 +2590,162 @@ async function waitForJobResult(initialResult = null) {
   throw new Error("İşlem oturumu sonlandırıldı.");
 }
 
+function restoreProcessingSelection(selected) {
+  if (!selected || selected.schema !== 1 || !["patch", "clone", "convert"].includes(selected.operation) || !["safe", "balanced", "deep"].includes(selected.profile)) return false;
+  const flags = { strip_debug: "#stripDebug", normalize_dex: "#normalizeDex", optimize_apk: "#optimizeApk", restrict_store_updates: "#restrictStoreUpdates", deobfuscate_resources: "#deobfuscateResources" };
+  if (["patch_ads", ...Object.keys(flags)].some(key => typeof selected[key] !== "boolean")) return false;
+  if (!Array.isArray(selected.message_targets) || selected.message_targets.length > 1000 || selected.message_targets.some(item => typeof item !== "string")) return false;
+  const split = selected.split_selection;
+  if (split && (![split.abis, split.languages].every(Array.isArray) || [...split.abis, ...split.languages].some(item => typeof item !== "string"))) return false;
+  const appearance = selected.app_appearance || {};
+  if (typeof (appearance.name || "") !== "string" || typeof (appearance.icon || "") !== "string") return false;
+  if (appearance.icon && (!/^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(appearance.icon) || appearance.icon.length > 700000)) return false;
+  state.profile = selected.profile;
+  setOperation(selected.operation);
+  state.patchAdsSelected = selected.patch_ads;
+  $("#patchAds").checked = selected.patch_ads;
+  for (const [key, selector] of Object.entries(flags)) $(selector).checked = selected[key];
+  $("#clonePackageName").value = typeof selected.clone_package_name === "string" ? selected.clone_package_name : "";
+  state.messageTargets = [...selected.message_targets];
+  if (split) {
+    $$('[data-split-abi]').forEach(input => { input.checked = split.abis.includes(input.value); });
+    $$('[data-split-language]').forEach(input => { input.checked = split.languages.includes(input.value); });
+    updateSplitSelection();
+  }
+  $("#customAppName").value = appearance.name || "";
+  state.appearanceIcon = appearance.icon || "";
+  $("#appIconSelection").textContent = state.appearanceIcon ? "Önceki işlemde seçilen simge" : "Mevcut simge korunacak";
+  $$(".operation").forEach(button => {
+    const active = button.dataset.operation === selected.operation && (selected.operation !== "patch" || selected.patch_ads);
+    button.classList.toggle("selected", active); button.setAttribute("aria-pressed", String(active));
+  });
+  renderAppearancePreview(); updateActionState();
+  return true;
+}
+
+function renderWorkingSelection(selected) {
+  const summary = selected ? processingSelectionSummary({
+    operation: selected.operation, profile: selected.profile, patchAds: selected.patch_ads, canRun: true,
+    split: Boolean(state.analysis?.split_merged), hasAbiChoices: Boolean(state.analysis?.split_options?.abis?.length),
+    hasLanguageChoices: Boolean(state.analysis?.split_options?.languages?.length),
+    abis: selected.split_selection?.abis || [], languages: selected.split_selection?.languages || [],
+    clonePackage: selected.clone_package_name, messageCount: selected.message_targets?.length || 0,
+    appearanceName: selected.app_appearance?.name, appearanceIcon: Boolean(selected.app_appearance?.icon),
+    stripDebug: selected.strip_debug, normalizeDex: selected.normalize_dex, optimizeApk: selected.optimize_apk,
+    restrictStoreUpdates: selected.restrict_store_updates, deobfuscateResources: selected.deobfuscate_resources,
+  }) : null;
+  $("#workingSelectionRows").replaceChildren(...(summary?.rows || []).map(([label, value]) => {
+    const row = document.createElement("div"), name = document.createElement("dt"), text = document.createElement("dd");
+    name.textContent = label; text.textContent = value; row.append(name, text); return row;
+  }));
+  $("#workingSelectionNote").textContent = selected ? "Bu işleme gönderilen seçenekler gösterilir; işlem kendiliğinden yeniden başlatılmaz." : "Bu eski işleme ait seçenekler kaydedilmemiş. Geçerli ayarlar doğrulanamıyor.";
+  setInlineDisclosureOpen($("#workingSelection"), false);
+}
+
+function rememberActiveJob(jobId) {
+  if (!/^[a-f0-9]{32}$/.test(jobId)) return;
+  const record = JSON.stringify({ jobId, owner: clientId, savedAt: Date.now() });
+  for (const storage of ["sessionStorage", "localStorage"]) {
+    try { globalThis[storage].setItem(ACTIVE_JOB_KEY, record); } catch {}
+  }
+}
+
+function rememberedActiveJob() {
+  for (const storage of ["sessionStorage", "localStorage"]) {
+    try {
+      const record = JSON.parse(globalThis[storage].getItem(ACTIVE_JOB_KEY) || "null");
+      if (record?.owner === clientId && /^[a-f0-9]{32}$/.test(record.jobId)
+          && Number.isFinite(record.savedAt) && Date.now() - record.savedAt < 14 * 86400000) return record.jobId;
+    } catch {}
+  }
+  return null;
+}
+
+function forgetActiveJob(jobId) {
+  for (const storage of ["sessionStorage", "localStorage"]) {
+    try {
+      if (JSON.parse(globalThis[storage].getItem(ACTIVE_JOB_KEY) || "null")?.jobId === jobId) globalThis[storage].removeItem(ACTIVE_JOB_KEY);
+    } catch {}
+  }
+}
+
+async function restoreJobSession(jobId = rememberedActiveJob()) {
+  if (!jobId || !/^[a-f0-9]{32}$/.test(jobId) || state.jobRunning || state.selectionBusy || state.sessionRestoreInFlight) return;
+  state.sessionRestoreInFlight = true;
+  const originalAnalysis = state.analysis;
+  const originalFile = state.file;
+  const originalGeneration = state.selectionGeneration;
+  let attached = false;
+  try {
+    const response = await apiFetch(`/api/jobs/${jobId}/session`, { cache: "no-store", headers: clientHeaders() });
+    if ([403, 404].includes(response.status)) { forgetActiveJob(jobId); return; }
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "Önceki işlem durumu alınamadı.");
+    if (state.jobRunning || state.selectionBusy || state.selectionGeneration !== originalGeneration || state.analysis !== originalAnalysis || state.file !== originalFile) return;
+    if (data.job_id !== jobId || !data.analysis || !data.job) throw new Error("İşlem oturumu doğrulanamadı.");
+    state.file = null;
+    prepareAnalysisView(data.analysis.filename || "Paket.apk", data.analysis.size || 0, Boolean(data.analysis.split_merged));
+    applyAnalysisResult(data);
+    const restored = restoreProcessingSelection(data.selection);
+    state.jobSelection = restored ? data.selection : null;
+    $("#selectionRestoreNote").classList.toggle("hidden", restored);
+    renderWorkingSelection(state.jobSelection);
+    if (["working", "cancelling"].includes(data.job.status)) {
+      attached = true; setJobRunning(true); rememberActiveJob(jobId);
+      resetProgress(); setStep(3); showView("#workingView");
+      updateProgress(data.job.progress || 0, data.job.message, data.job.events);
+      $("#cancelJobButton").disabled = data.job.status === "cancelling";
+      $("#cancelJobButton").textContent = data.job.status === "cancelling" ? "İptal ediliyor…" : "İşlemi iptal et";
+      const result = await waitForJobResult();
+      forgetActiveJob(jobId);
+      await renderCompletedJob(result);
+    } else if (data.job.status === "done" && data.job.result) {
+      forgetActiveJob(jobId); await renderCompletedJob(data.job.result);
+    } else {
+      forgetActiveJob(jobId); setStep(2); showView("#analysisView");
+      if (["error", "cancelled"].includes(data.job.status)) {
+        const error = new Error(data.job.message || "Önceki işlem tamamlanamadı.");
+        error.jobStatus = data.job.status; error.jobFailure = data.job.failure; renderJobFailure(error);
+      }
+    }
+    refreshHistory();
+  } catch (error) {
+    if (attached && state.jobId === jobId) {
+      if (["cancelled", "error"].includes(error.jobStatus)) forgetActiveJob(jobId);
+      setStep(2); showView("#analysisView"); renderJobFailure(error);
+    } else toast("Önceki işlem durumuna ulaşılamadı. İşlem geçmişinden yeniden kontrol edebilirsin.");
+  } finally {
+    if (attached && state.jobId === jobId) { setJobRunning(false); state.pollInFlight = false; }
+    state.sessionRestoreInFlight = false;
+  }
+}
+
+function restoreInitialJobSession() {
+  let notificationJob = "";
+  try { notificationJob = globalThis.AndroidThemeBridge?.consumeNotificationJob?.() || ""; } catch {}
+  return /^[a-f0-9]{32}$/.test(notificationJob)
+    ? globalThis.onJobNotification(notificationJob) : restoreJobSession();
+}
+
+async function renderCompletedJob(result) {
+  updateProgress(100, "Tamamlandı"); await waitForProgress(100);
+  const patchCount = (result.patches?.void_patches || 0) + (result.patches?.boolean_patches || 0);
+  renderResultSummary(result);
+  $("#resultTitle").textContent = result.operation === "clone" ? "Klon APK oluşturuldu." : result.operation === "convert" ? "Tek APK başarıyla oluşturuldu." : result.cleaning_profile_applied === null ? "İşlenmiş APK kullanıma hazır." : "Temizlenmiş APK kullanıma hazır.";
+  $("#resultStats").innerHTML = result.operation === "clone"
+    ? `<div><b>${result.clone?.dex_strings_changed || 0}</b><span>DEX kimliği</span></div><div><b>${result.clone?.changes?.length || 0}</b><span>Manifest alanı</span></div><div><b>${patchCount}</b><span>Reklam yaması</span></div><div><b>${result.layouts?.count || 0}</b><span>XML alanı</span></div>`
+    : `<div><b>${patchCount}</b><span>DEX yaması</span></div><div><b>${result.manifest?.count || 0}</b><span>Manifest kaydı</span></div><div><b>${result.layouts?.count || 0}</b><span>XML alanı</span></div><div><b>${result.patches?.debug_directives_removed || 0}</b><span>Hata ayıklama yönergesi</span></div>`;
+  const outputFilename = result.output || "APK-Cleaner-Studio-output.apk";
+  state.outputUrl = `/api/jobs/${state.jobId}/download?filename=${encodeURIComponent(outputFilename)}`;
+  state.outputFilename = outputFilename;
+  $("#downloadButton").href = state.outputUrl; $("#downloadButton").download = outputFilename;
+  $$(".native-android-action").forEach(button => button.classList.toggle("hidden", document.documentElement.dataset.embedded !== "android"));
+  $("#reportButton").dataset.jobId = state.jobId;
+  setStep(4); showView("#resultView"); focusProcessingView("#resultView");
+  refreshHistory();
+  if (!result.signed) toast(result.sign_warning || "Çıktı imzalanamadı.");
+}
+
 async function runJob() {
   if (!state.jobId || state.jobRunning || state.selectionBusy || state.preflightBusy || state.sessionRestoreInFlight) return;
   if (state.appearanceLoading) { toast("Simge hazırlanıyor; tamamlanmasını bekle."); return; }
@@ -2570,6 +2759,7 @@ async function runJob() {
     toast("İşlem için önce eksik bileşenleri hazırla."); $("#toolCard").scrollIntoView({ behavior: "smooth", block: "center" }); return;
   }
   setJobRunning(true);
+  rememberActiveJob(state.jobId);
   clearJobFailure();
   const cancelButton = $("#cancelJobButton");
   cancelButton.disabled = false; cancelButton.textContent = "İşlemi iptal et";
@@ -2586,27 +2776,15 @@ async function runJob() {
       message_targets: state.messageTargets,
       split_selection: state.analysis?.split_merged ? state.splitSelection : null
     };
+    state.jobSelection = { ...payload, schema: 1 };
+    renderWorkingSelection(state.jobSelection);
     const response = await apiFetch("/api/clean", { method: "POST", headers: clientHeaders({ "Content-Type": "application/json" }), body: JSON.stringify(payload) });
     const data = await response.json(); if (!response.ok) throw new Error(data.error || "İşlem başarısız.");
     const result = await waitForJobResult(data.result || null);
-    updateProgress(100, "Tamamlandı"); await waitForProgress(100);
-    const patchCount = result.patches.void_patches + result.patches.boolean_patches;
-    renderResultSummary(result);
-    $("#resultTitle").textContent = result.operation === "clone" ? "Klon APK oluşturuldu." : result.operation === "convert" ? "Tek APK başarıyla oluşturuldu." : result.cleaning_profile_applied === null ? "İşlenmiş APK kullanıma hazır." : "Temizlenmiş APK kullanıma hazır.";
-    $("#resultStats").innerHTML = result.operation === "clone"
-      ? `<div><b>${result.clone?.dex_strings_changed || 0}</b><span>DEX kimliği</span></div><div><b>${result.clone?.changes?.length || 0}</b><span>Manifest alanı</span></div><div><b>${patchCount}</b><span>Reklam yaması</span></div><div><b>${result.layouts?.count || 0}</b><span>XML alanı</span></div>`
-      : `<div><b>${patchCount}</b><span>DEX yaması</span></div><div><b>${result.manifest.count}</b><span>Manifest kaydı</span></div><div><b>${result.layouts?.count || 0}</b><span>XML alanı</span></div><div><b>${result.patches.debug_directives_removed || 0}</b><span>Hata ayıklama yönergesi</span></div>`;
-    const outputFilename = result.output || "APK-Cleaner-Studio-output.apk";
-    state.outputUrl = `/api/jobs/${state.jobId}/download?filename=${encodeURIComponent(outputFilename)}`;
-    state.outputFilename = outputFilename;
-    $("#downloadButton").href = state.outputUrl;
-    $("#downloadButton").download = outputFilename;
-    $$(".native-android-action").forEach((button) => button.classList.toggle("hidden", document.documentElement.dataset.embedded !== "android"));
-    $("#reportButton").dataset.jobId = state.jobId;
-    setStep(4); showView("#resultView"); focusProcessingView("#resultView");
-    refreshHistory();
-    if (!result.signed) toast(result.sign_warning || "Çıktı imzalanamadı.");
+    forgetActiveJob(state.jobId);
+    await renderCompletedJob(result);
   } catch (error) {
+    if (["cancelled", "error"].includes(error.jobStatus)) forgetActiveJob(state.jobId);
     setStep(2); showView("#analysisView");
     renderJobFailure(error);
     $("#jobFailure").focus({ preventScroll: true });
@@ -2617,15 +2795,31 @@ async function runJob() {
 }
 
 async function cancelJob() {
-  if (!state.jobRunning || !state.jobId) return;
+  if (!state.jobRunning || !state.jobId || state.cancelPromptOpen) return;
+  const jobId = state.jobId;
   const button = $("#cancelJobButton");
+  if (button.disabled) return;
+  state.cancelPromptOpen = true;
+  let confirmed;
+  try {
+    const pending = confirmAction("İşlem iptal edilsin mi?", "Devam eden işlem güvenli biçimde durdurulacak ve tamamlanmamış çıktı kullanılamayacak. Orijinal paket korunur.", "Evet, işlemi iptal et", true);
+    state.cancelDialog = activeDialog;
+    confirmed = await pending;
+  } finally {
+    state.cancelPromptOpen = false;
+    state.cancelDialog = null;
+  }
+  // The job may finish (or be replaced) while its confirmation is open.
+  if (!confirmed || !state.jobRunning || state.jobId !== jobId || button.disabled) return;
   button.disabled = true; button.textContent = "İptal ediliyor…";
   try {
-    const response = await apiFetch(`/api/jobs/${state.jobId}/cancel`, { method: "POST", headers: clientHeaders() });
+    const response = await apiFetch(`/api/jobs/${jobId}/cancel`, { method: "POST", headers: clientHeaders() });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || "İşlem iptal edilemedi.");
+    if (!state.jobRunning || state.jobId !== jobId) return;
     updateProgress(state.displayedProgress, "İşlem güvenli biçimde durduruluyor");
   } catch (error) {
+    if (!state.jobRunning || state.jobId !== jobId) return;
     button.disabled = false; button.textContent = "İşlemi iptal et"; toast(error.message);
   }
 }
@@ -2844,6 +3038,7 @@ applyTheme(localStorage.getItem(THEME_KEY) || "system", false); startHeroRotatio
 renderSavedPresets();
 if (!embeddedAndroid) registerClientDetails();
 refreshStatus(); refreshHistory();
+restoreInitialJobSession();
 checkForUpdates();
 requestBackgroundPolicy();
 $("#batterySettingsButton").addEventListener("click", requestBatteryExemption);
