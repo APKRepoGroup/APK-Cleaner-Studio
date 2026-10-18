@@ -1,0 +1,32 @@
+{
+  "version": "0.6.3-dev.5",
+  "source_snapshot_commit": "868c5b4f55d8789e14cf3f44477becc787402be7",
+  "organized_source_snapshot_commit": "c5692a5a701d44d53d6be4f8b9f33f002531d8ef",
+  "release_notes_at_build": {
+    "filename": "RELEASE-NOTES-v0.6.3-dev.5.md",
+    "sha256": "55625273a77c02346bc815fc54a486a1161bd6564f1e8c0e7e57fb6b6b59c757"
+  },
+  "artifacts": {
+    "Android": {
+      "source_snapshot_commit": "868c5b4f55d8789e14cf3f44477becc787402be7",
+      "organized_source_snapshot_commit": "c5692a5a701d44d53d6be4f8b9f33f002531d8ef",
+      "filename": "APK-Cleaner-Studio-v0.6.3-dev.5-Android.apk",
+      "size_bytes": 32599412,
+      "sha256": "1a1fbcc3c63ce85df5bc88f7c36e04457775648f13131d58ab17321512c925a3"
+    },
+    "Windows": {
+      "source_snapshot_commit": "3efd9737de90c56a5c1aab1922802a2a657cc80c",
+      "organized_source_snapshot_commit": "322c85cd6542b5b68d57ad99355ccf042ed512b5",
+      "filename": "APK-Cleaner-Studio-v0.6.3-dev.5-Windows.exe",
+      "size_bytes": 30663148,
+      "sha256": "fdad44c441da530aa98374639a46c0b75348450e7df1135b46bbe88b7ce0efdb"
+    },
+    "Termux": {
+      "source_snapshot_commit": "3efd9737de90c56a5c1aab1922802a2a657cc80c",
+      "organized_source_snapshot_commit": "322c85cd6542b5b68d57ad99355ccf042ed512b5",
+      "filename": "APK-Cleaner-Studio-v0.6.3-dev.5-Termux.zip",
+      "size_bytes": 16554099,
+      "sha256": "6387e9ff4d3a162e14f262f843f26bd6ef6ad55fdc662afc2e4406250d00beb6"
+    }
+  }
+}

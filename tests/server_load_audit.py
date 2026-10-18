@@ -14,6 +14,7 @@ import time
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from package_audit import VERSION
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -70,7 +71,7 @@ def main() -> int:
         targets = [urls[index % 2] for index in range(400)]
         with ThreadPoolExecutor(max_workers=40) as pool:
             results = list(pool.map(fetch, targets))
-        failures = [row for row in results if row[0] != 200 or row[2].get("version") != "0.6.3-dev.4"]
+        failures = [row for row in results if row[0] != 200 or row[2].get("version") != VERSION]
         if failures:
             raise RuntimeError(f"Yük testinde {len(failures)} hatalı yanıt alındı.")
         latencies = sorted(row[1] for row in results)

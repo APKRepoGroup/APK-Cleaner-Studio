@@ -10,7 +10,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "0.6.3-dev.4"
+VERSION = "0.6.3-dev.5"
 APK = ROOT / "outputs" / f"APK-Cleaner-Studio-v{VERSION}-Android.apk"
 SIGNING_DIR = Path(os.environ.get("LOCALAPPDATA", "")) / "APKCleanerStudio" / "release-signing"
 
@@ -91,10 +91,12 @@ def main() -> int:
 
     assert_release_credentials_absent(raw)
     manifest = manifest_text()
+    if "com.chaquo.python.android.PyApplication" in manifest:
+        raise RuntimeError("APK, ilk çizimden önce Python başlatan eski Application sınıfını kullanıyor.")
     required = (
         'package="com.apkrepo.apkcleanerstudio"',
-        'versionCode(0x0101021b)=6304',
-        'versionName(0x0101021c)="0.6.3-dev.4"',
+        'versionCode(0x0101021b)=6305',
+        'versionName(0x0101021c)="0.6.3-dev.5"',
         'targetSdkVersion(0x01010270)=37',
         'allowBackup(0x01010280)=false',
         'usesCleartextTraffic(0x010104ec)=false',

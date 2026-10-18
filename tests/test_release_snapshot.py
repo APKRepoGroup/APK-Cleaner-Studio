@@ -8,6 +8,14 @@ from package_audit import VERSION, release_build_snapshot
 
 
 class ReleaseSnapshotTests(unittest.TestCase):
+    def test_audits_follow_the_current_source_version(self):
+        root = Path(__file__).resolve().parents[1]
+        self.assertEqual(VERSION, json.loads((root / "package.json").read_text(encoding="utf-8"))["version"])
+        for name in ("final_artifact_workflow_audit.py", "server_load_audit.py"):
+            source = (root / "tests" / name).read_text(encoding="utf-8")
+            self.assertIn("from package_audit import VERSION", source)
+            self.assertNotIn('VERSION = "0.6.3-dev.', source)
+
     def setUp(self):
         temp = tempfile.TemporaryDirectory(prefix="release-snapshot-")
         self.addCleanup(temp.cleanup)

@@ -17,14 +17,15 @@ import sys
 import tempfile
 import time
 import urllib.request
+import urllib.error
 import uuid
 import zipfile
 from pathlib import Path
 from deep_asset_fixture import AD_DEX, NESTED_AD_DEX, RETAINED_DEX, build_asset_fixture
 from test_app_appearance import image
+from package_audit import VERSION
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "0.6.3-dev.4"
 FIXTURE = ROOT / "work/hello-with-ad-call.apk"
 OUTPUTS = ROOT / "outputs"
 
@@ -35,7 +36,7 @@ def digest(path):
 
 def http(base, route, body=None, content_type="application/json"):
     request = urllib.request.Request(base + route, data=body, headers={
-        "X-Client-ID": "dev4-final-artifact-audit", "Content-Type": content_type,
+        "X-Client-ID": "final-artifact-audit", "Content-Type": content_type,
     })
     with urllib.request.urlopen(request, timeout=20) as response:
         return response.read()
@@ -183,14 +184,23 @@ def packaged_server(label, command, folder, asset_fixture, user_fixture=None, se
                                 "appearance_checked": bool(appearance), "compatibility_metadata": True,
                                 "download_size_matches": True, "asset_dex_fixture": source == asset_fixture,
                                 "version_code": result["store_updates"]["version_code_after"] if result["store_updates"] else None})
-            # A malformed opt-in must produce a useful diagnostic, not a silent success.
+            # Invalid options are rejected before starting a worker or changing its state.
             job_id = upload_job()
             job_ids.append(job_id)
-            http(base, "/api/clean", json.dumps({"job_id": job_id, "patch_ads": False, "restrict_store_updates": "true"}).encode())
+            try:
+                http(base, "/api/clean", json.dumps({"job_id": job_id, "patch_ads": False, "restrict_store_updates": "true"}).encode())
+            except urllib.error.HTTPError as error:
+                rejected = json.loads(error.read())
+                assert error.code == 400 and "geçersiz" in rejected["error"], rejected
+            else:
+                raise AssertionError("Invalid boolean option was accepted")
+            assert json.loads(http(base, f"/api/jobs/{job_id}/state"))["status"] == "ready"
+            # A worker-side error still exports a useful Turkish diagnostic.
+            http(base, "/api/clean", json.dumps({"job_id": job_id, "patch_ads": False, "operation": "clone", "clone_package_name": "invalid"}).encode())
             failed = wait_job(base, job_id)
-            assert failed["status"] == "error" and "Play Store" in failed["message"], failed
+            assert failed["status"] == "error" and "Klon paket adı" in failed["message"], failed
             diagnostic = http(base, f"/api/jobs/{job_id}/diagnostic").decode("utf-8")
-            assert "Play Store" in diagnostic and "geçersiz" in diagnostic, diagnostic
+            assert "Klon paket adı" in diagnostic and "geçerli bölüm" in diagnostic, diagnostic
             for job_id in job_ids:
                 deleted = json.loads(http(base, f"/api/jobs/{job_id}/delete", b""))
                 assert deleted["ok"], deleted
