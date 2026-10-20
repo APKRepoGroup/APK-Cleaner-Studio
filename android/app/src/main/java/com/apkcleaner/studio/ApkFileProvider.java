@@ -22,6 +22,12 @@ public final class ApkFileProvider extends ContentProvider {
                 .appendPath("native-packages").appendPath(file.getName()).build();
     }
 
+    public static Uri uriFor(File file, String displayName, String authority) {
+        // The physical UUID keeps simultaneous downloads isolated; receivers
+        // see the real output name both in the URI and DISPLAY_NAME metadata.
+        return uriFor(file, authority).buildUpon().appendPath(displayName).build();
+    }
+
     public static Uri uriForInstalled(String packageName, String displayName, String authority) {
         return new Uri.Builder().scheme("content").authority(authority)
                 .appendPath("installed-package").appendPath(packageName).appendPath(displayName).build();
@@ -49,17 +55,23 @@ public final class ApkFileProvider extends ContentProvider {
                 throw new FileNotFoundException("Kurulu uygulama bulunamadı.");
             }
         }
-        if (uri.getPathSegments().size() != 2 || !"native-packages".equals(uri.getPathSegments().get(0))) {
+        int segments = uri.getPathSegments().size();
+        if ((segments != 2 && segments != 3) || !"native-packages".equals(uri.getPathSegments().get(0))) {
             throw new FileNotFoundException("Geçersiz paket adresi.");
         }
         File root = new File(getContext().getCacheDir(), "native-packages");
-        File file = new File(root, new File(uri.getLastPathSegment()).getName());
+        String storedName = uri.getPathSegments().get(1);
+        if (!storedName.equals(new File(storedName).getName()) || storedName.indexOf('\\') >= 0) {
+            throw new FileNotFoundException("Geçersiz paket adı.");
+        }
+        File file = new File(root, storedName);
         try {
             if (!file.getCanonicalPath().startsWith(root.getCanonicalPath() + File.separator) || !file.isFile()) {
                 throw new FileNotFoundException("Paket bulunamadı.");
             }
         } catch (IOException error) { throw new FileNotFoundException(error.getMessage()); }
-        return new ResolvedFile(file, file.getName());
+        String displayName = segments == 3 ? new File(uri.getLastPathSegment()).getName() : file.getName();
+        return new ResolvedFile(file, displayName);
     }
 
     @Override public boolean onCreate() { return true; }

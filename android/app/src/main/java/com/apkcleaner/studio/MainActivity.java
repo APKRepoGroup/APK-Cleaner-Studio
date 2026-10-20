@@ -5,6 +5,7 @@ import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.ActivityNotFoundException;
+import android.content.ClipData;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.content.pm.PackageInfo;
@@ -885,7 +886,7 @@ public final class MainActivity extends Activity {
 
         @JavascriptInterface public void shareOutput(String url, String filename) {
             executeIo(() -> {
-                try { shareFile(downloadNativePackage(url, filename, "processed")); }
+                try { shareFile(downloadNativePackage(url, filename, "processed"), filename); }
                 catch (Exception error) { publishNativeAction("share", jsonError(messageOf(error, "Çıktı paylaşılamadı."))); }
             });
         }
@@ -1364,14 +1365,21 @@ public final class MainActivity extends Activity {
     }
 
     private void shareFile(File file) {
-        shareUri(nativeUri(file), file.getName());
+        shareFile(file, file.getName());
+    }
+
+    private void shareFile(File file, String displayName) {
+        String filename = safeShareFilenamePart(displayName, "APK-Cleaner-Studio-output.apk");
+        shareUri(ApkFileProvider.uriFor(file, filename, getPackageName() + ".files"), filename);
     }
 
     private void shareUri(Uri uri, String filename) {
         postToUi(() -> {
             Intent share = new Intent(Intent.ACTION_SEND).setType(filename.toLowerCase(Locale.ROOT).endsWith(".apk")
                     ? "application/vnd.android.package-archive" : "application/zip")
-                    .putExtra(Intent.EXTRA_STREAM, uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                    .putExtra(Intent.EXTRA_STREAM, uri).putExtra(Intent.EXTRA_TITLE, filename)
+                    .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            share.setClipData(ClipData.newRawUri(filename, uri));
             try { startActivity(Intent.createChooser(share, "Uygulama paketini paylaş")); publishNativeAction("share", "{\"status\":\"opened\"}"); }
             catch (ActivityNotFoundException | SecurityException error) { publishNativeAction("share", jsonError("Paylaşım uygulaması bulunamadı.")); }
         });
