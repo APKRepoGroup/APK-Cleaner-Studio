@@ -1,15 +1,18 @@
 # -*- mode: python ; coding: utf-8 -*-
 
 from pathlib import Path
+from PyInstaller.utils.hooks import collect_data_files
 
 project = Path.cwd()
 
 a = Analysis(
-    [str(project / "studio" / "server.py")],
+    [str(project / "studio" / "desktop.py")],
     pathex=[str(project / "studio")],
     binaries=[],
-    datas=[
+    datas=collect_data_files("webview", subdir="js") + [
         (str(project / "studio" / "web"), "web"),
+        (str(project / "studio" / "desktop"), "desktop"),
+        (str(project / "public" / "favicon.ico"), "desktop"),
         (str(project / "studio" / "profiles.json"), "."),
         (str(project / "studio" / "update-channel.json"), "."),
         (str(project / "studio" / "device-catalog.json"), "."),
@@ -21,11 +24,11 @@ a = Analysis(
         (str(project / "studio" / "tools" / "zipalign-win.exe"), "tools"),
         (str(project / "studio" / "tools" / "output-signing.p12"), "tools"),
     ],
-    hiddenimports=[],
+    hiddenimports=["webview.platforms.winforms", "webview.platforms.edgechromium", "webview.platforms.win32", "clr", "clr_loader", "_cffi_backend"],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[],
+    excludes=["PyQt5", "PyQt6", "PySide2", "PySide6", "qtpy", "gi", "gtk", "webview.platforms.android", "webview.platforms.cocoa", "webview.platforms.gtk", "webview.platforms.qt"],
     noarchive=False,
     optimize=0,
 )
@@ -45,7 +48,7 @@ exe = EXE(
     upx=True,
     upx_exclude=[],
     runtime_tmpdir=None,
-    console=True,
+    console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,

@@ -1,0 +1,4 @@
+/* Only the Windows-owned loopback window loads this stylesheet. */
+html[data-desktop-native] #mobileHttpsBanner,
+html[data-desktop-native] #toolCertificate,
+html[data-desktop-native] #clientCard { display:none!important; }

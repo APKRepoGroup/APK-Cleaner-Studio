@@ -2,6 +2,13 @@
 
 Bu başlatıcı uygulamayı WebView2 tabanlı kendi Windows penceresinde açar. Dağıtım derlemesi değildir; mevcut EXE, konsol/tarayıcı başlatıcıları ve paketleme ayarları değiştirilmedi.
 
+## Kullanıcı kararı — 2026-10-20
+
+- Dev.6 Windows sürümü için mevcut arayüzü kendi penceresinde açan ilk prototip esas alınacak. İkinci prototipin masaüstü düzeni bu sürüme taşınmayacak.
+- 2026-10-21: ilk prototipin pencere davranışı `studio/desktop.py` üzerinden dev.6 Windows dağıtımına entegre edildi ve yalnız Windows EXE'si üretildi. Normal sürümde güncelleme ve bileşen kurulumu açıktır; aşağıdaki indirme/güncelleme kısıtlamaları yalnız eski deneme başlatıcısına aittir.
+- İkinci prototip ayrı olarak korunacak; geliştirmesi şimdilik ertelendi. 0.6.4 veya 0.6.5 döneminde yeniden değerlendirilebilir; belirli bir sürüm için yayın taahhüdü yoktur.
+- İkinci düzen ileride yeterli çalışma ve kullanıcı testi sonrasında ele alınacak; mevcut uygulamanın üzerine yazılmayacak.
+
 - Bu bilgisayarda hazırlanan `outputs/APK Cleaner Studio - Pencere Prototipi.lnk` kısayoluna çift tıklayın. CMD penceresi açılmaz.
 - Normal arayüz ve gerçek yerel işlem motoru kullanılır. Prototip dosyaları ve geçmişi `.codex-temp-dev6/windows-prototype/data` altında ayrıdır; normal uygulama verilerine erişilmez.
 - Yalnız `127.0.0.1:18082` üzerinden çalışır. LAN erişimi, sertifika kurulumu, otomatik güncelleme ve bileşen indirme kapalıdır. Eksik bileşen otomatik indirilmez.

@@ -84,7 +84,9 @@ class WindowsPrototypeTests(unittest.TestCase):
                     host.stop()
 
     def test_console_distribution_and_old_launchers_are_not_replaced(self):
-        self.assertIn("console=True", (ROOT / "packaging/APK-Cleaner-Studio-Windows.spec").read_text(encoding="utf-8"))
+        # Dev.6 now promotes preview v1 into the console-free distribution;
+        # source console launchers remain available for diagnostics/Termux.
+        self.assertIn("console=False", (ROOT / "packaging/APK-Cleaner-Studio-Windows.spec").read_text(encoding="utf-8"))
         self.assertIn('studio\\server.py" --open', (ROOT / "start.ps1").read_text(encoding="utf-8"))
         self.assertIn('"%~dp0start.ps1"', (ROOT / "APK-Cleaner-Studio.bat").read_text(encoding="utf-8"))
 

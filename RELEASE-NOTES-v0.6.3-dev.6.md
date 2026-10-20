@@ -2,6 +2,7 @@
 
 ### 🛠️ İyileştirmeler
 
+- Windows sürümü artık konsol veya tarayıcı sekmesi açmadan kendi uygulama penceresinde çalışır.
 - Yinelenen Türkçe Android metin kaynakları kaldırıldı; mevcut metinler varsayılan kaynakta korundu.
 
 ### 🐛 Hata Düzeltmeleri

@@ -96,6 +96,10 @@ Android sürümüne özgü özellikler:
 
 ## Windows
 
+Dev.6 geliştirme sürümünde Windows EXE'si mevcut arayüzü kendi uygulama penceresinde açar; konsol veya tarayıcı sekmesi açılmaz. Pencere kapatıldığında yerel motor da kapanır; analiz veya işlem sürüyorsa önce onay istenir. Çalışma dosyaları ve geçmiş aynı kullanıcı veri klasöründe korunur. Yeni masaüstü menü düzeni bu sürüme dahil değildir.
+
+Bu pencere yalnızca `127.0.0.1` üzerinde çalışır; LAN ve sertifika kurulumu gerektirmez. Günlükler kullanıcı veri klasöründeki `logs/desktop.log` dosyasındadır. Windows 10/11 üzerinde Microsoft Edge WebView2 Runtime ve .NET Framework 4.8 gerekir; aşağıdaki konsol/LAN açıklamaları önceki Windows sürümleri ve kaynak sunucu başlatıcıları içindir.
+
 `APK-Cleaner-Studio-v0.6.2-Windows.exe` dosyasını çalıştırman yeterlidir. Ayrı bir Python kurulumu veya BAT dosyası gerekmez. Java ya da gerekli işlem bileşenleri eksikse arayüzdeki **Eksik bileşenleri hazırla** düğmesi, doğrulanmış taşınabilir araç zincirini kullanıcı klasörüne kurar.
 
 Uygulama varsayılan olarak yerel ağda dinler. Konsolda bu bilgisayar için `127.0.0.1` adresi ve aynı güvenilir ağdaki diğer cihazlar için yerel ağ adresi gösterilir. LAN erişimi kimlik doğrulaması içermez; yalnızca güvendiğin özel ağlarda kullanılmalıdır.
