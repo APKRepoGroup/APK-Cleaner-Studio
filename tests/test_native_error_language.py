@@ -12,8 +12,7 @@ class NativeErrorLanguageTests(unittest.TestCase):
         import xml.etree.ElementTree as ET
         resources = ROOT / "android/app/src/main/res"
         default = {node.attrib["name"]: node.text for node in ET.parse(resources / "values/strings.xml").getroot()}
-        turkish = {node.attrib["name"]: node.text for node in ET.parse(resources / "values-tr/strings.xml").getroot()}
-        self.assertEqual(default, turkish)
+        self.assertFalse((resources / "values-tr/strings.xml").exists())
         self.assertEqual(default["load_error"], "Yerel motor başlatılamadı.")
         self.assertEqual(default["save_failed"], "Çıktı kaydedilemedi.")
 

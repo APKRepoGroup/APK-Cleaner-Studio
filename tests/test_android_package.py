@@ -320,7 +320,7 @@ class AndroidPackageTests(unittest.TestCase):
 
     def test_android_download_bridge_preserves_generated_apk_filename(self):
         activity = (ANDROID / "app" / "src" / "main" / "java" / "com" / "apkcleaner" / "studio" / "MainActivity.java").read_text(encoding="utf-8")
-        strings = (ANDROID / "app" / "src" / "main" / "res" / "values-tr" / "strings.xml").read_text(encoding="utf-8")
+        strings = (ANDROID / "app" / "src" / "main" / "res" / "values" / "strings.xml").read_text(encoding="utf-8")
         self.assertIn('getQueryParameter("filename")', activity)
         self.assertIn('"APK-Cleaner-Studio-output.apk"', activity)
         self.assertIn("suggestedDownloadFilename", activity)
