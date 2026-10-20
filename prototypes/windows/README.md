@@ -25,3 +25,21 @@ pythonw prototypes/windows/desktop_preview.py
 ```
 
 Bu prototip henüz yayımlanan pakete veya ana Windows dağıtımına eklenmedi.
+
+## İkinci deneme: masaüstüne özel düzen
+
+`outputs/APK Cleaner Studio - Masaustu Duzen Prototipi.lnk` ayrı bir denemedir.
+`desktop_workspace.py` ile açılır; `127.0.0.1:18083` kullanır. Solda bölüm menüsü,
+ayrı geçmiş/depolama/motor ekranları ve doğrudan paket çalışma alanı sunar.
+Sayfalar arasında geçiş seçili paketi veya süren işlemi sıfırlamaz.
+
+Veriler, günlük ve WebView profili `.codex-temp-dev6/windows-workspace-prototype`
+altında ayrıdır. İlk prototipin dosyaları ve verileri de değiştirilmez. Düzen
+uyarlaması yalnız bu başlatıcının sunduğu yanıta eklenir; `studio/web` kaynakları
+ve dağıtım başlatıcıları aynen korunur. Önceki denemeye dönmek için bu pencereyi
+kapatıp ilk prototip kısayolunu açın.
+
+Arayüz kontrolü (ikinci prototip açıkken): `node tests/windows-workspace-ui.mjs`.
+Playwright geliştirme ortamında bulunmalıdır; gerekirse `APK_CLEANER_PLAYWRIGHT`
+değişkeni mevcut Playwright modülünün import yolunu gösterebilir. Test, gerçek
+işlem başlatmadan ekran geçişlerini, temaları, filtreyi ve iptal onayını denetler.

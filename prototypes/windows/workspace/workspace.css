@@ -1,0 +1,95 @@
+/* Loaded exclusively by desktop_workspace.py. Never part of normal builds. */
+html[data-desktop-workspace] { height:100%; scrollbar-gutter:auto; }
+html[data-desktop-workspace] body { height:100%; overflow:hidden; background:var(--paper); }
+html[data-desktop-workspace] body > main,
+html[data-desktop-workspace] body > .topbar,
+html[data-desktop-workspace] body > .special-thanks,
+html[data-desktop-workspace] body > .site-footer,
+html[data-desktop-workspace] #mobileHttpsBanner { display:none!important; }
+html[data-desktop-workspace]:not(.desktop-workspace-ready) body { visibility:hidden; }
+.desktop-shell { display:grid; grid-template-columns:212px minmax(0,1fr); height:100dvh; color:var(--ink); }
+.desktop-shell [hidden] { display:none!important; }
+.desktop-rail { display:flex; flex-direction:column; gap:0; padding:26px 14px 16px; background:var(--surface); border-right:1px solid var(--line); min-height:0; }
+.desktop-brand { padding:0 8px 36px; }
+.desktop-brand .brand { gap:10px; }
+.desktop-brand .brand b { font-size:15px; }
+.desktop-brand .brand > span { width:40px; height:40px; }
+.desktop-nav-label { padding:0 14px 12px; color:var(--muted); font-size:9px; letter-spacing:.16em; font-weight:800; }
+.desktop-nav { display:grid; gap:6px; }
+.desktop-nav button { display:flex; align-items:center; gap:12px; width:100%; min-height:46px; padding:10px 14px; border:1px solid transparent; border-radius:12px; background:transparent; text-align:left; color:var(--muted); font-size:12px; font-weight:650; cursor:pointer; transition:background 180ms ease,color 180ms ease; }
+.desktop-nav button svg { width:20px; height:20px; flex:none; }
+.desktop-nav button:hover { background:var(--surface-soft); color:var(--ink); }
+.desktop-nav button[aria-current] { background:var(--surface-raised); color:var(--green); border-color:var(--line); box-shadow:inset 3px 0 0 var(--green); }
+.desktop-nav button:focus-visible { outline:2px solid var(--focus); outline-offset:2px; }
+.desktop-rail-bottom { margin-top:auto; padding:24px 8px 0; }
+.desktop-prototype-tag { display:block; color:var(--green); font-size:9px; font-weight:850; letter-spacing:.12em; }
+.desktop-rail-bottom p { color:var(--muted); font-size:10px; line-height:1.6; margin:8px 0 20px; }
+.desktop-connection .connection { display:block; padding:10px; border-radius:10px; white-space:normal; font-size:10px; }
+.desktop-main { min-width:0; min-height:0; display:grid; grid-template-rows:88px minmax(0,1fr) 34px; }
+.desktop-toolbar { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:0 28px; border-bottom:1px solid var(--line); background:var(--surface); }
+.desktop-toolbar small { color:var(--muted); font-size:9px; font-weight:800; letter-spacing:.13em; }
+.desktop-toolbar h1 { font-size:22px; letter-spacing:-.035em; margin:5px 0 0; line-height:1.2; }
+.desktop-toolbar .top-actions { display:flex; align-items:center; gap:8px; }
+.desktop-toolbar .theme-switcher em { display:none; }
+.desktop-toolbar .theme-switcher button { min-width:34px; }
+.desktop-toolbar .tool-button { font-size:11px; }
+.desktop-scroll { overflow:auto; min-height:0; padding:22px 28px 28px; outline:none; scroll-padding-top:20px; }
+.desktop-description { font-size:12px; line-height:1.6; margin:0 0 20px; color:var(--muted); }
+.desktop-page { min-width:0; }
+.desktop-page:not([hidden]) { animation:desktop-page-in 180ms ease-out; }
+@keyframes desktop-page-in { from { opacity:0; transform:translateY(4px); } to { opacity:1; transform:none; } }
+.desktop-statusbar { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:0 28px; border-top:1px solid var(--line); font-size:10px; color:var(--muted); background:var(--surface); }
+#desktopStage { color:var(--green); white-space:nowrap; }
+.desktop-shell .workspace { width:100%; margin:0; grid-template-columns:minmax(0,1fr) 250px; gap:18px; }
+.desktop-shell .workspace-primary { min-width:0; }
+.desktop-shell .workspace-primary > .starter-content { display:none!important; }
+.desktop-shell .workspace aside { display:block; width:auto; min-width:0; }
+.desktop-shell .workspace aside > :not(.network-card) { display:none!important; }
+.desktop-shell .panel { box-shadow:none; min-height:0; border-radius:16px; }
+.desktop-shell .view { padding:24px; min-height:0; }
+.desktop-shell .steps { padding:18px 24px; }
+.desktop-shell .dropzone { min-height:390px; padding:28px 18px; text-align:center; }
+.desktop-shell .dropzone h2 { font-size:23px; }
+.desktop-shell .dropzone .local-badge { margin-bottom:24px; }
+.desktop-shell .working { padding:26px 24px; }
+.desktop-shell .progress-ring { width:118px; height:118px; margin:20px 0; }
+.desktop-shell .working h2 { font-size:25px; }
+.desktop-shell .working .activity-history { max-height:240px; }
+.desktop-shell .side-card { border-radius:16px; box-shadow:none; }
+.desktop-shell .network-card { padding:20px; margin:0; }
+.desktop-shell .network-card h3 { font-size:15px; }
+.desktop-shell #toolCertificate { display:none!important; }
+.desktop-shell #historyCard,.desktop-shell #storageCard { width:100%; margin:0; padding:26px; max-height:none; }
+.desktop-shell #historyList { max-height:none; }
+.desktop-shell #historyCard .history-filters { max-width:660px; }
+.desktop-shell #historyCard .history-row { padding:16px 0; }
+.desktop-shell #storageList { max-height:none; }
+.desktop-shell #toolCard { width:100%; margin:0; padding:26px; max-height:none; }
+.desktop-shell #toolList { max-height:none; }
+.desktop-shell .tools-row { padding:12px 0; }
+#desktop-settings { display:grid; grid-template-columns:minmax(0,1.2fr) minmax(250px,.8fr); gap:20px; align-items:start; }
+.desktop-info-card { border:1px solid var(--line); border-radius:16px; padding:26px; background:var(--surface); }
+.desktop-info-card small { font-size:9px; letter-spacing:.12em; color:var(--green); font-weight:850; }
+.desktop-info-card h2 { font-size:20px; letter-spacing:-.025em; margin:14px 0; }
+.desktop-info-card p { font-size:12px; color:var(--muted); line-height:1.8; }
+.desktop-shell #specialThanks { width:100%; max-width:none; margin:0; padding:26px; }
+.desktop-shell .primary,.desktop-shell .secondary { box-shadow:none; }
+.desktop-shell .primary:hover { box-shadow:none; transform:none; }
+@media (max-width:1150px) {
+  .desktop-shell .workspace { grid-template-columns:minmax(0,1fr); }
+  .desktop-shell .workspace aside { width:100%; }
+  .desktop-shell .profiles { grid-template-columns:repeat(3,minmax(0,1fr)); }
+  #desktop-settings { grid-template-columns:minmax(0,1fr); }
+}
+@media (max-width:900px) {
+  .desktop-shell { grid-template-columns:184px minmax(0,1fr); }
+  .desktop-toolbar { padding:0 20px; }
+  .desktop-scroll { padding:20px; }
+  .desktop-toolbar h1 { font-size:20px; }
+  .desktop-toolbar .tool-button { display:none; }
+  .desktop-shell .profiles { grid-template-columns:1fr; }
+  .desktop-shell .view { padding:20px; }
+  .desktop-shell .dropzone h2 { font-size:20px; }
+  .desktop-statusbar { padding:0 20px; font-size:9px; }
+}
+@media (prefers-reduced-motion:reduce) { .desktop-page:not([hidden]) { animation:none; } }
