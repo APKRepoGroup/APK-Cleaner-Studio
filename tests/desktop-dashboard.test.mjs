@@ -40,3 +40,18 @@ test('desktop header controls share a height while the motor action stays compac
   assert.match(theme, /@media \(min-width: 721px\) and \(max-width: 840px\)\s*\{\s*\.topbar\s*\{\s*grid-template-columns: minmax\(0, 1fr\) auto auto;/);
   assert.match(theme, /\.topbar \.theme-switcher\s*\{\s*grid-template-columns: repeat\(3, minmax\(0, 1fr\)\)/);
 });
+
+test('intermediate windows and nested cards reflow before their contents squeeze', () => {
+  assert.match(theme, /@media \(min-width: 901px\) and \(max-width: 1023px\)[\s\S]*?\.workspace \{ grid-template-columns: minmax\(0, 1fr\);/);
+  assert.match(theme, /@media \(min-width: 1024px\) and \(max-width: 1119px\)[\s\S]*?\.workspace \{ grid-template-columns: minmax\(0, 1fr\) 280px;/);
+  assert.match(theme, /\.workspace-primary \{ container: processing \/ inline-size; \}/);
+  assert.match(theme, /@container processing \(max-width: 760px\)[\s\S]*?\.start-onboarding \{ grid-template-columns: minmax\(0, 1fr\);/);
+  assert.match(theme, /@container processing \(max-width: 700px\)[\s\S]*?\.operation-grid,\s*\.option-grid,\s*\.profiles \{ grid-template-columns: minmax\(0, 1fr\);/);
+  assert.match(theme, /\.report-viewer-actions \{ flex-wrap: wrap; \}/);
+});
+
+test('the onboarding card disappears together with the two-column workspace', () => {
+  const compactDesktop = theme.match(/@media \(min-width: 901px\) and \(max-width: 1023px\) \{([\s\S]*?)\n\}/)[1];
+  assert.match(compactDesktop, /\.start-onboarding \{ display: none; \}/);
+  assert.match(theme, /@media \(max-width: 900px\)[\s\S]*?\.start-onboarding \{ display: none; \}/);
+});

@@ -3080,3 +3080,56 @@ html[data-theme] .studio-overview-copy h2 em {
   .topbar .tool-button { height: 38px; min-height: 38px; }
   .topbar .theme-switcher { align-items: center; }
 }
+
+/* Reflow before a desktop column becomes too narrow to read. Nested layouts
+   follow their actual card width, not the much wider application window. */
+@media (min-width: 901px) and (max-width: 1023px) {
+  .workspace { grid-template-columns: minmax(0, 1fr); }
+  .workspace > aside { position: static; }
+  .start-onboarding { display: none; }
+}
+@media (min-width: 1024px) and (max-width: 1119px) {
+  .workspace { grid-template-columns: minmax(0, 1fr) 280px; }
+}
+.workspace-primary { container: processing / inline-size; }
+.start-onboarding {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 30px;
+  padding: clamp(24px, 4cqi, 44px);
+}
+.studio-overview-copy,
+.process-route,
+.process-route li > div { min-width: 0; }
+.studio-overview-copy h2 { font-size: clamp(30px, 5.6cqi, 46px); }
+.process-route li { grid-template-columns: 44px minmax(0, 1fr); }
+.workspace > aside,
+.side-card,
+.report-viewer-card,
+.app-dialog-card { min-width: 0; }
+.report-viewer-card > header > div { min-width: 0; }
+.report-viewer-card header h2 { overflow-wrap: anywhere; }
+.report-viewer-card > header > button { flex: 0 0 auto; }
+.report-viewer-actions { flex-wrap: wrap; }
+.report-viewer-actions > *,
+.app-dialog-actions > * { min-width: 0; white-space: normal; overflow-wrap: anywhere; }
+@container processing (max-width: 760px) {
+  .start-onboarding { grid-template-columns: minmax(0, 1fr); min-height: 0; gap: 28px; }
+  .studio-overview-copy { max-width: 100%; }
+}
+@container processing (max-width: 700px) {
+  .operation-grid,
+  .option-grid,
+  .profiles { grid-template-columns: minmax(0, 1fr); }
+  #cloneOperation { grid-column: auto; }
+  .workspace-primary > .features { grid-template-columns: minmax(0, 1fr); }
+  .workspace-primary > .features > div:not(:last-child) { border-right: 0; border-bottom: 1px solid var(--line); }
+  .direct-split-install { flex-direction: column; align-items: stretch; }
+  .section-title { flex-wrap: wrap; align-items: start; gap: 10px; }
+  .actions { flex-wrap: wrap; }
+}
+@container processing (max-width: 480px) {
+  .working h2,
+  .result h2 { overflow-wrap: anywhere; }
+  .actions > .wide { min-width: 0; width: 100%; }
+  .saved-presets-controls select { flex-basis: 100%; }
+}
