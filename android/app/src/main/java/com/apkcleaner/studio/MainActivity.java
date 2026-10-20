@@ -1433,6 +1433,8 @@ public final class MainActivity extends Activity {
                 .comparing((PackageInfo item) -> (item.applicationInfo.flags & ApplicationInfo.FLAG_SYSTEM) != 0)
                 .thenComparing(item -> labels.get(item.packageName),
                         String.CASE_INSENSITIVE_ORDER));
+        final int iconSize = Math.max(128, Math.min(256,
+                Math.round(48f * getResources().getDisplayMetrics().density)));
         for (PackageInfo item : packages) {
             if (closed || Thread.currentThread().isInterrupted()) throw new java.io.InterruptedIOException();
             JSONObject row = new JSONObject();
@@ -1442,13 +1444,7 @@ public final class MainActivity extends Activity {
             row.put("system", (item.applicationInfo.flags & ApplicationInfo.FLAG_SYSTEM) != 0);
             row.put("splits", item.applicationInfo.splitSourceDirs == null ? 0 : item.applicationInfo.splitSourceDirs.length);
             try {
-                ResolveInfo launcher = launcherIcons.get(item.packageName);
-                String icon = null;
-                if (launcher != null) {
-                    try { icon = drawableDataUri(launcher.loadIcon(manager)); }
-                    catch (Exception ignored) { /* Fall back to the package icon. */ }
-                }
-                row.put("icon", icon != null ? icon : drawableDataUri(manager.getApplicationIcon(item.applicationInfo)));
+                row.put("icon", installedIconDataUri(manager, item, launcherIcons.get(item.packageName), iconSize));
             } catch (Exception iconError) {
                 row.put("icon", "");
             }
@@ -1457,10 +1453,29 @@ public final class MainActivity extends Activity {
         return result.toString();
     }
 
-    static String drawableDataUri(Drawable drawable) throws IOException {
-        // Keep the hundred-entry installed-app cache small. Selected source
-        // icons use the separate high-resolution overload below.
-        return drawableDataUri(drawable, 72);
+    private String installedIconDataUri(PackageManager manager, PackageInfo info,
+            ResolveInfo launcher, int size) throws Exception {
+        // Decode a dense source resource, not a low-density drawable enlarged
+        // afterwards. Keep launcher-specific artwork when an app has aliases.
+        if (launcher != null) {
+            try {
+                String resourcesPackage = launcher.resolvePackageName != null
+                        ? launcher.resolvePackageName : launcher.activityInfo.packageName;
+                Drawable icon = manager.getResourcesForApplication(resourcesPackage).getDrawableForDensity(
+                        launcher.getIconResource(), android.util.DisplayMetrics.DENSITY_XXXHIGH, null);
+                return drawableDataUri(icon, size);
+            } catch (Exception ignored) {
+                try { return drawableDataUri(launcher.loadIcon(manager), size); }
+                catch (Exception unavailable) { /* Fall back to the application resource. */ }
+            }
+        }
+        try {
+            Drawable icon = manager.getResourcesForApplication(info.applicationInfo).getDrawableForDensity(
+                    info.applicationInfo.icon, android.util.DisplayMetrics.DENSITY_XXXHIGH, null);
+            return drawableDataUri(icon, size);
+        } catch (Exception ignored) {
+            return drawableDataUri(manager.getApplicationIcon(info.applicationInfo), size);
+        }
     }
 
     static String drawableDataUri(Drawable drawable, int size) throws IOException {
