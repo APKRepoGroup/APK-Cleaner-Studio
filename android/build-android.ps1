@@ -2,7 +2,7 @@
 param(
   [ValidateSet("Debug", "Release")]
   [string]$Variant = "Debug",
-  [string]$OutputName = "APK-Cleaner-Studio-v0.6.3-dev.5-Android.apk",
+  [string]$OutputName = "APK-Cleaner-Studio-v0.6.3-dev.6-Android.apk",
   [switch]$Offline
 )
 

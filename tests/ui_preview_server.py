@@ -11,6 +11,12 @@ ROOT = Path(__file__).resolve().parents[1]
 WEB = ROOT / "studio" / "web"
 PROFILES = json.loads((ROOT / "studio" / "profiles.json").read_text(encoding="utf-8"))
 TOOLS = dict.fromkeys(("java", "dex_tools", "manifest_tool", "split_tool", "signer", "zipalign", "resource_tool", "fully_ready"), True)
+VERSION = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))["version"]
+
+
+def capture_mode(url):
+    capture = parse_qs(urlsplit(url).query).get("capture", [""])[0]
+    return {"dev6-working": "dev5", "dev6-apps": "apps", "dev6-share": "result"}.get(capture, capture)
 
 class Handler(SimpleHTTPRequestHandler):
     preview_jobs = {}
@@ -41,7 +47,15 @@ class Handler(SimpleHTTPRequestHandler):
         request_url = urlsplit(self.path)
         path = request_url.path
         if path == "/":
-            capture = parse_qs(request_url.query).get("capture", [""])[0]
+            capture = capture_mode(self.path)
+            if capture in {"dev6-mobile", "dev6-desktop"}:
+                embedded = "embedded=android&" if capture == "dev6-mobile" else ""
+                width = "390px" if capture == "dev6-mobile" else "100%"
+                self.reply(f'''<!doctype html><html lang="tr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Dev.6 test ekranı</title>
+                <style>html,body{{height:100%;margin:0}}body{{height:100dvh;display:flex;flex-direction:column;overflow:hidden;background:#0d1515;color:#e8efea;font:14px system-ui}}header{{padding:8px 12px;text-align:center}}nav{{display:flex;flex-wrap:wrap;justify-content:center;gap:6px 16px}}a{{color:#d9ff43;font-size:12px}}small{{display:block;color:#a9b6b0;font-size:11px;margin-top:5px}}iframe{{display:block;flex:1;min-height:0;box-sizing:border-box;width:min({width},100%);margin:0 auto;border:1px solid #34493f;border-radius:14px}}</style></head><body>
+                <header><nav><a href="/?{embedded}capture=dev6-working" target="preview">İşlem ekranı</a><a href="/?embedded=android&capture=dev6-apps" target="preview">Uygulama listesi</a><a href="/?embedded=android&capture=dev6-share" target="preview">Paylaşım</a></nav><small>Dev.6 · Örnek veriler. Android simge üretimi ve sistem paylaşımı cihaz testi gerektirir.</small></header>
+                <iframe name="preview" title="Dev.6 önizleme" src="/?{embedded}capture=dev6-working"></iframe></body></html>''', "text/html")
+                return
             if capture == "dev5-splash":
                 theme = parse_qs(request_url.query).get("theme", ["light"])[0]
                 theme = "dark" if theme == "dark" else "light"
@@ -71,6 +85,7 @@ class Handler(SimpleHTTPRequestHandler):
             bridge = '''<script>const qaApps=Array.from({length:100},(_,i)=>({package:'com.example.app'+i,label:'Test uygulaması '+(i+1),version:'1.2.0',splits:i%3,icon:'data:image/svg+xml,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48"><rect width="48" height="48" rx="12" fill="#239b84"/><circle cx="24" cy="24" r="12" fill="#d9ff43"/></svg>')})); globalThis.AndroidThemeBridge={setTheme(){},requestInstalledPackages(){onInstalledPackagesLoaded(JSON.stringify(qaApps));}};</script>'''
             bridge = bridge.replace("</script>", '''let qaBatteryUnrestricted=false;AndroidThemeBridge.requestBackgroundPolicy=()=>{if(new URLSearchParams(location.search).get('capture')==='dev5-battery')globalThis.onBackgroundPolicy?.({known:true,backgroundRestricted:!qaBatteryUnrestricted,ignoringOptimizations:qaBatteryUnrestricted});};AndroidThemeBridge.openBatterySettings=()=>toast('Tarayıcı önizlemesi cihaz ayarlarını değiştirmez.');AndroidThemeBridge.requestBatteryExemption=()=>toast('Android uygulamasında sistem onayı açılır. Bu tarayıcı önizlemesi cihaz ayarlarını değiştirmez.');</script>''')
             bridge = bridge.replace("</script>", '''AndroidThemeBridge.resolveEngineStop=(token,approved)=>toast(approved?'Önizleme: onay alındı; gerçek motor kapatılmadı.':'Önizleme: motor çalışmaya devam eder.');</script>''')
+            bridge = bridge.replace("</script>", '''AndroidThemeBridge.shareOutput=(url,filename)=>{globalThis.qaSharedName=filename;toast('Paylaşılacak dosya: '+filename);globalThis.onNativeAction?.('share',JSON.stringify({status:'opened'}));};</script>''')
             # Fixture pointers must not attach to unrelated demos; never clear real job pointers.
             bridge = bridge.replace("</script>", '''for(const storage of [localStorage,sessionStorage]){const key='apk-cleaner-active-job-v1';try{const record=JSON.parse(storage.getItem(key)||'null');const capture=new URLSearchParams(location.search).get('capture');const prefix=capture==='dev5-recovery'?'f1f1f1f1':capture==='dev5-interrupted'?'f2f2f2f2':'';if(/^f[12]f[12]f[12]f[12]/.test(record?.jobId||'')&&!record.jobId.startsWith(prefix||'not-a-fixture'))storage.removeItem(key);}catch{}}</script>''')
             controls_display = "none" if capture else "flex"
@@ -105,8 +120,7 @@ class Handler(SimpleHTTPRequestHandler):
                     1,
                 )
             html = html.replace('<script src="ui-runtime.js', bridge + '<script src="ui-runtime.js', 1)
-            if capture.startswith("dev5"):
-                html = html.replace("v0.6.3-dev.4</b>", "v0.6.3-dev.5</b>")
+            html = html.replace("v0.6.3-dev.4</b>", "v" + VERSION + "</b>")
             qa_icon = "data:image/png;base64," + base64.b64encode((WEB / "favicon.png").read_bytes()).decode("ascii")
             setup = 'const qaAppIcon=' + json.dumps(qa_icon) + ';const qaSelection=' + json.dumps(self.preview_selection()) + ';'
             setup += '''function qaAnalysis(ads,shouldScroll=true,split=true) { const analysis={filename:split?'Görsel test.apks':'Görsel test.apk',package_name:'com.example.visualtest',package_info:{app_name:'Görsel Test',version_name:'1.4.2',min_sdk:26,target_sdk:37,abis:['arm64-v8a','armeabi-v7a'],signature_schemes:['V2','V3'],permissions:['android.permission.INTERNET','android.permission.POST_NOTIFICATIONS']},app_icon:qaAppIcon,size:10240,dex_count:3,network_count:ads?18:0,detections:ads?qaMarks:[],split_merged:split,split_options:split?{abis:['arm64-v8a','armeabi-v7a'],languages:[{code:'tr',label:'Türkçe'},{code:'en',label:'İngilizce'}]}:null}; prepareAnalysisView(analysis.filename,analysis.size,split); applyAnalysisResult({job_id:'fixture',analysis}); if(shouldScroll)document.querySelector('#analysisView').scrollIntoView(); }'''
@@ -149,9 +163,9 @@ class Handler(SimpleHTTPRequestHandler):
         elif path == "/qa-motion.js":
             self.reply((ROOT / "tests" / "ui_motion_probe.js").read_text(encoding="utf-8"), "text/javascript")
         elif path == "/api/status":
-            self.reply(json.dumps(dict(toolchain=TOOLS, platform="android", clients=[], channel="dev", version="0.6.3-dev.4", engine_version="2.0")))
+            self.reply(json.dumps(dict(toolchain=TOOLS, platform="android", clients=[], channel="dev", version=VERSION, engine_version="2.0")))
         elif path == "/api/history":
-            capture = parse_qs(urlsplit(self.headers.get("Referer", "")).query).get("capture", [""])[0]
+            capture = capture_mode(self.headers.get("Referer", ""))
             rows = self.preview_history() if capture in {"dev5-history", "dev5-history-filter"} else []
             query = parse_qs(request_url.query)
             search = query.get("q", [""])[0].casefold().replace("i\u0307", "i").replace("ı", "i")
@@ -162,7 +176,7 @@ class Handler(SimpleHTTPRequestHandler):
             offset = min(max(0, int(query.get("offset", ["0"])[0])), ((total - 1) // 20) * 20) if total else 0
             self.reply(json.dumps({"jobs": rows[offset:offset + 20], "total": total, "offset": offset, "limit": 20, "has_more": offset + 20 < total}))
         elif path == "/api/update":
-            capture = parse_qs(urlsplit(self.headers.get("Referer", "")).query).get("capture", [""])[0]
+            capture = capture_mode(self.headers.get("Referer", ""))
             update = {
                 "latest_version": "0.6.3-dev.2", "source": "github", "automatic": True,
                 "install_mode": "android", "notes": "Yeni test sürümü kullanıma hazır. Güncelleme notlarına aşağıdan ulaşabilirsiniz.",
@@ -171,7 +185,7 @@ class Handler(SimpleHTTPRequestHandler):
             }
             self.reply(json.dumps({"available": capture == "update", "update": update if capture == "update" else None}))
         elif path.endswith("/preflight"):
-            capture = parse_qs(urlsplit(self.headers.get("Referer", "")).query).get("capture", [""])[0]
+            capture = capture_mode(self.headers.get("Referer", ""))
             status = "blocked" if capture == "dev5-space-blocked" else "warning" if capture == "dev5-space-warning" else "ok"
             messages = {"blocked": "İşlem alanı kritik düzeyde dolu. Depolama Yönetimi'nden yer açıp yeniden deneyin.",
                         "warning": "Boş alan, tahmini çalışma alanından düşük. İşlem sırasında depolama hatası oluşabilir; önce yer açmanız önerilir.",
@@ -193,7 +207,7 @@ class Handler(SimpleHTTPRequestHandler):
         elif path.endswith("/state"):
             job_id = path.split("/")[-2]
             if job_id.startswith(("preview-", "f1f1f1f1")):
-                capture = parse_qs(urlsplit(self.headers.get("Referer", "")).query).get("capture", [""])[0]
+                capture = capture_mode(self.headers.get("Referer", ""))
                 age = time.monotonic() - self.preview_jobs.get(job_id, {}).get("start", time.monotonic())
                 if capture == "dev5-connection" and 2 <= age < 9:
                     self.reply('{"error":"Örnek bağlantı kesintisi"}', status=503)
@@ -247,10 +261,10 @@ class Handler(SimpleHTTPRequestHandler):
             self.reply('{"status":"cancelling"}')
             return
         if urlsplit(self.path).path == "/api/clean":
-            capture = parse_qs(urlsplit(self.headers.get("Referer", "")).query).get("capture", [""])[0]
+            capture = capture_mode(self.headers.get("Referer", ""))
             if capture in {"", "result", "comparison", "store-updates", "appearance", "compatibility", "dev5-space-warning", "dev5-space-blocked"}:
                 payload = json.loads(raw or b"{}")
-                result = {"operation": payload.get("operation", "patch"), "output": "Ornek-sonuc.apk", "signed": True,
+                result = {"operation": payload.get("operation", "patch"), "output": "Görsel Test_1.4.2-processed.apk", "signed": True,
                     "source_size_bytes": 52_428_800, "output_size_bytes": 48_234_496, "duration_seconds": 74.2,
                     "cleaning_profile_applied": payload.get("profile", "balanced") if payload.get("patch_ads") else None,
                     "patches": {"void_patches": 14, "boolean_patches": 3, "debug_directives_removed": 28},
