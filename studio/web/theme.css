@@ -1329,6 +1329,7 @@ html[data-theme="dark"] .result .install-action {
 .working,
 .result { min-height: 510px; }
 #workingView { justify-content: flex-start; }
+.working > .bar { width: 100%; }
 .working-package {
   display: flex;
   align-items: center;
@@ -1384,7 +1385,7 @@ html[data-theme] .file-card .apk.has-app-icon {
   border-radius: 10px;
   background: var(--surface-soft);
 }
-.working-activity { width: min(100%, 625px); min-width: 0; margin-top: 4px; padding: 16px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface-soft); text-align: start; }
+.working-activity { width: 100%; min-width: 0; margin-top: 4px; padding: 16px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface-soft); text-align: start; }
 .battery-notice { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; width: min(1180px, calc(100% - 38px)); margin: 20px auto; padding: 20px; border: 1px solid color-mix(in srgb, var(--orange) 55%, var(--line)); border-radius: 18px; background: var(--surface-soft); }
 .battery-heading { display: grid; grid-template-columns: 32px minmax(0, 1fr) 36px; align-items: center; gap: 12px; }
 #batteryDismiss { position: static; }
@@ -1404,11 +1405,11 @@ html[data-theme] .file-card .apk.has-app-icon {
   .battery-mark { width: 26px; height: 26px; }
 }
 .source-preserved { color: var(--green); font-size: 12px; }
-.working-selection { width: min(100%, 625px); margin: 0 0 24px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface-soft); text-align: start; }
+.working-selection { width: 100%; min-width: 0; margin: 0 0 24px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface-soft); text-align: start; }
 .working-selection summary { font-size: 12px; font-weight: 700; cursor: pointer; }
 .working-selection dl > div { display: grid; grid-template-columns: minmax(90px, .7fr) minmax(0, 1.3fr); gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--line); font-size: 12px; overflow-wrap: anywhere; }
 .working-selection dt { color: var(--muted); }.working-selection dd { margin: 0; }
-.job-connection-notice { width: min(100%, 625px); margin: 0 0 16px; padding: 16px; border: 1px solid var(--orange); border-radius: 14px; background: var(--surface-soft); text-align: start; }
+.job-connection-notice { width: 100%; min-width: 0; margin: 0 0 16px; padding: 16px; border: 1px solid var(--orange); border-radius: 14px; background: var(--surface-soft); text-align: start; }
 .job-connection-notice b { color: var(--orange); font-size: 13px; }
 .job-connection-notice p { margin: 8px 0 0; font-size: 12px; line-height: 1.65; }
 .storage-preflight { margin-top: 18px; padding: 18px; border: 1px solid var(--orange); border-radius: 14px; background: var(--surface-soft); }
