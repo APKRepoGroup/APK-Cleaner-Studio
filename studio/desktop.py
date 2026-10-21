@@ -265,8 +265,14 @@ def main():
         window = webview.create_window(TITLE, host.url, width=1200, height=860, min_size=(760, 600),
                                        background_color="#0d1515", text_select=True)
         event_handlers = []
+        shell_integrations = []
 
         def before_show():
+            try:
+                from windows_shell import WindowsShell
+                shell_integrations.append(WindowsShell(window.native, server, engine.DATA_ROOT / "desktop-window.json"))
+            except Exception:
+                logging.exception("Pencere tercihleri uygulanamadı")
             control = window.native.webview
 
             def navigating(sender, event):
