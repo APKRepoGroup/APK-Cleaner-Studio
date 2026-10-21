@@ -11,3 +11,11 @@ html[data-desktop-native]:not([data-lan-enabled="true"]) #clientCard { display:n
 #desktopNetworkToggle { width:100%; margin-top:12px; }
 #desktopNetworkStatus { color:var(--muted); font-size:12px; line-height:1.6; margin-top:12px; }
 #desktopNetworkStatus[data-error="true"] { color:var(--orange); }
+.desktop-preferences-card { display:block; max-height:none; }
+.desktop-preferences-card p { color:var(--muted); font-size:12px; line-height:1.6; }
+#desktopNotificationChoices { display:grid; gap:8px; padding:0; margin:16px 0; border:0; min-width:0; }
+.desktop-preference-legend { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); }
+#desktopNotificationChoices label { display:flex; align-items:center; gap:10px; padding:10px 12px; border:1px solid var(--line); border-radius:12px; cursor:pointer; font-size:13px; }
+#desktopNotificationChoices label:has(input:checked) { border-color:var(--focus); background:var(--surface-soft); }
+#desktopNotificationChoices input { width:16px; height:16px; margin:0; accent-color:var(--focus); flex-shrink:0; }
+#desktopNotificationStatus[data-error="true"] { color:var(--orange); }

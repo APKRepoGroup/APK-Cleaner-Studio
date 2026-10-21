@@ -189,6 +189,7 @@ class TaskbarTests(unittest.TestCase):
         notifier = ResultNotifier.__new__(ResultNotifier)
         notifier.icon, notifier.activate, notifier.open_result = mock.Mock(), mock.Mock(), mock.Mock()
         notifier.IconKind = SimpleNamespace(Info=1, Warning=2)
+        notifier.mode = "all"
         notifier.job, notifier.pending = None, []
         notifier.show("a" * 32, "done", "Bir.apk")
         notifier.show("b" * 32, "error", "İki.apk")
@@ -199,6 +200,42 @@ class TaskbarTests(unittest.TestCase):
         self.assertEqual(notifier.job, "b" * 32)
         notifier.close()
         notifier.icon.Dispose.assert_called_once()
+
+    def test_notification_preferences_clear_queue_and_filter_success_without_replaying(self):
+        notifier = ResultNotifier.__new__(ResultNotifier)
+        notifier.icon, notifier.activate, notifier.open_result = mock.Mock(), mock.Mock(), mock.Mock()
+        notifier.IconKind = SimpleNamespace(Info=1, Warning=2)
+        notifier.mode, notifier.job, notifier.pending = "all", None, []
+        notifier.show("a" * 32, "done", "Bir.apk")
+        notifier.show("b" * 32, "error", "İki.apk")
+        notifier.set_mode("off")
+        self.assertEqual(notifier.pending, [])
+        self.assertIsNone(notifier.job)
+        self.assertFalse(notifier.icon.Visible)
+        notifier.show("c" * 32, "error", "Üç.apk")
+        notifier.set_mode("errors")
+        notifier.show("d" * 32, "done", "Dört.apk")
+        notifier.icon.ShowBalloonTip.assert_called_once()
+        notifier.show("e" * 32, "error", "Beş.apk")
+        self.assertEqual(notifier.icon.ShowBalloonTip.call_count, 2)
+        self.assertEqual(notifier.job, "e" * 32)
+
+    def test_disabled_notifications_still_consume_finished_jobs(self):
+        shell = WindowsShell.__new__(WindowsShell)
+        shell.closed, shell.pending_save, shell.instance, shell.taskbar = False, 0, None, None
+        shell.WindowState = SimpleNamespace(Minimized=1)
+        shell.form = SimpleNamespace(WindowState=1, ContainsFocus=False)
+        shell.notifier = mock.Mock()
+        shell.preferences = SimpleNamespace(state=lambda: {"notifications": "off"})
+        shell.results = ResultTracker()
+        records = {"a" * 32: {"status": "working"}}
+        shell.runtime = self.runtime(records)
+        shell.tick(None, None)
+        records["a" * 32]["status"] = "done"
+        shell.tick(None, None)
+        self.assertIn("a" * 32, shell.results.delivered)
+        shell.tick(None, None)
+        self.assertEqual(shell.notifier.show.call_count, 1)  # Notifier itself filters off.
 
 
 if __name__ == "__main__":

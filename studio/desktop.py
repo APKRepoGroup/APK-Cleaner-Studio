@@ -116,7 +116,7 @@ class OwnedTools:
                     process.wait(timeout=2)
 
 
-def handler_for(runtime, tools, network=None):
+def handler_for(runtime, tools, network=None, preferences=None):
     from desktop_network import NetworkError
     class DesktopHandler(runtime.StudioHandler):
         def log_message(self, fmt, *args):
@@ -154,13 +154,18 @@ def handler_for(runtime, tools, network=None):
                 source = source.replace('<html lang="tr"', '<html data-desktop-native="true" lang="tr"', 1)
                 source = source.replace("</head>", '<link rel="stylesheet" href="/desktop-window.css"></head>', 1)
                 source = source.replace('<section id="clientCard"',
-                                        (ROOT / "desktop/network.html").read_text(encoding="utf-8") + '<section id="clientCard"', 1)
-                source = source.replace("</body>", '<script src="/desktop-network.js" defer></script></body>', 1)
+                                        (ROOT / "desktop/network.html").read_text(encoding="utf-8") +
+                                        (ROOT / "desktop/preferences.html").read_text(encoding="utf-8") + '<section id="clientCard"', 1)
+                source = source.replace("</body>", '<script src="/desktop-network.js" defer></script><script src="/desktop-preferences.js" defer></script></body>', 1)
                 self.send_text(source, "text/html", html=True)
             elif path == "/desktop-window.css":
                 self.send_text((ROOT / "desktop/desktop.css").read_text(encoding="utf-8"), "text/css")
             elif path == "/desktop-network.js":
                 self.send_text((ROOT / "desktop/network.js").read_text(encoding="utf-8"), "text/javascript")
+            elif path == "/desktop-preferences.js":
+                self.send_text((ROOT / "desktop/preferences.js").read_text(encoding="utf-8"), "text/javascript")
+            elif path == "/api/desktop/preferences" and preferences is not None:
+                self.send_json(preferences.state())
             elif path == "/api/desktop/network" and network is not None:
                 self.send_json(network.state())
             elif path == "/boot.js":
@@ -182,18 +187,32 @@ def handler_for(runtime, tools, network=None):
             # Read the tiny control payload even when rejecting its origin.
             # Otherwise Windows may reset an HTTP/1.0 connection with unread
             # request bytes before the client can receive our Turkish error.
-            control = urlsplit(self.path).path == "/api/desktop/network" and network is not None
+            path = urlsplit(self.path).path
+            preference = path == "/api/desktop/preferences" and preferences is not None
+            control = path == "/api/desktop/network" and network is not None or preference
             payload = None
             if control:
                 try:
                     payload = self.read_body_json()
                 except (ValueError, UnicodeError):
-                    self.send_json({"error": "Yerel ağ seçimi geçersiz."}, 400)
+                    self.send_json({"error": "Ayar seçimi geçersiz."}, 400)
                     return
             if not self.request_origin_allowed():
                 self.send_json({"error": "Bu istek uygulama oturumuna ait değil."}, 403)
             elif tools.closing.is_set():
                 self.send_json({"error": "Uygulama güvenli biçimde kapatılıyor."}, 503)
+            elif preference:
+                if self.headers.get("Origin") != f"http://127.0.0.1:{self.server.server_port}":
+                    self.send_json({"error": "Bu ayar yalnızca uygulama penceresinden değiştirilebilir."}, 403)
+                    return
+                try:
+                    if not isinstance(payload, dict):
+                        raise ValueError("Bildirim tercihi geçersiz.")
+                    self.send_json(preferences.set_mode(payload.get("notifications")))
+                except ValueError as exc:
+                    self.send_json({"error": str(exc)}, 400)
+                except OSError:
+                    self.send_json({"error": "Bildirim tercihi kaydedilemedi."}, 503)
             elif control:
                 # Only a same-origin native request may expose the LAN listener.
                 if self.headers.get("Origin") != f"http://127.0.0.1:{self.server.server_port}":
@@ -228,9 +247,11 @@ class DesktopHost:
         self.runtime, self.engine = runtime, engine
         self.tools = OwnedTools()
         from desktop_network import LocalNetwork
+        from desktop_preferences import DesktopPreferences
         self.network = LocalNetwork(runtime, self.tools, lan_port)
+        self.preferences = DesktopPreferences(engine.DATA_ROOT / "desktop-preferences.json")
         self.original_subprocess = engine.subprocess
-        self.http = ThreadingHTTPServer(("127.0.0.1", port), handler_for(runtime, self.tools, self.network))
+        self.http = ThreadingHTTPServer(("127.0.0.1", port), handler_for(runtime, self.tools, self.network, self.preferences))
         self.http.daemon_threads = True
         self.server_stopped = threading.Event()
         self.thread = threading.Thread(target=self.serve, name="desktop-http", daemon=True)
@@ -355,6 +376,7 @@ def main():
                 from windows_shell import WindowsShell
                 shell_integrations.append(WindowsShell(window.native, server, engine.DATA_ROOT / "desktop-window.json", instance,
                                                        analyzing=host.tools.is_analyzing,
+                                                       preferences=host.preferences,
                                                        open_result=lambda job: open_job_result(window, job)))
             except Exception:
                 logging.exception("Pencere tercihleri uygulanamadı")

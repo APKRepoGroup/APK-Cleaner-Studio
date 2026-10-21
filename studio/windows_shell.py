@@ -50,12 +50,15 @@ class ResultNotifier:
         self.icon.Text = "APK Cleaner Studio"
         self.job = None
         self.pending = []
+        self.mode = "all"
         self.handlers = [self.clicked, self.open_window, self.dismissed]
         self.icon.BalloonTipClicked += self.clicked
         self.icon.BalloonTipClosed += self.dismissed
         self.icon.DoubleClick += self.open_window
 
     def show(self, job, status, name):
+        if self.mode == "off" or self.mode == "errors" and status != "error":
+            return
         if self.job is not None:
             if len(self.pending) < 16:
                 self.pending.append((job, status, name))
@@ -66,6 +69,14 @@ class ResultNotifier:
         message = name + ("\nÇıktı hazır. Sonucu açmak için tıklayın." if status == "done"
                           else "\nAyrıntıları incelemek için tıklayın. Orijinal paket korundu.")
         self.icon.ShowBalloonTip(8000, title, message, self.IconKind.Info if status == "done" else self.IconKind.Warning)
+
+    def set_mode(self, mode):
+        if mode != self.mode:
+            # Discard already queued balloons too; enabling later never replays them.
+            self.pending.clear()
+            self.job = None
+            self.icon.Visible = False
+            self.mode = mode
 
     def open_window(self, sender, event):
         self.activate()
@@ -338,7 +349,7 @@ class WindowStateStore:
 
 class WindowsShell:
     """Attach only on the WinForms UI thread (pywebview before_show)."""
-    def __init__(self, form, runtime, state_path, instance=None, analyzing=None, open_result=None):
+    def __init__(self, form, runtime, state_path, instance=None, analyzing=None, open_result=None, preferences=None):
         from System.Drawing import Size
         from System.Windows.Forms import FormStartPosition, FormWindowState, Screen, Timer
         self.form, self.runtime = form, runtime
@@ -347,6 +358,7 @@ class WindowsShell:
         self.taskbar = None
         self.notifier = None
         self.results = ResultTracker()
+        self.preferences = preferences
         self.Screen, self.WindowState = Screen, FormWindowState
         self.store = WindowStateStore(state_path)
         self.last_maximized = False
@@ -450,6 +462,8 @@ class WindowsShell:
                 self.taskbar = None
         if self.notifier:
             try:
+                if self.preferences:
+                    self.notifier.set_mode(self.preferences.state()["notifications"])
                 for job, status, name in self.results.poll(self.runtime):
                     if self.form.WindowState == self.WindowState.Minimized or not self.form.ContainsFocus:
                         self.notifier.show(job, status, name)
