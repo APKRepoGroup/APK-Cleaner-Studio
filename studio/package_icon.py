@@ -1,14 +1,15 @@
 """Best-effort, bounded launcher-icon previews; never modify or decode the APK.
 
 Only the manifest's icon resource is followed, not filenames guessed from res/.
-Android renders adaptive/vector drawables natively; elsewhere raster variants
-and bounded raster/color adaptive layers are used. Unsupported drawables remain optional.
+Android renders adaptive/vector drawables natively; Windows also supports bounded
+vector geometry through its system renderer. Unsupported drawables remain optional.
 Binary layout reference: AOSP androidfw/ResourceTypes.h.
 """
 from __future__ import annotations
 
 import base64
 import io
+import math
 import os
 import re
 import struct
@@ -285,12 +286,21 @@ def _drawable_xml(data):
                 name, kind_value, value = strings.get(_u32(data, attr + 4)), data[attr + 15], _u32(data, attr + 16)
                 if kind_value == 1:
                     text = f"@0x{value:08x}"
+                elif kind_value == 2:
+                    text = f"?0x{value:08x}"  # Preserve unresolved theme attributes; never silently drop tint.
                 elif kind_value == 3:
                     text = strings.get(value)
                 elif 0x1c <= kind_value <= 0x1f:
                     text = f"#{value:08x}"
                 elif kind_value in (0x10, 0x11):
                     text = str(value)
+                elif kind_value == 4:
+                    number = struct.unpack("<f", struct.pack("<I", value))[0]
+                    if not math.isfinite(number):
+                        raise ValueError("Invalid drawable float")
+                    text = str(number)
+                elif kind_value == 0x12:
+                    text = "true" if value else "false"
                 else:
                     continue
                 node.set(f"{{{ANDROID_NS}}}{name}", text)
@@ -311,7 +321,7 @@ def _drawable_xml(data):
 
 
 def _drawable_preview(archive, reference, resources):
-    """Passive raster/color layers only. Never execute or expose APK-supplied SVG."""
+    """Passive layers only. Never execute or expose APK-supplied SVG."""
     from PIL import Image, ImageDraw
     size, budget = 384, [0]
     attr = lambda node, key, default="": node.get(f"{{{ANDROID_NS}}}{key}", default)
@@ -365,6 +375,14 @@ def _drawable_preview(archive, reference, resources):
         value = attr(node, "drawable")
         return resolve(value if value else next(iter(node), None), depth + 1)
 
+    def vector_color(value):
+        if isinstance(value, str) and re.fullmatch(r"@0x[0-9a-fA-F]{8}", value) and resources:
+            for kind, number in _resource_values(resources, int(value[1:], 16)):
+                if 0x1c <= kind <= 0x1f:
+                    return color(f"#{number:08x}")
+            raise ValueError("Unsupported vector color resource")
+        return color(value)
+
     def draw(node, depth):
         if depth > 8 or node is None:
             raise ValueError("Invalid drawable layer")
@@ -378,6 +396,9 @@ def _drawable_preview(archive, reference, resources):
             return result.crop((64, 64, 320, 320)).resize((size, size), Image.Resampling.LANCZOS)
         if node.tag == "bitmap":
             return resolve(attr(node, "src"), depth + 1)
+        if node.tag == "vector" and os.name == "nt":
+            from windows_vector import render_vector
+            return render_vector(node, vector_color, size)
         if node.tag == "shape":
             solid = node.find("solid")
             if solid is None or any(child.tag != "solid" for child in node):
