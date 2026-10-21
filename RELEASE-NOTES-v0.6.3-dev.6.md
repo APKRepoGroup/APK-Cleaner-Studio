@@ -18,4 +18,5 @@
 - Yan panelin yeniden boyutlandırma sırasında aniden genişleyip daralması giderildi.
 - Masaüstü işlem ekranındaki seçenekler, günlük ve bağlantı uyarısının genişlikleri eşitlendi.
 - Android'de yüklü uygulama listesindeki simgelerin çözünürlüğü artırıldı.
+- Windows'ta InShot gibi katmanlı görsel simge kullanan APK'ların simgelerinin görünmemesi düzeltildi.
 - İşlenmiş APK paylaşılırken geçici dosya adı yerine gerçek çıktı adının gösterilmesi sağlandı.

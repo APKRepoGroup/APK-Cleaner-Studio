@@ -73,6 +73,46 @@ def apk_bytes(manifest_data=None, resource_data=None, image=PNG, include_dex=Tru
 
 
 class PackageIconTests(unittest.TestCase):
+    def test_adaptive_raster_layers_are_composed_without_changing_source(self):
+        from PIL import Image, ImageDraw
+        def png(image):
+            buffer = io.BytesIO()
+            image.save(buffer, format="PNG")
+            return buffer.getvalue()
+        background = png(Image.new("RGBA", (108, 108), "red"))
+        foreground = Image.new("RGBA", (108, 108))
+        ImageDraw.Draw(foreground).rectangle((45, 45, 63, 63), fill="blue")
+        xml = b'<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android"><background android:drawable="res/bg.png"/><foreground android:drawable="res/fg.png"/></adaptive-icon>'
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "adaptive.apk"
+            with zipfile.ZipFile(path, "w") as archive:
+                archive.writestr("AndroidManifest.xml", '<manifest xmlns:android="http://schemas.android.com/apk/res/android"><application android:icon="res/icon.xml"/></manifest>')
+                archive.writestr("res/icon.xml", xml)
+                archive.writestr("res/bg.png", background)
+                archive.writestr("res/fg.png", png(foreground))
+            before = path.read_bytes()
+            icon = extract_apk_icon(path)
+            self.assertTrue(icon.startswith("data:image/png;base64,"))
+            image = Image.open(io.BytesIO(base64.b64decode(icon.split(",", 1)[1])))
+            self.assertEqual(image.size, (256, 256))
+            self.assertEqual(image.getpixel((128, 128)), (0, 0, 255, 255))
+            self.assertEqual(image.getpixel((40, 40)), (255, 0, 0, 255))
+            self.assertEqual(image.getpixel((0, 0))[3], 0)
+            self.assertEqual(path.read_bytes(), before)
+
+    def test_unsupported_recursive_and_active_drawables_keep_safe_fallback(self):
+        samples = [b'<svg onload="alert(1)"/>',
+                   b'<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android"><background android:drawable="res/icon.xml"/><foreground android:drawable="res/icon.xml"/></adaptive-icon>',
+                   b'<!DOCTYPE a [<!ENTITY x "test">]><adaptive-icon/>',
+                   b'<adaptive-icon><background/><foreground><vector/></foreground></adaptive-icon>']
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "adaptive.apk"
+            for xml in samples:
+                with zipfile.ZipFile(path, "w") as archive:
+                    archive.writestr("AndroidManifest.xml", '<manifest xmlns:android="http://schemas.android.com/apk/res/android"><application android:icon="res/icon.xml"/></manifest>')
+                    archive.writestr("res/icon.xml", xml)
+                self.assertEqual(extract_apk_icon(path), "")
+
     def test_binary_manifest_and_dense_sparse_offset16_compact_resources(self):
         for utf8 in (True, False):
             self.assertEqual(_manifest_icon(manifest(utf8=utf8)), RESOURCE)

@@ -42,10 +42,11 @@ Gereksinimler:
 - Python 3.11 veya daha yeni bir sürüm
 - `cryptography`
 - PyInstaller
+- Windows pencere bağımlılıkları ve Pillow (`packaging/requirements-windows.txt`)
 - JDK 21 veya daha yeni bir sürüm
 
 ```powershell
-python -m pip install cryptography pyinstaller
+python -m pip install cryptography -r packaging/requirements-windows.txt
 python -m PyInstaller packaging/APK-Cleaner-Studio-Windows.spec --noconfirm
 ```
 

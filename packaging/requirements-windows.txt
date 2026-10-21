@@ -7,3 +7,4 @@ proxy_tools==0.1.0
 cffi==2.1.1
 pycparser==3.11
 typing_extensions==4.16.0
+Pillow==12.3.0

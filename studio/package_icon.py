@@ -2,12 +2,13 @@
 
 Only the manifest's icon resource is followed, not filenames guessed from res/.
 Android renders adaptive/vector drawables natively; elsewhere raster variants
-are used. Missing, unsupported or malformed icons are optional metadata.
+and bounded raster/color adaptive layers are used. Unsupported drawables remain optional.
 Binary layout reference: AOSP androidfw/ResourceTypes.h.
 """
 from __future__ import annotations
 
 import base64
+import io
 import os
 import re
 import struct
@@ -217,7 +218,7 @@ def _entry_value(data, offset, header, size, index):
     return data[value + 3], _u32(data, value + 4)
 
 
-def _resource_paths(data, resource_id):
+def _resource_values(data, resource_id):
     strings, packages = None, []
     for kind, offset, header, size in _chunks(data, 12, len(data)):
         if kind == 1:
@@ -226,7 +227,7 @@ def _resource_paths(data, resource_id):
             packages.append((offset, header, size))
     if not strings:
         return []
-    pending, visited, paths = [resource_id], set(), []
+    pending, visited, values = [resource_id], set(), []
     while pending and len(visited) < 12:
         current = pending.pop()
         if current in visited:
@@ -241,10 +242,168 @@ def _resource_paths(data, resource_id):
                     continue
                 value = _entry_value(data, offset, header, size, current & 0xffff)
                 if value and value[0] == 3:
-                    paths.append(strings.get(value[1]))
+                    values.append((3, strings.get(value[1])))
                 elif value and value[0] == 1:
                     pending.append(value[1])
-    return list(dict.fromkeys(paths))[:32]
+                elif value and 0x1c <= value[0] <= 0x1f:
+                    values.append(value)
+    return list(dict.fromkeys(values))[:32]
+
+
+def _resource_paths(data, resource_id):
+    return [value for kind, value in _resource_values(data, resource_id) if kind == 3]
+
+
+def _drawable_xml(data):
+    """Decode only a small drawable tree; never pass APK XML to a browser."""
+    if data.lstrip().startswith(b"<"):
+        if b"<!DOCTYPE" in data.upper() or b"<!ENTITY" in data.upper():
+            raise ValueError("Unsupported drawable declaration")
+        root = ET.fromstring(data)
+        if sum(1 for _ in root.iter()) > 64:
+            raise ValueError("Drawable tree too large")
+        return root
+    strings, root, stack = None, None, []
+    nodes = 0
+    for kind, offset, header, size in _chunks(data, 8, len(data)):
+        if kind == 1:
+            strings = _Strings(data, offset, header, size)
+        elif kind == 0x102 and strings:
+            ext = offset + header
+            start, stride, count = struct.unpack_from("<HHH", data, ext + 8)
+            if start < 20 or stride < 20 or count > 32 or ext + start + count * stride > offset + size:
+                raise ValueError("Invalid drawable attributes")
+            nodes += 1
+            if nodes > 64 or len(stack) > 8:
+                raise ValueError("Drawable tree too large")
+            node = ET.Element(strings.get(_u32(data, ext + 4)))
+            for i in range(count):
+                attr = ext + start + i * stride
+                namespace = _u32(data, attr)
+                if namespace == 0xffffffff or strings.get(namespace) != ANDROID_NS:
+                    continue
+                name, kind_value, value = strings.get(_u32(data, attr + 4)), data[attr + 15], _u32(data, attr + 16)
+                if kind_value == 1:
+                    text = f"@0x{value:08x}"
+                elif kind_value == 3:
+                    text = strings.get(value)
+                elif 0x1c <= kind_value <= 0x1f:
+                    text = f"#{value:08x}"
+                elif kind_value in (0x10, 0x11):
+                    text = str(value)
+                else:
+                    continue
+                node.set(f"{{{ANDROID_NS}}}{name}", text)
+            if stack:
+                stack[-1].append(node)
+            elif root is None:
+                root = node
+            else:
+                raise ValueError("Multiple drawable roots")
+            stack.append(node)
+        elif kind == 0x103:
+            if not stack:
+                raise ValueError("Invalid drawable nesting")
+            stack.pop()
+    if root is None or stack:
+        raise ValueError("Incomplete drawable XML")
+    return root
+
+
+def _drawable_preview(archive, reference, resources):
+    """Passive raster/color layers only. Never execute or expose APK-supplied SVG."""
+    from PIL import Image, ImageDraw
+    size, budget = 384, [0]
+    attr = lambda node, key, default="": node.get(f"{{{ANDROID_NS}}}{key}", default)
+
+    def color(text):
+        if not isinstance(text, str) or not re.fullmatch(r"#[0-9a-fA-F]{3,8}", text):
+            raise ValueError("Unsupported icon color")
+        text = text[1:]
+        if len(text) in (3, 4):
+            text = "".join(ch * 2 for ch in text)
+        if len(text) == 6:
+            text = "ff" + text
+        if len(text) != 8:
+            raise ValueError("Unsupported icon color")
+        return tuple(bytes.fromhex(text[2:] + text[:2]))
+
+    def resolve(value, depth=0):
+        if depth > 8:
+            raise ValueError("Drawable recursion limit")
+        if isinstance(value, ET.Element):
+            return draw(value, depth + 1)
+        if isinstance(value, str) and value.startswith("#"):
+            return Image.new("RGBA", (size, size), color(value))
+        if isinstance(value, str) and re.fullmatch(r"@0x[0-9a-fA-F]{8}", value):
+            value = int(value[1:], 16)
+        choices = _resource_values(resources, value) if isinstance(value, int) and resources else [(3, value)]
+        for kind, path in reversed(choices):
+            if 0x1c <= kind <= 0x1f:
+                return Image.new("RGBA", (size, size), color(f"#{path:08x}"))
+            if not isinstance(path, str) or not path.startswith("res/") or ".." in path.split("/"):
+                continue
+            try:
+                data = _read(archive, path, MAX_ICON_BYTES)
+                budget[0] += len(data)
+                if budget[0] > 4 * MAX_ICON_BYTES:
+                    raise ValueError("Drawable byte budget")
+                if path.lower().endswith(".xml"):
+                    return draw(_drawable_xml(data), depth + 1)
+                if not _raster_uri(data):
+                    continue
+                with Image.open(io.BytesIO(data), formats=["PNG", "WEBP", "JPEG"]) as image:
+                    if getattr(image, "n_frames", 1) != 1:
+                        continue
+                    image.load()
+                    return image.convert("RGBA").resize((size, size), Image.Resampling.LANCZOS)
+            except (KeyError, OSError, ValueError, ET.ParseError, struct.error):
+                continue
+        raise ValueError("Unsupported drawable layer")
+
+    def layer(node, depth):
+        value = attr(node, "drawable")
+        return resolve(value if value else next(iter(node), None), depth + 1)
+
+    def draw(node, depth):
+        if depth > 8 or node is None:
+            raise ValueError("Invalid drawable layer")
+        if node.tag == "adaptive-icon":
+            background, foreground = node.find("background"), node.find("foreground")
+            if background is None or foreground is None:
+                raise ValueError("Incomplete adaptive icon")
+            result = layer(background, depth)
+            result.alpha_composite(layer(foreground, depth))
+            # Android's 108 dp layers include an 18 dp overscan on each side.
+            return result.crop((64, 64, 320, 320)).resize((size, size), Image.Resampling.LANCZOS)
+        if node.tag == "bitmap":
+            return resolve(attr(node, "src"), depth + 1)
+        if node.tag == "shape":
+            solid = node.find("solid")
+            if solid is None or any(child.tag != "solid" for child in node):
+                raise ValueError("Unsupported shape")
+            fill = color(attr(solid, "color"))
+            if attr(node, "shape", "rectangle") in ("rectangle", "0"):
+                return Image.new("RGBA", (size, size), fill)
+            if attr(node, "shape") in ("oval", "1"):
+                result = Image.new("RGBA", (size, size))
+                ImageDraw.Draw(result).ellipse((0, 0, size - 1, size - 1), fill=fill)
+                return result
+        if node.tag == "layer-list" and 0 < len(node) <= 8 and all(child.tag == "item" for child in node):
+            result = Image.new("RGBA", (size, size))
+            for child in node:
+                result.alpha_composite(layer(child, depth))
+            return result
+        raise ValueError("Unsupported drawable")
+
+    result = resolve(reference).resize((256, 256), Image.Resampling.LANCZOS)
+    mask = Image.new("L", result.size)
+    ImageDraw.Draw(mask).rounded_rectangle((0, 0, 255, 255), radius=56, fill=255)
+    from PIL import ImageChops
+    result.putalpha(ImageChops.multiply(result.getchannel("A"), mask))
+    output = io.BytesIO()
+    result.save(output, format="PNG")
+    return _raster_uri(output.getvalue())
 
 
 def _read(archive, name, limit):
@@ -296,7 +455,8 @@ def _raster_uri(data):
 
 
 def _archive_icon(archive, reference):
-    paths = _resource_paths(_read(archive, "resources.arsc", MAX_RESOURCE_BYTES), reference) if isinstance(reference, int) else [reference]
+    resources = _read(archive, "resources.arsc", MAX_RESOURCE_BYTES) if isinstance(reference, int) else None
+    paths = _resource_paths(resources, reference) if isinstance(reference, int) else [reference]
     # Density-independent adaptive XML is skipped in favor of the same icon's
     # legacy PNG variant. Never choose unrelated res/ images by their names.
     for path in reversed(paths):
@@ -308,6 +468,10 @@ def _archive_icon(archive, reference):
                 return icon
         except (KeyError, ValueError, zipfile.BadZipFile):
             continue
+    try:
+        return _drawable_preview(archive, reference, resources)
+    except (ImportError, KeyError, OSError, ValueError, ET.ParseError, struct.error):
+        pass
     return ""
 
 
