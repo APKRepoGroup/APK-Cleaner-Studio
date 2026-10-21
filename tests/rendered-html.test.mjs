@@ -241,7 +241,7 @@ test("ships the current local studio interface", async () => {
   assert.match(theme, /\.installed-app-entry\.selected \.installed-app-row\s*\{[^}]*border-radius:\s*14px/i);
   assert.doesNotMatch(theme, /\.installed-app-entry\.selected \.installed-app-row\s*\{[^}]*border-bottom-(?:left|right)-radius/i);
   assert.match(script, /<b title="\$\{escapeHTML\(client\.display_name/i);
-  assert.match(theme, /@media \(min-width:\s*901px\)[\s\S]*?\.workspace\s*\{\s*grid-template-columns:\s*minmax\(0, 1fr\) 340px/i);
+  assert.match(theme, /@media \(min-width:\s*901px\)[\s\S]*?\.workspace\s*\{\s*grid-template-columns:\s*minmax\(0, 1fr\) clamp\(280px, calc\(25vw \+ 24px\), 340px\)/i);
   assert.match(script, /workspace\.dataset\.stage\s*=\s*id\.slice\(1\)\.replace/i);
   assert.doesNotMatch(theme, /\.workspace\[data-stage="working"\][\s\S]{0,200}?grid-template-columns/i);
   assert.match(script, /patchAdsSelected[\s\S]*?setOperation\(operation, toggle = false\)/i);

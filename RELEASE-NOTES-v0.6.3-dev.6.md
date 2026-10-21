@@ -12,6 +12,7 @@
 ### 🐛 Hata Düzeltmeleri
 
 - Pencere daraltılırken kartların ve iç düzenlerin sıkışması önlendi; paneller uygun genişlikte alt alta geçer.
+- Yan panelin yeniden boyutlandırma sırasında aniden genişleyip daralması giderildi.
 - Masaüstü işlem ekranındaki seçenekler, günlük ve bağlantı uyarısının genişlikleri eşitlendi.
 - Android'de yüklü uygulama listesindeki simgelerin çözünürlüğü artırıldı.
 - İşlenmiş APK paylaşılırken geçici dosya adı yerine gerçek çıktı adının gösterilmesi sağlandı.

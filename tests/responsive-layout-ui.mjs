@@ -60,6 +60,17 @@ try {
     page.setDefaultTimeout(10000);
     page.on("pageerror", error => errors.push(error.message));
     await page.goto(base);
+    // Resizing around the old 1120 px breakpoint must not widen the sidebar
+    // by 60 px while the application itself is being narrowed.
+    let previousSide = null;
+    for (let sample = 1080; sample <= 1160; sample += 2) {
+      await page.setViewportSize({ width: sample, height: 900 });
+      const current = await page.locator(".workspace > aside").evaluate(node => node.getBoundingClientRect().width);
+      if (previousSide !== null) {
+        assert.ok(current >= previousSide - .1 && current - previousSide <= 1, `sidebar jumps at ${sample}px: ${previousSide} -> ${current}`);
+      }
+      previousSide = current;
+    }
     await page.waitForFunction(() => typeof qaAnalysis === "function");
     await page.evaluate(theme => applyTheme(theme), theme);
     await page.evaluate(async () => {

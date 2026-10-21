@@ -1923,7 +1923,7 @@ html[data-theme="dark"] .option input:checked + span {
 .client-privacy { margin: 12px 0 0 !important; }
 
 @media (min-width: 901px) {
-  .workspace { grid-template-columns: minmax(0, 1fr) 340px; }
+  .workspace { grid-template-columns: minmax(0, 1fr) clamp(280px, calc(25vw + 24px), 340px); }
 }
 
 .workspace-primary { min-width: 0; display: grid; gap: 18px; align-content: start; }
@@ -3087,9 +3087,6 @@ html[data-theme] .studio-overview-copy h2 em {
   .workspace { grid-template-columns: minmax(0, 1fr); }
   .workspace > aside { position: static; }
   .start-onboarding { display: none; }
-}
-@media (min-width: 1024px) and (max-width: 1119px) {
-  .workspace { grid-template-columns: minmax(0, 1fr) 280px; }
 }
 .workspace-primary { container: processing / inline-size; }
 .start-onboarding {

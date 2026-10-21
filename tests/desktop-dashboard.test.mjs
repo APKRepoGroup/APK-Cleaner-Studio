@@ -25,7 +25,7 @@ test('the certificate stays in the expanding engine card without shrinking its l
 });
 
 test('desktop stages keep the sidebar and the compact feature strip, without the full guide during analysis', () => {
-  assert.match(theme, /@media \(min-width:\s*901px\)[\s\S]*?\.workspace\s*\{\s*grid-template-columns:\s*minmax\(0, 1fr\) 340px/);
+  assert.match(theme, /@media \(min-width:\s*901px\)[\s\S]*?\.workspace\s*\{\s*grid-template-columns:\s*minmax\(0, 1fr\) clamp\(280px, calc\(25vw \+ 24px\), 340px\)/);
   assert.match(theme, /\.workspace > aside\s*\{\s*position:\s*sticky;\s*top:\s*94px/);
   assert.doesNotMatch(theme, /\.workspace\[data-stage="working"\][\s\S]{0,200}?grid-template-columns/);
   assert.match(script, /const showStartGuide = id === "#selectView" \|\| id === "#workingView" \|\| id === "#resultView"/);
@@ -43,7 +43,7 @@ test('desktop header controls share a height while the motor action stays compac
 
 test('intermediate windows and nested cards reflow before their contents squeeze', () => {
   assert.match(theme, /@media \(min-width: 901px\) and \(max-width: 1023px\)[\s\S]*?\.workspace \{ grid-template-columns: minmax\(0, 1fr\);/);
-  assert.match(theme, /@media \(min-width: 1024px\) and \(max-width: 1119px\)[\s\S]*?\.workspace \{ grid-template-columns: minmax\(0, 1fr\) 280px;/);
+  assert.doesNotMatch(theme, /@media \(min-width: 1024px\) and \(max-width: 1119px\)/);
   assert.match(theme, /\.workspace-primary \{ container: processing \/ inline-size; \}/);
   assert.match(theme, /@container processing \(max-width: 760px\)[\s\S]*?\.start-onboarding \{ grid-template-columns: minmax\(0, 1fr\);/);
   assert.match(theme, /@container processing \(max-width: 700px\)[\s\S]*?\.operation-grid,\s*\.option-grid,\s*\.profiles \{ grid-template-columns: minmax\(0, 1fr\);/);
