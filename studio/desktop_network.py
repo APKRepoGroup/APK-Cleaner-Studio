@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import ipaddress
+import errno
 import html
 from http.cookies import SimpleCookie, CookieError
 from pathlib import Path
@@ -10,6 +11,29 @@ import ssl
 import threading
 from urllib.parse import urlsplit, parse_qs
 from desktop_pairing import Pairing, COOKIE
+
+
+class NetworkError(ValueError):
+    def __init__(self, code, message, status=503):
+        super().__init__(message)
+        self.code, self.status = code, status
+
+    def payload(self):
+        return {"error": str(self), "error_code": self.code}
+
+
+def network_failure(error, stage, port):
+    native = getattr(error, "winerror", None)
+    code = getattr(error, "errno", None)
+    if stage == "certificate":
+        return NetworkError("certificate_unavailable", "Yerel HTTPS sertifikası hazırlanamadı. Uygulamanın veri klasöründeki yazma iznini ve sistem tarihini kontrol edin.")
+    if native == 10048 or code == errno.EADDRINUSE:
+        return NetworkError("port_in_use", f"{port} bağlantı noktası başka bir uygulama tarafından kullanılıyor. Bu portu kullanan uygulamayı kapatıp yeniden deneyin.", 409)
+    if native == 10013 or code in {errno.EACCES, errno.EPERM}:
+        return NetworkError("network_permission", "Yerel ağ bağlantısı için erişim izni verilmedi. Windows'un ağ erişim izinlerini ve bağlantı noktası kısıtlamalarını kontrol edin.", 403)
+    if native in {10049, 10050, 10051} or code in {errno.EADDRNOTAVAIL, errno.ENETDOWN, errno.ENETUNREACH}:
+        return NetworkError("network_unavailable", "Yerel ağ bağlantısı kullanılamıyor. Wi-Fi veya Ethernet bağlantısını kontrol edip yeniden deneyin.")
+    return NetworkError("listener_unavailable", "Yerel ağ erişimi başlatılamadı. Uygulamayı yeniden açıp tekrar deneyin.")
 
 
 def private_address(value):
@@ -43,18 +67,26 @@ class LocalNetwork:
                 return self.state()
             if enabled:
                 if self.tools.closing.is_set():
-                    raise ValueError("Uygulama kapatılırken yerel ağ erişimi açılamaz.")
+                    raise NetworkError("app_closing", "Uygulama kapatılırken yerel ağ erişimi açılamaz.")
+                if type(self.port) is not int or not 0 <= self.port <= 65535:
+                    raise NetworkError("invalid_port", "Bağlantı noktası geçersiz. 1 ile 65535 arasında bir port kullanın.", 400)
                 address = self.runtime.local_network_ip()
                 if not address or not private_address(address) or ipaddress.ip_address(address).is_loopback:
-                    raise ValueError("Yerel ağ adresi bulunamadı. Wi-Fi veya Ethernet bağlantısını kontrol edin.")
-                cert, key, _root, _trusted = self.runtime.ensure_local_tls(
-                    self.runtime.DATA_ROOT / "tls", {"localhost", socket.gethostname()}, {address, "127.0.0.1"},
-                    trust_windows=False)
-                context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-                context.minimum_version = ssl.TLSVersion.TLSv1_2
-                context.load_cert_chain(certfile=cert, keyfile=key)
+                    raise NetworkError("network_address_missing", "Yerel ağ adresi bulunamadı. Wi-Fi veya Ethernet bağlantısını kontrol edin.", 400)
+                try:
+                    cert, key, _root, _trusted = self.runtime.ensure_local_tls(
+                        self.runtime.DATA_ROOT / "tls", {"localhost", socket.gethostname()}, {address, "127.0.0.1"},
+                        trust_windows=False)
+                    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+                    context.minimum_version = ssl.TLSVersion.TLSv1_2
+                    context.load_cert_chain(certfile=cert, keyfile=key)
+                except Exception as exc:
+                    raise network_failure(exc, "certificate", self.port) from exc
                 self.enabled = threading.Event()
-                listener = self.runtime.StudioServer(("0.0.0.0", self.port), self.handler(address), context)
+                try:
+                    listener = self.runtime.StudioServer(("0.0.0.0", self.port), self.handler(address), context)
+                except OSError as exc:
+                    raise network_failure(exc, "bind", self.port) from exc
                 self.address = f"http://{address}:{listener.server_port}/"
                 self.http = listener
                 self.pairing.reset(True)
@@ -62,12 +94,12 @@ class LocalNetwork:
                 self.thread = threading.Thread(target=listener.serve_forever, name="desktop-lan", daemon=True)
                 try:
                     self.thread.start()
-                except Exception:
+                except Exception as exc:
                     self.enabled.clear()
                     self.pairing.reset()
                     listener.server_close()
                     self.http = self.thread = None
-                    raise
+                    raise network_failure(exc, "thread", self.port) from exc
             else:
                 self.enabled.clear()
                 self.pairing.reset()
@@ -115,6 +147,16 @@ class LocalNetwork:
                 except CookieError:
                     return False
 
+            def discard_small_body(self):
+                # A small unread body can turn a useful HTTP error into a TCP
+                # reset on Windows. Never consume an unauthenticated upload.
+                try:
+                    length = int(self.headers.get("Content-Length", "0"))
+                    if 0 < length <= 8192:
+                        self.rfile.read(length)
+                except ValueError:
+                    pass
+
             def pair_page(self, error="", status=200):
                 source = (Path(__file__).resolve().parent / "desktop/pair.html").read_text(encoding="utf-8")
                 body = source.replace("{{error}}", html.escape(error)).encode("utf-8")
@@ -131,6 +173,7 @@ class LocalNetwork:
             def pair_request(self):
                 scheme = "https" if isinstance(self.connection, ssl.SSLSocket) else "http"
                 if self.headers.get("Origin") != scheme + "://" + self.headers.get("Host", ""):
+                    self.discard_small_body()
                     self.send_json({"error": "Eşleştirme isteği bu bağlantıya ait değil."}, 403)
                     return
                 try:
@@ -173,12 +216,14 @@ class LocalNetwork:
 
             def do_POST(self):
                 if not self.request_origin_allowed():
+                    self.discard_small_body()
                     self.send_json({"error": "Yerel ağ erişimi kapalı veya bu isteğe izin verilmiyor."}, 403)
                     return
                 if urlsplit(self.path).path == "/api/desktop/pair":
                     self.pair_request()
                     return
                 if not self.paired():
+                    self.discard_small_body()
                     self.send_json({"error": "Bu cihazı önce bilgisayardaki kodla eşleştirin.", "pairing_required": True}, 401)
                     return
                 if urlsplit(self.path).path == "/api/analyze":

@@ -9,6 +9,7 @@
 - Windows'ta arka planda tamamlanan veya hata veren işlemler bildirilir; bildirime tıklayınca sonuç açılır.
 - Windows'ta yerel ağ erişimi isteğe bağlı açılabilir; bağlı cihazlar oturumlar kartından yönetilebilir.
 - Yerel ağa bağlanan cihazlar geçici eşleştirme koduyla doğrulanır.
+- Yerel ağ bağlantı sorunları, port ve izin hataları için daha açık Türkçe açıklamalar gösterilir.
 - Yinelenen Türkçe Android metin kaynakları kaldırıldı; mevcut metinler varsayılan kaynakta korundu.
 
 ### 🐛 Hata Düzeltmeleri

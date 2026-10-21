@@ -1,5 +1,6 @@
 // UI-only LAN responses: no real network listener is enabled by this test.
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 const { chromium } = await import(process.env.APK_CLEANER_PLAYWRIGHT || "playwright");
 const browser = await chromium.launch({ headless: true, channel: "msedge" });
 const base = process.env.APK_CLEANER_DESKTOP_TEST_URL || "http://127.0.0.1:18085/";
@@ -59,6 +60,39 @@ try {
     assert.equal(enabled, false);
     assert.equal(await button.isEnabled(), true);
     assert.deepEqual(errors, []);
+    cases++;
+    await context.close();
+  }
+  const pairingPage = (await readFile(new URL("../studio/desktop/pair.html", import.meta.url), "utf8")).replace("{{error}}", "");
+  for (const theme of ["light", "dark"]) for (const width of [320, 390, 760, 1200]) {
+    const context = await browser.newContext({ viewport: { width, height: 700 }, colorScheme: theme });
+    const page = await context.newPage();
+    let paired = false;
+    const requests = [];
+    await context.route("**/*", route => {
+      const request = route.request(), url = new URL(request.url());
+      requests.push([request.method(), url.pathname]);
+      if (url.origin !== new URL(base).origin) return route.abort();
+      if (request.method() === "POST") {
+        assert.equal(url.pathname, "/api/desktop/pair");
+        assert.equal(new URLSearchParams(request.postData()).get("code"), "123456");
+        paired = true;
+        // HTTP redirect/cookie behavior is tested against the real Python
+        // listener; this fixture verifies the browser's form submission only.
+        return route.fulfill({ contentType: "text/html; charset=utf-8", body: "<h1>Eşleştirildi</h1>" });
+      }
+      return route.fulfill({ contentType: "text/html; charset=utf-8", body: paired ? "<h1>Eşleştirildi</h1>" : pairingPage });
+    });
+    await page.goto(base);
+    assert.equal(await page.locator("input").getAttribute("inputmode"), "numeric");
+    assert.equal(await page.locator("main").evaluate(node => node.scrollWidth > node.clientWidth + 1), false);
+    await page.locator("#code").fill("123456");
+    await page.getByRole("button", { name: "Bağlan", exact: true }).click();
+    if (!paired) {
+      console.log(JSON.stringify({ theme, width, requests, page: await page.locator("#code").evaluate(node => ({ valid: node.checkValidity(), value: node.value, validation: node.validationMessage, form: node.form?.outerHTML })) }));
+    }
+    await page.getByRole("heading", { name: "Eşleştirildi" }).waitFor();
+    assert.equal(paired, true);
     cases++;
     await context.close();
   }

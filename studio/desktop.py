@@ -117,6 +117,7 @@ class OwnedTools:
 
 
 def handler_for(runtime, tools, network=None):
+    from desktop_network import NetworkError
     class DesktopHandler(runtime.StudioHandler):
         def log_message(self, fmt, *args):
             logging.getLogger("desktop.http").info(fmt, *args)
@@ -202,6 +203,8 @@ def handler_for(runtime, tools, network=None):
                     if not isinstance(payload, dict) or type(payload.get("enabled")) is not bool:
                         raise ValueError("Yerel ağ seçimi geçersiz.")
                     self.send_json(network.set_enabled(payload["enabled"]))
+                except NetworkError as exc:
+                    self.send_json(exc.payload(), exc.status)
                 except ValueError as exc:
                     self.send_json({"error": str(exc)}, 400)
                 except Exception:

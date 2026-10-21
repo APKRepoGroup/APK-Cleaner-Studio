@@ -1,6 +1,7 @@
 """Real HTTP/TLS tests, bound only to loopback (never expose the test engine)."""
 from contextlib import ExitStack
 import json
+import errno
 import http.cookiejar
 from pathlib import Path
 import socket
@@ -17,7 +18,7 @@ sys.path.insert(0, str(ROOT / "studio"))
 import desktop
 import engine
 import server
-from desktop_network import private_address
+from desktop_network import private_address, network_failure
 
 
 class WindowsNetworkTests(unittest.TestCase):
@@ -157,6 +158,20 @@ class WindowsNetworkTests(unittest.TestCase):
             self.assertTrue(private_address(value))
         for value in ("8.8.8.8", "0.0.0.0", "224.0.0.1", "255.255.255.255", "::1", "invalid"):
             self.assertFalse(private_address(value))
+
+    def test_connection_failures_are_specific_turkish_errors_without_raw_vendor_text(self):
+        for number, expected, status in [(errno.EADDRINUSE, "port_in_use", 409),
+                                          (errno.EACCES, "network_permission", 403),
+                                          (errno.ENETDOWN, "network_unavailable", 503)]:
+            with mock.patch.object(server, "StudioServer", side_effect=OSError(number, "raw English vendor text")):
+                with self.assertRaises(urllib.error.HTTPError) as error:
+                    self.control(True)
+                payload = json.load(error.exception)
+                self.assertEqual(payload["error_code"], expected)
+                self.assertEqual(error.exception.code, status)
+                self.assertNotIn("raw English", payload["error"])
+                self.assertFalse(self.host.network.state()["enabled"])
+        self.assertEqual(network_failure(PermissionError(), "certificate", 8080).code, "certificate_unavailable")
 
     def test_default_lan_port_is_8080_and_native_origin_is_independent(self):
         host = desktop.DesktopHost(server, engine)
