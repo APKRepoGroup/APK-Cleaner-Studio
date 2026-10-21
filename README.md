@@ -98,7 +98,11 @@ Android sürümüne özgü özellikler:
 
 Dev.6 geliştirme sürümünde Windows EXE'si mevcut arayüzü kendi uygulama penceresinde açar; konsol veya tarayıcı sekmesi açılmaz. Pencere kapatıldığında yerel motor da kapanır; analiz veya işlem sürüyorsa önce onay istenir. Çalışma dosyaları ve geçmiş aynı kullanıcı veri klasöründe korunur. Yeni masaüstü menü düzeni bu sürüme dahil değildir.
 
-Bu pencere yalnızca `127.0.0.1` üzerinde çalışır; LAN ve sertifika kurulumu gerektirmez. Günlükler kullanıcı veri klasöründeki `logs/desktop.log` dosyasındadır. Windows 10/11 üzerinde Microsoft Edge WebView2 Runtime ve .NET Framework 4.8 gerekir; aşağıdaki konsol/LAN açıklamaları önceki Windows sürümleri ve kaynak sunucu başlatıcıları içindir.
+Uygulama penceresi yalnızca `127.0.0.1` üzerinde çalışır ve sertifika kurulumu gerektirmez. Boyutu, konumu ve büyütülmüş durumu hatırlanır; tekrar açıldığında mevcut pencere öne gelir. İşlem ilerlemesi görev çubuğunda da gösterilir.
+
+**Yerel ağ erişimi** kartından aynı ağdaki diğer cihazlara erişim açılabilir. Açıldığında HTTP/HTTPS adresleri ve **Yerel ağ oturumları** kartı görünür. Bu erişim parola içermez; yalnızca güvenilir özel ağlarda kullanılmalıdır ve her uygulama açılışında kapalı başlar. Varsayılan yerel ağ bağlantı noktası `8080`'dir; Windows güvenlik duvarı özel ağ izni isteyebilir. Uygulamanın yalnızca bilgisayardan erişilebilen iç bağlantısı ayrı, sabit `8081` portunu kullanır. Uygulama sertifikayı otomatik olarak Windows güven deposuna eklemez. Telefonda HTTPS kullanmak için CA sertifikası **Yerel işlem motoru → Mobil HTTPS sertifikası** bölümünden indirilebilir. Erişim kapatıldığında yeni bağlantılar durur; başlatılmış işlemler bilgisayarda devam eder.
+
+Günlükler kullanıcı veri klasöründeki `logs/desktop.log` dosyasındadır. Windows 10/11 üzerinde Microsoft Edge WebView2 Runtime ve .NET Framework 4.8 gerekir; aşağıdaki konsol/LAN açıklamaları önceki Windows sürümleri ve kaynak sunucu başlatıcıları içindir.
 
 `APK-Cleaner-Studio-v0.6.2-Windows.exe` dosyasını çalıştırman yeterlidir. Ayrı bir Python kurulumu veya BAT dosyası gerekmez. Java ya da gerekli işlem bileşenleri eksikse arayüzdeki **Eksik bileşenleri hazırla** düğmesi, doğrulanmış taşınabilir araç zincirini kullanıcı klasörüne kurar.
 

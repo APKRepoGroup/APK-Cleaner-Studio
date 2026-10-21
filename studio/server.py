@@ -2338,16 +2338,8 @@ class StudioHandler(BaseHTTPRequestHandler):
                 _ANALYZE_SLOTS.release()
 
 
-def serve(host: str, port: int, open_browser: bool, trust_prompt: bool = True, prefer_http: bool = False) -> None:
-    global _ACTIVE_SERVER, _BROWSER_TIMER, _PUBLIC_HTTPS_ORIGIN
-    JOBS.mkdir(parents=True, exist_ok=True)
-    try:
-        DATA_ROOT.chmod(0o700)
-        JOBS.chmod(0o700)
-    except OSError:
-        pass
-    cleanup_stale_jobs()
-    reconcile_interrupted_jobs()
+def load_client_settings() -> None:
+    global _PUBLIC_HTTPS_ORIGIN
     # Public reverse-proxy origins are learned only for this process. A user's
     # private hostname is never loaded from or written to disk.
     _PUBLIC_HTTPS_ORIGIN = ""
@@ -2374,6 +2366,19 @@ def serve(host: str, port: int, open_browser: bool, trust_prompt: bool = True, p
                 "local": False,
                 **{key: record[key] for key in ("model", "hostname", "reported_public_ip", "reported_browser", "access_requested_at") if record.get(key)},
             }
+
+
+def serve(host: str, port: int, open_browser: bool, trust_prompt: bool = True, prefer_http: bool = False) -> None:
+    global _ACTIVE_SERVER, _BROWSER_TIMER, _PUBLIC_HTTPS_ORIGIN
+    JOBS.mkdir(parents=True, exist_ok=True)
+    try:
+        DATA_ROOT.chmod(0o700)
+        JOBS.chmod(0o700)
+    except OSError:
+        pass
+    cleanup_stale_jobs()
+    reconcile_interrupted_jobs()
+    load_client_settings()
     lan_ip = None if ANDROID_RUNTIME else (local_network_ip() if host in {"0.0.0.0", "::"} else None)
     try:
         if ANDROID_RUNTIME:

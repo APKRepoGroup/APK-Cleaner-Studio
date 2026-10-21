@@ -101,7 +101,7 @@ class OwnedTools:
                     process.wait(timeout=2)
 
 
-def handler_for(runtime, tools):
+def handler_for(runtime, tools, network=None):
     class DesktopHandler(runtime.StudioHandler):
         def log_message(self, fmt, *args):
             logging.getLogger("desktop.http").info(fmt, *args)
@@ -137,9 +137,16 @@ def handler_for(runtime, tools):
                 source = (runtime.WEB / "index.html").read_text(encoding="utf-8")
                 source = source.replace('<html lang="tr"', '<html data-desktop-native="true" lang="tr"', 1)
                 source = source.replace("</head>", '<link rel="stylesheet" href="/desktop-window.css"></head>', 1)
+                source = source.replace('<section id="clientCard"',
+                                        (ROOT / "desktop/network.html").read_text(encoding="utf-8") + '<section id="clientCard"', 1)
+                source = source.replace("</body>", '<script src="/desktop-network.js" defer></script></body>', 1)
                 self.send_text(source, "text/html", html=True)
             elif path == "/desktop-window.css":
                 self.send_text((ROOT / "desktop/desktop.css").read_text(encoding="utf-8"), "text/css")
+            elif path == "/desktop-network.js":
+                self.send_text((ROOT / "desktop/network.js").read_text(encoding="utf-8"), "text/javascript")
+            elif path == "/api/desktop/network" and network is not None:
+                self.send_json(network.state())
             elif path == "/boot.js":
                 source = (runtime.WEB / "boot.js").read_text(encoding="utf-8")
                 guard = 'if (location.protocol !== "http:" || document.documentElement.dataset.embedded === "android") return;'
@@ -148,15 +155,43 @@ def handler_for(runtime, tools):
                     return
                 self.send_text(source.replace(guard, 'return; // Native loopback window needs no LAN TLS probe.', 1), "text/javascript")
             elif path == "/local-ca.crt":
-                self.send_error(404)
+                if network is not None and network.state()["enabled"]:
+                    self.send_file(runtime.LOCAL_CA_PATH, "apk-cleaner-local-ca.crt", "application/x-x509-ca-cert")
+                else:
+                    self.send_error(404)
             else:
                 super().do_GET()  # Includes the real update, history and output APIs.
 
         def do_POST(self):
+            # Read the tiny control payload even when rejecting its origin.
+            # Otherwise Windows may reset an HTTP/1.0 connection with unread
+            # request bytes before the client can receive our Turkish error.
+            control = urlsplit(self.path).path == "/api/desktop/network" and network is not None
+            payload = None
+            if control:
+                try:
+                    payload = self.read_body_json()
+                except (ValueError, UnicodeError):
+                    self.send_json({"error": "Yerel ağ seçimi geçersiz."}, 400)
+                    return
             if not self.request_origin_allowed():
                 self.send_json({"error": "Bu istek uygulama oturumuna ait değil."}, 403)
             elif tools.closing.is_set():
                 self.send_json({"error": "Uygulama güvenli biçimde kapatılıyor."}, 503)
+            elif control:
+                # Only a same-origin native request may expose the LAN listener.
+                if self.headers.get("Origin") != f"http://127.0.0.1:{self.server.server_port}":
+                    self.send_json({"error": "Yerel ağ ayarı yalnızca uygulama penceresinden değiştirilebilir."}, 403)
+                    return
+                try:
+                    if not isinstance(payload, dict) or type(payload.get("enabled")) is not bool:
+                        raise ValueError("Yerel ağ seçimi geçersiz.")
+                    self.send_json(network.set_enabled(payload["enabled"]))
+                except ValueError as exc:
+                    self.send_json({"error": str(exc)}, 400)
+                except Exception:
+                    logging.exception("Yerel ağ erişimi değiştirilemedi")
+                    self.send_json({"error": "Yerel ağ erişimi açılamadı. Ağ bağlantısını ve bağlantı noktasının başka bir uygulamada kullanılmadığını kontrol edin."}, 503)
             elif urlsplit(self.path).path == "/api/analyze":
                 if not tools.begin_analysis():
                     self.send_json({"error": "Uygulama güvenli biçimde kapatılıyor."}, 503)
@@ -171,11 +206,13 @@ def handler_for(runtime, tools):
 
 
 class DesktopHost:
-    def __init__(self, runtime, engine, port=8080):
+    def __init__(self, runtime, engine, port=0, lan_port=8080):
         self.runtime, self.engine = runtime, engine
         self.tools = OwnedTools()
+        from desktop_network import LocalNetwork
+        self.network = LocalNetwork(runtime, self.tools, lan_port)
         self.original_subprocess = engine.subprocess
-        self.http = ThreadingHTTPServer(("127.0.0.1", port), handler_for(runtime, self.tools))
+        self.http = ThreadingHTTPServer(("127.0.0.1", port), handler_for(runtime, self.tools, self.network))
         self.http.daemon_threads = True
         self.server_stopped = threading.Event()
         self.thread = threading.Thread(target=self.serve, name="desktop-http", daemon=True)
@@ -193,6 +230,7 @@ class DesktopHost:
         self.runtime.JOBS.mkdir(parents=True, exist_ok=True)
         self.runtime.cleanup_stale_jobs()
         self.runtime.reconcile_interrupted_jobs()
+        self.runtime.load_client_settings()
         self.engine.subprocess = self.tools
         self.runtime._ACTIVE_SERVER = self.http
         self.thread.start()
@@ -225,6 +263,7 @@ class DesktopHost:
             for event in self.runtime._JOB_CANCEL_EVENTS.values():
                 event.set()
         try:
+            self.network.close()
             self.engine.terminate_active_tools()
             self.tools.stop()
         finally:
@@ -249,7 +288,10 @@ class LogStream(io.TextIOBase):
 
 def main():
     parser = argparse.ArgumentParser(description="APK Cleaner Studio Windows uygulaması")
-    parser.add_argument("--port", type=int, default=8080)
+    # A stable internal origin preserves WebView theme/profile localStorage.
+    # Keep it separate so LAN can own port 8080 without restarting the window.
+    parser.add_argument("--port", type=int, default=8081, help="Uygulama içi bağlantı noktası")
+    parser.add_argument("--lan-port", type=int, default=8080, help="İsteğe bağlı yerel ağ bağlantı noktası")
     # Keep compatibility with existing Windows shortcuts, without opening a browser.
     parser.add_argument("--open", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--no-open", action="store_true", help=argparse.SUPPRESS)
@@ -273,7 +315,7 @@ def main():
         sys.stdout = sys.stderr = LogStream()
         import webview
         import server
-        host = DesktopHost(server, engine, args.port)
+        host = DesktopHost(server, engine, args.port, lan_port=args.lan_port)
         host.start()
         status_path = logs / "desktop-session.json"
         status = {"pid": os.getpid(), "url": host.url, "version": server.VERSION, "state": "starting"}
