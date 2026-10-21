@@ -2,10 +2,11 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "studio"))
-from windows_shell import capture_geometry, restore_geometry, WindowStateStore
+from windows_shell import capture_geometry, restore_geometry, WindowStateStore, InstanceGate
 
 PRIMARY = {"name": "primary", "x": 0, "y": 0, "width": 1920, "height": 1040, "dpi": 96}
 LEFT = {"name": "left", "x": -2560, "y": 0, "width": 2560, "height": 1400, "dpi": 144}
@@ -57,6 +58,55 @@ class WindowGeometryTests(unittest.TestCase):
             self.assertEqual(store.load(), {})
             path.write_text("x" * 16385, encoding="utf-8")
             self.assertEqual(store.load(), {})
+
+
+class InstanceGateTests(unittest.TestCase):
+    def test_second_instance_signals_existing_window_and_releases_only_its_handles(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "logs/desktop-session.json"
+            path.parent.mkdir()
+            path.write_text('{"pid": 123}', encoding="utf-8")
+            api = mock.Mock()
+            api.mutex.return_value = (101, True)
+            api.open_event.return_value = 202
+            api.signal.return_value = True
+            gate = InstanceGate(path, api=api)
+            self.assertTrue(gate.existing)
+            api.event.assert_not_called()
+            self.assertTrue(gate.request_activation())
+            api.grant_foreground.assert_called_once_with(123, "APK Cleaner Studio")
+            api.signal.assert_called_once_with(202)
+            gate.close()
+            gate.close()
+            self.assertEqual(api.close.call_args_list, [mock.call(202), mock.call(101)])
+
+    def test_startup_click_is_queued_without_needing_a_session_file(self):
+        api = mock.Mock()
+        api.mutex.return_value = (101, False)
+        api.event.return_value = 202
+        api.consume.return_value = True
+        gate = InstanceGate("unwritten/logs/desktop-session.json", api=api)
+        self.assertFalse(gate.existing)
+        self.assertTrue(gate.consume_activation())
+        gate.foreground(333)
+        api.foreground.assert_called_once_with(333)
+        gate.close()
+        self.assertEqual(api.close.call_args_list, [mock.call(202), mock.call(101)])
+
+    def test_failed_event_initialization_releases_mutex_and_data_roots_are_isolated(self):
+        api = mock.Mock()
+        api.mutex.return_value = (101, False)
+        api.event.side_effect = OSError("not available")
+        with self.assertRaises(OSError):
+            InstanceGate("one/logs/session.json", api=api)
+        api.close.assert_called_once_with(101)
+        api.event.side_effect = None
+        api.event.return_value = 202
+        first = InstanceGate("one/logs/session.json", api=api)
+        other = InstanceGate("two/logs/session.json", api=api)
+        self.assertNotEqual(first.name, other.name)
+        first.close()
+        other.close()
 
 
 if __name__ == "__main__":

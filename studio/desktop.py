@@ -231,18 +231,16 @@ def main():
     args = parser.parse_args()
     host = None
     status_path = None
-    mutex = None
+    instance = None
     try:
-        if os.name == "nt":
-            kernel = ctypes.windll.kernel32
-            kernel.CreateMutexW.restype = ctypes.c_void_p
-            mutex = kernel.CreateMutexW(None, False, "Local\\APKCleanerStudio.Desktop")
-            if not mutex:
-                raise OSError("Uygulama oturumu oluşturulamadı.")
-            if kernel.GetLastError() == 183:
-                ctypes.windll.user32.MessageBoxW(None, "APK Cleaner Studio zaten açık. Açık uygulama penceresini kullanın.", TITLE, 0x40)
-                return 0
         import engine
+        if os.name == "nt":
+            from windows_shell import InstanceGate
+            instance = InstanceGate(engine.DATA_ROOT / "logs/desktop-session.json", TITLE)
+            if instance.existing:
+                if not instance.request_activation():
+                    ctypes.windll.user32.MessageBoxW(None, "Açık uygulama penceresine ulaşılamadı. Uygulamayı kapatıp yeniden deneyin.", TITLE, 0x40)
+                return 0
         logs = engine.DATA_ROOT / "logs"
         logs.mkdir(parents=True, exist_ok=True)
         logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s", force=True,
@@ -270,7 +268,7 @@ def main():
         def before_show():
             try:
                 from windows_shell import WindowsShell
-                shell_integrations.append(WindowsShell(window.native, server, engine.DATA_ROOT / "desktop-window.json"))
+                shell_integrations.append(WindowsShell(window.native, server, engine.DATA_ROOT / "desktop-window.json", instance))
             except Exception:
                 logging.exception("Pencere tercihleri uygulanamadı")
             control = window.native.webview
@@ -320,8 +318,8 @@ def main():
             host.stop()
         if status_path is not None and 'save_status' in locals():
             save_status("stopped")
-        if mutex:
-            ctypes.windll.kernel32.CloseHandle(ctypes.c_void_p(mutex))
+        if instance:
+            instance.close()
 
 
 if __name__ == "__main__":

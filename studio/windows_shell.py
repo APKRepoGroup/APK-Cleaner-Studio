@@ -2,10 +2,122 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import logging
 import math
 from pathlib import Path
 import time
+
+
+class InstanceApi:
+    """Typed Win32 calls; activation never executes content from disk or HTTP."""
+    def __init__(self):
+        import ctypes
+        from ctypes import wintypes
+        self.ctypes = ctypes
+        self.kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+        self.user = ctypes.WinDLL("user32", use_last_error=True)
+        signatures = [(self.kernel, "CreateMutexW", [ctypes.c_void_p, wintypes.BOOL, wintypes.LPCWSTR], wintypes.HANDLE),
+                      (self.kernel, "CreateEventW", [ctypes.c_void_p, wintypes.BOOL, wintypes.BOOL, wintypes.LPCWSTR], wintypes.HANDLE),
+                      (self.kernel, "OpenEventW", [wintypes.DWORD, wintypes.BOOL, wintypes.LPCWSTR], wintypes.HANDLE),
+                      (self.kernel, "SetEvent", [wintypes.HANDLE], wintypes.BOOL),
+                      (self.kernel, "WaitForSingleObject", [wintypes.HANDLE, wintypes.DWORD], wintypes.DWORD),
+                      (self.kernel, "CloseHandle", [wintypes.HANDLE], wintypes.BOOL),
+                      (self.user, "FindWindowW", [wintypes.LPCWSTR, wintypes.LPCWSTR], wintypes.HWND),
+                      (self.user, "GetWindowThreadProcessId", [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)], wintypes.DWORD),
+                      (self.user, "AllowSetForegroundWindow", [wintypes.DWORD], wintypes.BOOL),
+                      (self.user, "SetForegroundWindow", [wintypes.HWND], wintypes.BOOL),
+                      (self.user, "FlashWindow", [wintypes.HWND, wintypes.BOOL], wintypes.BOOL)]
+        for library, name, args, result in signatures:
+            function = getattr(library, name)
+            function.argtypes, function.restype = args, result
+
+    def mutex(self, name):
+        handle = self.kernel.CreateMutexW(None, False, name)
+        error = self.ctypes.get_last_error()
+        if not handle:
+            raise self.ctypes.WinError(error)
+        return handle, error == 183
+
+    def event(self, name):
+        handle = self.kernel.CreateEventW(None, False, False, name)
+        if not handle:
+            raise self.ctypes.WinError(self.ctypes.get_last_error())
+        return handle
+
+    def open_event(self, name):
+        return self.kernel.OpenEventW(2, False, name)
+
+    def signal(self, handle):
+        return bool(self.kernel.SetEvent(handle))
+
+    def consume(self, handle):
+        return self.kernel.WaitForSingleObject(handle, 0) == 0
+
+    def close(self, handle):
+        self.kernel.CloseHandle(handle)
+
+    def grant_foreground(self, pid, title):
+        from ctypes import wintypes
+        hwnd = self.user.FindWindowW(None, title)
+        actual = wintypes.DWORD()
+        if hwnd and type(pid) is int and pid > 0:
+            self.user.GetWindowThreadProcessId(hwnd, self.ctypes.byref(actual))
+            if actual.value == pid:
+                self.user.AllowSetForegroundWindow(pid)
+
+    def foreground(self, hwnd):
+        if not self.user.SetForegroundWindow(hwnd):
+            # Respect Windows focus-stealing restrictions instead of forcing
+            # global input attachment or toggling the window's topmost state.
+            self.user.FlashWindow(hwnd, True)
+
+
+class InstanceGate:
+    def __init__(self, session_path, title="APK Cleaner Studio", api=None, name=None):
+        self.session_path, self.title = Path(session_path), title
+        identity = str(self.session_path.parent.parent.resolve()).casefold().encode("utf-8")
+        self.name = name or "Local\\APKCleanerStudio.Desktop." + hashlib.sha256(identity).hexdigest()[:20]
+        self.api = api or InstanceApi()
+        self.event_handle = None
+        self.mutex_handle, self.existing = self.api.mutex(self.name)
+        try:
+            if not self.existing:
+                self.event_handle = self.api.event(self.name + ".Activate")
+        except Exception:
+            self.close()
+            raise
+
+    def request_activation(self):
+        # The event can precede the window. A second click during startup stays
+        # queued until its owner creates the UI timer, without another backend.
+        for _ in range(60):
+            handle = self.api.open_event(self.name + ".Activate")
+            if handle:
+                try:
+                    try:
+                        status = json.loads(self.session_path.read_text(encoding="utf-8"))
+                        self.api.grant_foreground(status.get("pid"), self.title)
+                    except (OSError, ValueError, AttributeError):
+                        pass
+                    return self.api.signal(handle)
+                finally:
+                    self.api.close(handle)
+            time.sleep(.05)
+        return False
+
+    def consume_activation(self):
+        return bool(self.event_handle and self.api.consume(self.event_handle))
+
+    def foreground(self, hwnd):
+        self.api.foreground(hwnd)
+
+    def close(self):
+        for name in ("event_handle", "mutex_handle"):
+            handle = getattr(self, name, None)
+            if handle:
+                self.api.close(handle)
+                setattr(self, name, None)
 
 
 def number(value, fallback=0):
@@ -68,10 +180,11 @@ class WindowStateStore:
 
 class WindowsShell:
     """Attach only on the WinForms UI thread (pywebview before_show)."""
-    def __init__(self, form, runtime, state_path):
+    def __init__(self, form, runtime, state_path, instance=None):
         from System.Drawing import Size
         from System.Windows.Forms import FormStartPosition, FormWindowState, Screen, Timer
         self.form, self.runtime = form, runtime
+        self.instance = instance
         self.Screen, self.WindowState = Screen, FormWindowState
         self.store = WindowStateStore(state_path)
         self.last_maximized = False
@@ -141,6 +254,12 @@ class WindowsShell:
         self.pending_save = 0
 
     def tick(self, sender, event):
+        if not self.closed and self.instance and self.instance.consume_activation():
+            if self.form.WindowState == self.WindowState.Minimized:
+                self.form.WindowState = self.WindowState.Maximized if self.last_maximized else self.WindowState.Normal
+            self.form.Show()
+            self.form.Activate()
+            self.instance.foreground(int(self.form.Handle.ToInt64()))
         if not self.closed and self.pending_save and time.monotonic() >= self.pending_save:
             self.save()
 
