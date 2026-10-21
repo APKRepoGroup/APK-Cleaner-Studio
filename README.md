@@ -98,7 +98,7 @@ Android sürümüne özgü özellikler:
 
 Dev.6 geliştirme sürümünde Windows EXE'si mevcut arayüzü kendi uygulama penceresinde açar; konsol veya tarayıcı sekmesi açılmaz. Pencere kapatıldığında yerel motor da kapanır; analiz veya işlem sürüyorsa önce onay istenir. Çalışma dosyaları ve geçmiş aynı kullanıcı veri klasöründe korunur. Yeni masaüstü menü düzeni bu sürüme dahil değildir.
 
-Uygulama penceresi yalnızca `127.0.0.1` üzerinde çalışır ve sertifika kurulumu gerektirmez. Boyutu, konumu ve büyütülmüş durumu hatırlanır; tekrar açıldığında mevcut pencere öne gelir. İşlem ilerlemesi görev çubuğunda da gösterilir.
+Uygulama penceresi yalnızca `127.0.0.1` üzerinde çalışır ve sertifika kurulumu gerektirmez. Boyutu, konumu ve büyütülmüş durumu hatırlanır; tekrar açıldığında mevcut pencere öne gelir. İşlem ilerlemesi görev çubuğunda da gösterilir. Pencere küçültülmüş veya arka plandayken tamamlanan/hata veren işlemler Windows bildirimiyle haber verilir; bildirime tıklayınca ilgili sonuç açılır. Bildirimlerin gösterilmesi Windows'un bildirim ve odaklanma ayarlarına bağlıdır. Pencere kapatıldığında uygulama tamamen kapanır; sistem tepsisinde çalışmaya devam etmez.
 
 **Yerel ağ erişimi** kartından aynı ağdaki diğer cihazlara erişim açılabilir. Açıldığında HTTP/HTTPS adresleri, 6 haneli eşleştirme kodu ve **Yerel ağ oturumları** kartı görünür. Bağlanan cihaz kodu girmeden uygulamayı kullanamaz. Kod ve eşleştirmeler diske kaydedilmez; erişim kapatılınca geçersizleşir. Eşleştirilmiş oturumlar en fazla 8 saat sürer; yanlış kod denemeleri sınırlandırılır. HTTP trafiği şifreli değildir: yalnızca güvenilir özel ağlarda kullanın. Erişim her uygulama açılışında kapalı başlar.
 

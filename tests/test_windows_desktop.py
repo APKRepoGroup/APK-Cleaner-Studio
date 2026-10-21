@@ -17,6 +17,15 @@ import server
 
 
 class WindowsDesktopTests(unittest.TestCase):
+    def test_result_click_only_passes_a_valid_engine_id_to_webview_off_the_ui_thread(self):
+        window = mock.Mock()
+        for value in (None, "../outside", "alert(1)", "x" * 32):
+            self.assertIsNone(desktop.open_job_result(window, value))
+        window.evaluate_js.assert_not_called()
+        thread = desktop.open_job_result(window, "a" * 32)
+        thread.join(timeout=2)
+        window.evaluate_js.assert_called_once_with('globalThis.onJobNotification?.("' + "a" * 32 + '")')
+
     def test_analysis_is_busy_balanced_on_failure_and_rejected_during_close(self):
         tools = desktop.OwnedTools()
         self.assertTrue(tools.begin_analysis())

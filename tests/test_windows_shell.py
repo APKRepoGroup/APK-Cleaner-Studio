@@ -10,7 +10,7 @@ from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "studio"))
-from windows_shell import capture_geometry, restore_geometry, WindowStateStore, InstanceGate, progress_snapshot, NativeTaskbar, WindowsShell
+from windows_shell import capture_geometry, restore_geometry, WindowStateStore, InstanceGate, progress_snapshot, NativeTaskbar, WindowsShell, ResultTracker, ResultNotifier
 
 PRIMARY = {"name": "primary", "x": 0, "y": 0, "width": 1920, "height": 1040, "dpi": 96}
 LEFT = {"name": "left", "x": -2560, "y": 0, "width": 2560, "height": 1400, "dpi": 144}
@@ -159,6 +159,7 @@ class TaskbarTests(unittest.TestCase):
         shell.instance.consume_activation.return_value = True
         shell.runtime = self.runtime({"a" * 32: {"progress": 67}})
         shell.analyzing = lambda: False
+        shell.notifier = None
         shell.tick(None, None)
         self.assertEqual(shell.form.WindowState, 2)
         shell.form.Show.assert_called_once()
@@ -171,6 +172,33 @@ class TaskbarTests(unittest.TestCase):
         shell.on_closed(None, None)
         bar.close.assert_called_once()
         shell.timer.Dispose.assert_called_once()
+
+    def test_result_tracking_never_replays_old_history_and_survives_active_marker_removal(self):
+        records = {"a" * 32: {"status": "working"}}
+        runtime = self.runtime(records)
+        tracker = ResultTracker()
+        self.assertEqual(tracker.poll(runtime), [])
+        records["a" * 32] = {"status": "done", "filename": "Örnek.apk"}
+        runtime._ACTIVE_JOBS.clear()
+        self.assertEqual(tracker.poll(runtime), [("a" * 32, "done", "Örnek.apk")])
+        self.assertEqual(tracker.poll(runtime), [])
+        fresh = ResultTracker()
+        self.assertEqual(fresh.poll(runtime), [])
+
+    def test_notification_queue_click_opens_the_displayed_job_not_a_later_result(self):
+        notifier = ResultNotifier.__new__(ResultNotifier)
+        notifier.icon, notifier.activate, notifier.open_result = mock.Mock(), mock.Mock(), mock.Mock()
+        notifier.IconKind = SimpleNamespace(Info=1, Warning=2)
+        notifier.job, notifier.pending = None, []
+        notifier.show("a" * 32, "done", "Bir.apk")
+        notifier.show("b" * 32, "error", "İki.apk")
+        notifier.icon.ShowBalloonTip.assert_called_once()
+        notifier.clicked(None, None)
+        notifier.open_result.assert_called_once_with("a" * 32)
+        notifier.dismissed(None, None)
+        self.assertEqual(notifier.job, "b" * 32)
+        notifier.close()
+        notifier.icon.Dispose.assert_called_once()
 
 
 if __name__ == "__main__":

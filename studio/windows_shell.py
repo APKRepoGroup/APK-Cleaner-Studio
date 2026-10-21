@@ -10,6 +10,82 @@ import time
 import uuid
 
 
+class ResultTracker:
+    """Track only jobs seen running in this process; never replay old history."""
+    def __init__(self):
+        self.watched = {}
+        self.delivered = set()
+
+    def poll(self, runtime):
+        with runtime._ACTIVE_JOBS_LOCK:
+            active = tuple(runtime._ACTIVE_JOBS)
+        now = time.monotonic()
+        for job in active:
+            if isinstance(job, str) and runtime.JOB_ID.fullmatch(job) and job not in self.delivered:
+                self.watched.setdefault(job, now)
+        results = []
+        for job, started in tuple(self.watched.items()):
+            record = runtime.read_json(runtime.JOBS / job / "state.json")
+            status = record.get("status") if isinstance(record, dict) else None
+            if status in {"done", "error", "cancelled", "interrupted"}:
+                self.watched.pop(job, None)
+                self.delivered.add(job)
+                if status in {"done", "error"}:
+                    results.append((job, status, str(record.get("filename") or "APK paketi")[:160]))
+            elif now - started > 24 * 3600 or not record and job not in active:
+                self.watched.pop(job, None)
+        # Memory is bounded even for a long-lived desktop session.
+        if len(self.delivered) > 512:
+            self.delivered = set(tuple(self.delivered)[-256:])
+        return results
+
+
+class ResultNotifier:
+    def __init__(self, form, activate, open_result):
+        from System.Windows.Forms import NotifyIcon, ToolTipIcon
+        self.form, self.activate, self.open_result = form, activate, open_result
+        self.IconKind = ToolTipIcon
+        self.icon = NotifyIcon()
+        self.icon.Icon = form.Icon
+        self.icon.Text = "APK Cleaner Studio"
+        self.job = None
+        self.pending = []
+        self.handlers = [self.clicked, self.open_window, self.dismissed]
+        self.icon.BalloonTipClicked += self.clicked
+        self.icon.BalloonTipClosed += self.dismissed
+        self.icon.DoubleClick += self.open_window
+
+    def show(self, job, status, name):
+        if self.job is not None:
+            if len(self.pending) < 16:
+                self.pending.append((job, status, name))
+            return
+        self.job = job
+        self.icon.Visible = True
+        title = "İşlem tamamlandı" if status == "done" else "İşlem tamamlanamadı"
+        message = name + ("\nÇıktı hazır. Sonucu açmak için tıklayın." if status == "done"
+                          else "\nAyrıntıları incelemek için tıklayın. Orijinal paket korundu.")
+        self.icon.ShowBalloonTip(8000, title, message, self.IconKind.Info if status == "done" else self.IconKind.Warning)
+
+    def open_window(self, sender, event):
+        self.activate()
+
+    def clicked(self, sender, event):
+        self.activate()
+        if self.job:
+            self.open_result(self.job)
+
+    def dismissed(self, sender, event):
+        self.job = None
+        if self.pending:
+            self.show(*self.pending.pop(0))
+
+    def close(self):
+        self.pending.clear()
+        self.icon.Visible = False
+        self.icon.Dispose()
+
+
 def progress_snapshot(runtime, analyzing=False):
     """Read the engine journal even when WebView background polling is paused."""
     with runtime._ACTIVE_JOBS_LOCK:
@@ -262,13 +338,15 @@ class WindowStateStore:
 
 class WindowsShell:
     """Attach only on the WinForms UI thread (pywebview before_show)."""
-    def __init__(self, form, runtime, state_path, instance=None, analyzing=None):
+    def __init__(self, form, runtime, state_path, instance=None, analyzing=None, open_result=None):
         from System.Drawing import Size
         from System.Windows.Forms import FormStartPosition, FormWindowState, Screen, Timer
         self.form, self.runtime = form, runtime
         self.instance = instance
         self.analyzing = analyzing or (lambda: False)
         self.taskbar = None
+        self.notifier = None
+        self.results = ResultTracker()
         self.Screen, self.WindowState = Screen, FormWindowState
         self.store = WindowStateStore(state_path)
         self.last_maximized = False
@@ -299,6 +377,21 @@ class WindowsShell:
             self.taskbar = NativeTaskbar(int(form.Handle.ToInt64()))
         except Exception:
             logging.getLogger("desktop.shell").warning("Görev çubuğu ilerlemesi kullanılamıyor", exc_info=True)
+        if open_result:
+            try:
+                self.notifier = ResultNotifier(form, self.activate, open_result)
+            except Exception:
+                logging.getLogger("desktop.shell").warning("İşlem sonuç bildirimi kullanılamıyor", exc_info=True)
+
+    def activate(self):
+        if self.closed:
+            return
+        if self.form.WindowState == self.WindowState.Minimized:
+            self.form.WindowState = self.WindowState.Maximized if self.last_maximized else self.WindowState.Normal
+        self.form.Show()
+        self.form.Activate()
+        if self.instance:
+            self.instance.foreground(int(self.form.Handle.ToInt64()))
 
     def screen_info(self, screen):
         area = screen.WorkingArea
@@ -345,11 +438,7 @@ class WindowsShell:
         if self.closed:
             return
         if not self.closed and self.instance and self.instance.consume_activation():
-            if self.form.WindowState == self.WindowState.Minimized:
-                self.form.WindowState = self.WindowState.Maximized if self.last_maximized else self.WindowState.Normal
-            self.form.Show()
-            self.form.Activate()
-            self.instance.foreground(int(self.form.Handle.ToInt64()))
+            self.activate()
         if not self.closed and self.pending_save and time.monotonic() >= self.pending_save:
             self.save()
         if self.taskbar:
@@ -359,6 +448,15 @@ class WindowsShell:
                 logging.getLogger("desktop.shell").warning("Görev çubuğu ilerlemesi durduruldu", exc_info=True)
                 self.taskbar.close()
                 self.taskbar = None
+        if self.notifier:
+            try:
+                for job, status, name in self.results.poll(self.runtime):
+                    if self.form.WindowState == self.WindowState.Minimized or not self.form.ContainsFocus:
+                        self.notifier.show(job, status, name)
+            except Exception:
+                logging.getLogger("desktop.shell").warning("İşlem sonuç bildirimi durduruldu", exc_info=True)
+                self.notifier.close()
+                self.notifier = None
 
     def on_closing(self, sender, event):
         if not event.Cancel:
@@ -373,3 +471,6 @@ class WindowsShell:
         if self.taskbar:
             self.taskbar.close()
             self.taskbar = None
+        if self.notifier:
+            self.notifier.close()
+            self.notifier = None

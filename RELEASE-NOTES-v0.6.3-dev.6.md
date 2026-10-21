@@ -6,6 +6,7 @@
 - Windows penceresinin boyutu, konumu ve büyütülmüş durumu hatırlanır.
 - Uygulama yeniden başlatıldığında ikinci pencere açmak yerine mevcut pencere öne getirilir.
 - Windows görev çubuğunda işlem ilerlemesi gösterilir.
+- Windows'ta arka planda tamamlanan veya hata veren işlemler bildirilir; bildirime tıklayınca sonuç açılır.
 - Windows'ta yerel ağ erişimi isteğe bağlı açılabilir; bağlı cihazlar oturumlar kartından yönetilebilir.
 - Yerel ağa bağlanan cihazlar geçici eşleştirme koduyla doğrulanır.
 - Yinelenen Türkçe Android metin kaynakları kaldırıldı; mevcut metinler varsayılan kaynakta korundu.

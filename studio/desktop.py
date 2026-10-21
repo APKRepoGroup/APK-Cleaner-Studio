@@ -9,6 +9,7 @@ import json
 import logging
 from logging.handlers import RotatingFileHandler
 import os
+import re
 from pathlib import Path
 import subprocess
 import sys
@@ -18,6 +19,20 @@ import webbrowser
 
 TITLE = "APK Cleaner Studio"
 ROOT = Path(__file__).resolve().parent
+
+
+def open_job_result(window, job):
+    if not isinstance(job, str) or not re.fullmatch(r"[a-f0-9]{32}", job):
+        return
+    # IDs originate from the engine, not from balloon text or arbitrary JS.
+    def deliver():
+        try:
+            window.evaluate_js(f"globalThis.onJobNotification?.({json.dumps(job)})")
+        except Exception:
+            logging.getLogger("desktop.shell").info("Sonuç penceresi artık açık değil", exc_info=True)
+    thread = threading.Thread(target=deliver, name="desktop-result-open", daemon=True)
+    thread.start()  # Never block the WinForms UI thread waiting for WebView JS.
+    return thread
 
 
 def internal_url(url, origin):
@@ -336,7 +351,8 @@ def main():
             try:
                 from windows_shell import WindowsShell
                 shell_integrations.append(WindowsShell(window.native, server, engine.DATA_ROOT / "desktop-window.json", instance,
-                                                       analyzing=host.tools.is_analyzing))
+                                                       analyzing=host.tools.is_analyzing,
+                                                       open_result=lambda job: open_job_result(window, job)))
             except Exception:
                 logging.exception("Pencere tercihleri uygulanamadı")
             control = window.native.webview
