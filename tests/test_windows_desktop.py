@@ -17,6 +17,35 @@ import server
 
 
 class WindowsDesktopTests(unittest.TestCase):
+    def test_analysis_is_busy_balanced_on_failure_and_rejected_during_close(self):
+        tools = desktop.OwnedTools()
+        self.assertTrue(tools.begin_analysis())
+        self.assertTrue(tools.is_analyzing())
+        tools.end_analysis()
+        self.assertFalse(tools.is_analyzing())
+        tools.begin_close()
+        self.assertFalse(tools.begin_analysis())
+        handler = desktop.handler_for(server, desktop.OwnedTools())
+        request = handler.__new__(handler)
+        request.path = "/api/analyze"
+        request.request_origin_allowed = lambda: True
+        request.send_json = mock.Mock()
+        with mock.patch.object(server.StudioHandler, "do_POST", side_effect=ValueError("invalid")):
+            with self.assertRaises(ValueError):
+                request.do_POST()
+        # The finally block releases the analysis counter even on a handler failure.
+        captured = desktop.OwnedTools()
+        handler = desktop.handler_for(server, captured)
+        request = handler.__new__(handler)
+        request.path, request.request_origin_allowed = "/api/analyze", lambda: True
+        def analyze(_):
+            self.assertTrue(captured.is_analyzing())
+            raise ValueError("invalid")
+        with mock.patch.object(server.StudioHandler, "do_POST", analyze):
+            with self.assertRaises(ValueError):
+                request.do_POST()
+        self.assertFalse(captured.is_analyzing())
+
     def test_navigation_policy(self):
         origin = "http://127.0.0.1:8080/"
         self.assertTrue(desktop.internal_url(origin + "api/status", origin))

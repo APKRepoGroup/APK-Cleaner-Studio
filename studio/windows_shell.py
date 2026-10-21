@@ -7,6 +7,88 @@ import logging
 import math
 from pathlib import Path
 import time
+import uuid
+
+
+def progress_snapshot(runtime, analyzing=False):
+    """Read the engine journal even when WebView background polling is paused."""
+    with runtime._ACTIVE_JOBS_LOCK:
+        jobs = tuple(runtime._ACTIVE_JOBS | runtime._SCANNING_JOBS)
+    if not jobs:
+        return ("indeterminate", 0) if analyzing else ("none", 0)
+    records = []
+    for job in jobs:
+        if isinstance(job, str) and runtime.JOB_ID.fullmatch(job):
+            record = runtime.read_json(runtime.JOBS / job / "state.json")
+            records.append(record if isinstance(record, dict) else {})
+    pending = [record for record in records if record.get("status") not in {"done", "ready", "error", "cancelled", "interrupted"}]
+    if not pending:
+        return ("none", 0) if records else ("indeterminate", 0)
+    values = [max(0, min(99, int(number(record.get("progress"))))) for record in pending]
+    if not all(values):
+        return "indeterminate", 0
+    return ("paused" if any(record.get("status") == "cancelling" for record in pending) else "normal", min(values))
+
+
+class NativeTaskbar:
+    """ITaskbarList3 belongs to the same UI/COM thread as its window."""
+    def __init__(self, hwnd):
+        import ctypes
+        self.ctypes, self.hwnd = ctypes, hwnd
+        self.pointer = ctypes.c_void_p()
+        self.last = None
+        self.owned_com = False
+        self.ole = ctypes.WinDLL("ole32")
+        self.ole.CoInitializeEx.argtypes = [ctypes.c_void_p, ctypes.c_uint]
+        self.ole.CoInitializeEx.restype = ctypes.c_long
+        self.ole.CoCreateInstance.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_uint,
+                                             ctypes.c_void_p, ctypes.POINTER(ctypes.c_void_p)]
+        self.ole.CoCreateInstance.restype = ctypes.c_long
+        result = self.ole.CoInitializeEx(None, 2)
+        self.owned_com = result in (0, 1)
+        if result < 0 and result != -2147417850:  # RPC_E_CHANGED_MODE: already initialized by WinForms.
+            raise OSError("Windows görev çubuğu oturumu açılamadı.")
+        clsid = (ctypes.c_ubyte * 16).from_buffer_copy(uuid.UUID("56fdf344-fd6d-11d0-958a-006097c9a090").bytes_le)
+        iid = (ctypes.c_ubyte * 16).from_buffer_copy(uuid.UUID("ea1afb91-9e28-4b86-90e9-9e9f8a5eefaf").bytes_le)
+        try:
+            result = self.ole.CoCreateInstance(ctypes.byref(clsid), None, 1, ctypes.byref(iid), ctypes.byref(self.pointer))
+            if result < 0:
+                raise OSError("Windows görev çubuğu arayüzü açılamadı.")
+            self.call(3)  # ITaskbarList.HrInit
+        except Exception:
+            self.close()
+            raise
+
+    def call(self, slot, *args, types=()):
+        ctypes = self.ctypes
+        table = ctypes.cast(self.pointer, ctypes.POINTER(ctypes.POINTER(ctypes.c_void_p))).contents
+        function = ctypes.WINFUNCTYPE(ctypes.c_long, ctypes.c_void_p, *types)(table[slot])
+        result = function(self.pointer, *args)
+        if result < 0:
+            raise OSError("Windows görev çubuğu güncellenemedi.")
+
+    def update(self, mode, value=0):
+        if not self.pointer.value or (mode, value) == self.last:
+            return
+        ctypes = self.ctypes
+        if mode in {"normal", "paused"}:
+            self.call(9, self.hwnd, max(0, min(100, value)), 100,
+                      types=(ctypes.c_void_p, ctypes.c_ulonglong, ctypes.c_ulonglong))
+        self.call(10, self.hwnd, {"none": 0, "indeterminate": 1, "normal": 2, "paused": 8}[mode],
+                  types=(ctypes.c_void_p, ctypes.c_uint))
+        self.last = (mode, value)
+
+    def close(self):
+        if self.pointer.value:
+            try:
+                self.update("none")
+            except OSError:
+                pass
+            self.call(2)  # IUnknown.Release
+            self.pointer.value = None
+        if self.owned_com:
+            self.ole.CoUninitialize()
+            self.owned_com = False
 
 
 class InstanceApi:
@@ -180,11 +262,13 @@ class WindowStateStore:
 
 class WindowsShell:
     """Attach only on the WinForms UI thread (pywebview before_show)."""
-    def __init__(self, form, runtime, state_path, instance=None):
+    def __init__(self, form, runtime, state_path, instance=None, analyzing=None):
         from System.Drawing import Size
         from System.Windows.Forms import FormStartPosition, FormWindowState, Screen, Timer
         self.form, self.runtime = form, runtime
         self.instance = instance
+        self.analyzing = analyzing or (lambda: False)
+        self.taskbar = None
         self.Screen, self.WindowState = Screen, FormWindowState
         self.store = WindowStateStore(state_path)
         self.last_maximized = False
@@ -211,6 +295,10 @@ class WindowsShell:
         self.timer.Interval = 400
         self.timer.Tick += self.tick
         self.timer.Start()
+        try:
+            self.taskbar = NativeTaskbar(int(form.Handle.ToInt64()))
+        except Exception:
+            logging.getLogger("desktop.shell").warning("Görev çubuğu ilerlemesi kullanılamıyor", exc_info=True)
 
     def screen_info(self, screen):
         area = screen.WorkingArea
@@ -254,6 +342,8 @@ class WindowsShell:
         self.pending_save = 0
 
     def tick(self, sender, event):
+        if self.closed:
+            return
         if not self.closed and self.instance and self.instance.consume_activation():
             if self.form.WindowState == self.WindowState.Minimized:
                 self.form.WindowState = self.WindowState.Maximized if self.last_maximized else self.WindowState.Normal
@@ -262,12 +352,24 @@ class WindowsShell:
             self.instance.foreground(int(self.form.Handle.ToInt64()))
         if not self.closed and self.pending_save and time.monotonic() >= self.pending_save:
             self.save()
+        if self.taskbar:
+            try:
+                self.taskbar.update(*progress_snapshot(self.runtime, self.analyzing()))
+            except Exception:
+                logging.getLogger("desktop.shell").warning("Görev çubuğu ilerlemesi durduruldu", exc_info=True)
+                self.taskbar.close()
+                self.taskbar = None
 
     def on_closing(self, sender, event):
         if not event.Cancel:
             self.save()
 
     def on_closed(self, sender, event):
+        if self.closed:
+            return
         self.closed = True
         self.timer.Stop()
         self.timer.Dispose()
+        if self.taskbar:
+            self.taskbar.close()
+            self.taskbar = None

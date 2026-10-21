@@ -47,6 +47,7 @@ class OwnedTools:
         self.closing = threading.Event()
         self.lock = threading.Lock()
         self.processes = set()
+        self.analyses = 0
 
     def __getattr__(self, name):
         return getattr(subprocess, name)
@@ -65,6 +66,21 @@ class OwnedTools:
     def begin_close(self):
         with self.lock:
             self.closing.set()
+
+    def begin_analysis(self):
+        with self.lock:
+            if self.closing.is_set():
+                return False
+            self.analyses += 1
+            return True
+
+    def end_analysis(self):
+        with self.lock:
+            self.analyses -= 1
+
+    def is_analyzing(self):
+        with self.lock:
+            return self.analyses > 0
 
     def stop(self):
         self.begin_close()
@@ -141,6 +157,14 @@ def handler_for(runtime, tools):
                 self.send_json({"error": "Bu istek uygulama oturumuna ait değil."}, 403)
             elif tools.closing.is_set():
                 self.send_json({"error": "Uygulama güvenli biçimde kapatılıyor."}, 503)
+            elif urlsplit(self.path).path == "/api/analyze":
+                if not tools.begin_analysis():
+                    self.send_json({"error": "Uygulama güvenli biçimde kapatılıyor."}, 503)
+                    return
+                try:
+                    super().do_POST()
+                finally:
+                    tools.end_analysis()
             else:
                 super().do_POST()  # Setup and verified updates remain enabled.
     return DesktopHandler
@@ -176,7 +200,8 @@ class DesktopHost:
 
     def busy(self):
         with self.runtime._ACTIVE_JOBS_LOCK:
-            return bool(self.runtime._ACTIVE_JOBS or self.runtime._SCANNING_JOBS)
+            active = bool(self.runtime._ACTIVE_JOBS or self.runtime._SCANNING_JOBS)
+        return active or self.tools.is_analyzing()
 
     def accept_close(self, confirm):
         if self.busy() and not confirm():
@@ -268,7 +293,8 @@ def main():
         def before_show():
             try:
                 from windows_shell import WindowsShell
-                shell_integrations.append(WindowsShell(window.native, server, engine.DATA_ROOT / "desktop-window.json", instance))
+                shell_integrations.append(WindowsShell(window.native, server, engine.DATA_ROOT / "desktop-window.json", instance,
+                                                       analyzing=host.tools.is_analyzing))
             except Exception:
                 logging.exception("Pencere tercihleri uygulanamadı")
             control = window.native.webview

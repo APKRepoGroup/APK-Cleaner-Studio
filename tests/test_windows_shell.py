@@ -1,12 +1,16 @@
 from pathlib import Path
 import sys
 import tempfile
+import ctypes
+import re
+import threading
+from types import SimpleNamespace
 import unittest
 from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "studio"))
-from windows_shell import capture_geometry, restore_geometry, WindowStateStore, InstanceGate
+from windows_shell import capture_geometry, restore_geometry, WindowStateStore, InstanceGate, progress_snapshot, NativeTaskbar, WindowsShell
 
 PRIMARY = {"name": "primary", "x": 0, "y": 0, "width": 1920, "height": 1040, "dpi": 96}
 LEFT = {"name": "left", "x": -2560, "y": 0, "width": 2560, "height": 1400, "dpi": 144}
@@ -107,6 +111,66 @@ class InstanceGateTests(unittest.TestCase):
         self.assertNotEqual(first.name, other.name)
         first.close()
         other.close()
+
+
+class TaskbarTests(unittest.TestCase):
+    def runtime(self, records):
+        return SimpleNamespace(_ACTIVE_JOBS_LOCK=threading.Lock(), _ACTIVE_JOBS=set(records), _SCANNING_JOBS=set(),
+                               JOB_ID=re.compile(r"[a-f0-9]{32}"), JOBS=Path("jobs"),
+                               read_json=lambda path: records[path.parent.name])
+
+    def test_idle_analysis_active_and_terminal_states(self):
+        runtime = self.runtime({})
+        self.assertEqual(progress_snapshot(runtime), ("none", 0))
+        self.assertEqual(progress_snapshot(runtime, True), ("indeterminate", 0))
+        for record, expected in [({}, ("indeterminate", 0)), ([], ("indeterminate", 0)),
+                                 ({"status": "working", "progress": 53}, ("normal", 53)),
+                                 ({"status": "cancelling", "progress": 53}, ("paused", 53)),
+                                 ({"status": "working", "progress": 100}, ("normal", 99)),
+                                 ({"status": "working", "progress": float("nan")}, ("indeterminate", 0))]:
+            self.assertEqual(progress_snapshot(self.runtime({"a" * 32: record})), expected)
+        for status in ("done", "ready", "error", "cancelled", "interrupted"):
+            self.assertEqual(progress_snapshot(self.runtime({"a" * 32: {"status": status, "progress": 100}})), ("none", 0))
+
+    def test_multiple_jobs_invalid_ids_and_value_before_paused_state(self):
+        runtime = self.runtime({"a" * 32: {"progress": 40}, "b" * 32: {"progress": 80}, "../outside": {"progress": 1}})
+        self.assertEqual(progress_snapshot(runtime), ("normal", 40))
+        bar = NativeTaskbar.__new__(NativeTaskbar)
+        bar.ctypes, bar.hwnd, bar.pointer, bar.last = ctypes, 123, ctypes.c_void_p(1), None
+        bar.call = mock.Mock()
+        bar.update("paused", 53)
+        bar.update("paused", 53)
+        self.assertEqual([call.args[0] for call in bar.call.call_args_list], [9, 10])
+        self.assertEqual(bar.call.call_args.args, (10, 123, 8))
+        bar.owned_com, bar.ole = True, mock.Mock()
+        bar.close()
+        bar.close()
+        bar.ole.CoUninitialize.assert_called_once()
+        self.assertFalse(bar.pointer.value)
+        self.assertEqual(sum(call.args[0] == 2 for call in bar.call.call_args_list), 1)
+
+    def test_ui_timer_restores_existing_minimized_window_and_updates_without_web_polling(self):
+        shell = WindowsShell.__new__(WindowsShell)
+        shell.closed, shell.pending_save, shell.last_maximized = False, 0, True
+        shell.WindowState = SimpleNamespace(Minimized=1, Maximized=2, Normal=0)
+        shell.form, shell.instance, shell.taskbar = mock.Mock(), mock.Mock(), mock.Mock()
+        shell.form.WindowState = 1
+        shell.form.Handle.ToInt64.return_value = 321
+        shell.instance.consume_activation.return_value = True
+        shell.runtime = self.runtime({"a" * 32: {"progress": 67}})
+        shell.analyzing = lambda: False
+        shell.tick(None, None)
+        self.assertEqual(shell.form.WindowState, 2)
+        shell.form.Show.assert_called_once()
+        shell.form.Activate.assert_called_once()
+        shell.instance.foreground.assert_called_once_with(321)
+        shell.taskbar.update.assert_called_once_with("normal", 67)
+        shell.timer = mock.Mock()
+        bar = shell.taskbar
+        shell.on_closed(None, None)
+        shell.on_closed(None, None)
+        bar.close.assert_called_once()
+        shell.timer.Dispose.assert_called_once()
 
 
 if __name__ == "__main__":
