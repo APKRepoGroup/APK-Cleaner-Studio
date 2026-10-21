@@ -1,6 +1,7 @@
 """Real HTTP/TLS tests, bound only to loopback (never expose the test engine)."""
 from contextlib import ExitStack
 import json
+import http.cookiejar
 from pathlib import Path
 import socket
 import ssl
@@ -49,7 +50,8 @@ class WindowsNetworkTests(unittest.TestCase):
         self.host = desktop.DesktopHost(server, engine, port=0, lan_port=0)
         self.host.start()
         self.addCleanup(self.host.stop)
-        self.opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        self.cookies = http.cookiejar.CookieJar()
+        self.opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), urllib.request.HTTPCookieProcessor(self.cookies))
 
     def control(self, enabled, origin=True):
         headers = {"Content-Type": "application/json"}
@@ -67,9 +69,15 @@ class WindowsNetworkTests(unittest.TestCase):
         opener = self.opener
         if secure:
             context = ssl.create_default_context(cafile=str(server.LOCAL_CA_PATH))
-            opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), urllib.request.HTTPSHandler(context=context))
+            opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), urllib.request.HTTPCookieProcessor(self.cookies), urllib.request.HTTPSHandler(context=context))
         with opener.open(request, timeout=8) as response:
             return response.read()
+
+    def pair(self, code=None, secure=False):
+        port = self.host.network.http.server_port
+        origin = ("https" if secure else "http") + f"://192.168.50.10:{port}"
+        return self.remote("api/desktop/pair", data=f"code={code or self.host.network.state()['pairing_code']}".encode(),
+                           headers={"Origin": origin, "Content-Type": "application/x-www-form-urlencoded"}, secure=secure)
 
     def test_default_closed_and_control_requires_native_same_origin_and_boolean(self):
         self.assertFalse(self.host.network.state()["enabled"])
@@ -90,6 +98,7 @@ class WindowsNetworkTests(unittest.TestCase):
             state = self.control(True)
             trust.assert_not_called()
         self.assertTrue(state["enabled"])
+        self.pair()
         for secure in (False, True):
             data = json.loads(self.remote("api/status", secure=secure))
             self.assertEqual(len(data["clients"]), 1)
@@ -157,6 +166,29 @@ class WindowsNetworkTests(unittest.TestCase):
             self.assertFalse(host.network.state()["enabled"])
         finally:
             host.stop()
+
+    def test_pairing_required_before_assets_apis_and_mutations(self):
+        self.control(True)
+        self.assertIn("Cihazı eşleştir".encode(), self.remote(""))
+        for path, data in [("api/status", None), ("app.js", None), ("api/analyze", b"x")]:
+            with self.assertRaises(urllib.error.HTTPError) as error:
+                self.remote(path, data=data)
+            self.assertEqual(error.exception.code, 401)
+        self.pair(secure=True)
+        self.assertTrue(any(cookie.secure and cookie.has_nonstandard_attr("HttpOnly") for cookie in self.cookies))
+        self.assertTrue(json.loads(self.remote("api/status", secure=True))["ok"])
+        self.control(False)
+        self.control(True)
+        with self.assertRaises(urllib.error.HTTPError) as error:
+            self.remote("api/status", secure=True)
+        self.assertEqual(error.exception.code, 401)
+
+    def test_pairing_code_not_in_remote_page_and_cross_origin_pairing_is_rejected(self):
+        state = self.control(True)
+        self.assertNotIn(state["pairing_code"].encode(), self.remote(""))
+        with self.assertRaises(urllib.error.HTTPError) as error:
+            self.remote("api/desktop/pair", b"code=000000", {"Origin": "https://evil.example"})
+        self.assertEqual(error.exception.code, 403)
 
 
 if __name__ == "__main__":

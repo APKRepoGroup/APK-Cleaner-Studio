@@ -10,10 +10,11 @@
     document.querySelector("#desktopNetworkAddresses").hidden = !enabled;
     document.querySelector("#desktopNetworkUrl").value = state.url || "";
     document.querySelector("#desktopNetworkSecureUrl").value = state.secure_url || "";
+    document.querySelector("#desktopNetworkCode").value = state.pairing_code || "";
     button.textContent = enabled ? "Yerel ağ erişimini kapat" : "Yerel ağ erişimini aç";
     button.setAttribute("aria-pressed", String(enabled));
     status.textContent = enabled
-      ? "Erişim açık. Diğer cihazda yukarıdaki adresi açın. Bağlanılamıyorsa Windows güvenlik duvarındaki özel ağ iznini kontrol edin."
+      ? "Erişim açık. Kod, erişim kapatılıp yeniden açıldığında yenilenir. Bağlanılamıyorsa Windows güvenlik duvarındaki özel ağ iznini kontrol edin."
       : "Erişim kapalı. Uygulama yalnızca bu bilgisayarda kullanılabilir.";
     status.dataset.error = "false";
   }
@@ -39,7 +40,7 @@
     try {
       const approved = await confirmAction(enabled ? "Yerel ağ erişimi kapatılsın mı?" : "Yerel ağ erişimi açılsın mı?",
         enabled ? "Bağlı cihazların erişimi kesilir. Başlatılmış işlemler bilgisayarda devam eder."
-          : "Aynı ağdaki cihazlar parola girmeden paket işleyebilir. Yalnızca güvendiğiniz özel ağlarda etkinleştirin.",
+          : "Aynı ağdaki cihazlar eşleştirme koduyla bağlanabilir. HTTP trafiği şifreli değildir; yalnızca güvendiğiniz özel ağlarda etkinleştirin.",
         enabled ? "Erişimi kapat" : "Erişimi aç");
       if (approved) await request({ enabled: !enabled });
     } finally {

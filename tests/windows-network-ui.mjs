@@ -21,7 +21,7 @@ try {
           enabled = request.postDataJSON().enabled;
         }
         return route.fulfill({ json: { enabled, url: enabled ? "http://192.168.50.10:8080/" : "",
-          secure_url: enabled ? "https://192.168.50.10:8080/" : "" } });
+          secure_url: enabled ? "https://192.168.50.10:8080/" : "", pairing_code: enabled ? "123456" : "" } });
       }
       return route.continue();
     });
@@ -41,6 +41,7 @@ try {
     assert.equal(await page.locator("#clientCard").isVisible(), true);
     assert.equal(await page.locator("#toolCertificate").isVisible(), true);
     assert.equal(await page.locator("#desktopNetworkUrl").inputValue(), "http://192.168.50.10:8080/");
+    assert.equal(await page.locator("#desktopNetworkCode").inputValue(), "123456");
     const overflow = await page.locator("#desktopNetworkCard").evaluate(card => {
       const r = card.getBoundingClientRect();
       return card.scrollWidth > card.clientWidth + 1 || r.left < 0 || r.right > innerWidth + 1
