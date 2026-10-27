@@ -50,11 +50,11 @@ test('export uses HTTP attachments on Android rather than unsupported blob downl
 test('import confirmation is atomic, cancellation and storage errors preserve existing profiles', async () => {
   const app = await readFile(new URL('../studio/web/app.js', import.meta.url), 'utf8');
   const controls = new Map(), original = [{ id: 'existing', ...profile('Dengeli') }];
-  let stored = JSON.stringify(original), approved = false, writes = 0, failStorage = false;
-  const messages = [], selections = [];
+  let stored = JSON.stringify(original), approved = false, writes = 0, failStorage = false, onConfirm = () => {};
+  const messages = [], selections = [], previews = [];
   const ui = vm.createContext({ StudioPresets: presets, $: key => {
     if (!controls.has(key)) controls.set(key, { disabled: false }); return controls.get(key);
-  }, readSavedPresets: () => JSON.parse(stored), confirmAction: async () => approved,
+  }, readSavedPresets: () => JSON.parse(stored), confirmAction: async (...args) => { previews.push(args[4]); onConfirm(); return approved; },
   localStorage: { setItem(key, value) { if (failStorage) throw Error('quota'); writes++; stored = value; } },
   SAVED_PRESETS_KEY: 'test', crypto: { randomUUID: () => 'imported' },
   renderSavedPresets: id => selections.push(id), toast: message => messages.push(message), userErrorMessage: error => error.message });
@@ -67,4 +67,32 @@ test('import confirmation is atomic, cancellation and storage errors preserve ex
   assert.equal(writes, 1); assert.equal(JSON.parse(stored)[0].id, 'existing');
   assert.equal(JSON.parse(stored)[1].name, 'Dengeli (2)'); assert.equal(selections[0], 'imported');
   assert.match(messages.at(-1), /^1 işlem profili eklendi/);
+  assert.equal(previews[0][0].title, 'Dengeli (2)');
+  assert.equal(previews[0][0].rows[1][1], 'Dengeli profil');
+  onConfirm = () => { stored = JSON.stringify([...JSON.parse(stored), { id: 'other-tab', ...profile('Başka kayıt') }]); };
+  await ui.importSavedPresets(file);
+  assert.equal(writes, 1); assert.equal(JSON.parse(stored).length, 3);
+  assert.equal(JSON.parse(stored).at(-1).id, 'other-tab'); assert.match(messages.at(-1), /bu sırada değişti/);
+});
+
+test('preview identifies enabled options, inactive ad profiles and version-code consequences', () => {
+  const active = presets.summary({ operation: 'clone', profile: 'deep', patchAds: false, restrictStoreUpdates: true, optimizeApk: true });
+  assert.equal(active.rows[0][1], 'APK’yı klonla'); assert.equal(active.rows[1][1], 'Uygulanmayacak');
+  assert.match(active.rows[2][1], /Play Store.*optimize/);
+  assert.match(active.warning, /yeniden kurulum/);
+  assert.equal(presets.summary(profile('').options).warning, '');
+});
+
+test('preview content stays literal and a normal confirmation clears the previous preview', async () => {
+  const app = await readFile(new URL('../studio/web/app.js', import.meta.url), 'utf8');
+  const classes = new Set(), container = { children: [], scrollTop: 15, replaceChildren(...nodes) { this.children = nodes; }, classList: { toggle() {} } };
+  const context = vm.createContext({ $: selector => selector === '#appDialogPreview' ? container : { classList: { toggle(key, enabled) { if (enabled) classes.add(key); else classes.delete(key); } } },
+    document: { createElement(tag) { return { tag, children: [], append(...nodes) { this.children.push(...nodes); }, set innerHTML(_) { throw Error('Unsafe HTML'); } }; } } });
+  const start = app.indexOf('function renderAppDialogPreview(');
+  vm.runInContext(app.slice(start, app.indexOf('function openAppDialog(', start)), context);
+  context.renderAppDialogPreview([{ title: '<script>not markup</script>', rows: [['İşlem', '<img onerror=x>']], warning: '<b>literal</b>' }]);
+  assert.equal(container.children[0].children[0].textContent, '<script>not markup</script>');
+  assert.equal(container.children[0].children[1].children[0].children[1].textContent, '<img onerror=x>');
+  assert.equal(container.scrollTop, 0); assert.equal(classes.has('has-preview'), true);
+  context.renderAppDialogPreview(); assert.equal(container.children.length, 0); assert.equal(classes.has('has-preview'), false);
 });

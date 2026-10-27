@@ -51,5 +51,17 @@
     });
     return { profiles: [...existing, ...added], added };
   }
-  globalThis.StudioPresets = Object.freeze({ MAX_BYTES, MAX_PROFILES, parse, serialize, merge, options, name });
+  function summary(value) {
+    const clean = options(value, true);
+    const operations = { clone: "APK’yı klonla", convert: "Tek APK oluştur", patch: clean.patchAds ? "Reklam izlerini temizle" : "Seçili iyileştirmeler" };
+    const profiles = { safe: "Güvenli", balanced: "Dengeli", deep: "Gelişmiş" };
+    const extras = [["stripDebug", "DEX hata ayıklama verilerini kaldır"], ["restrictStoreUpdates", "Play Store güncellemesini kapat"],
+      ["normalizeDex", "DEX yapısını yeniden düzenle"], ["optimizeApk", "APK’yı optimize et"], ["deobfuscateResources", "RES kaynak korumasını kaldır"]];
+    return {
+      rows: [["İşlem", operations[clean.operation]], ["Reklam temizliği", clean.patchAds ? `${profiles[clean.profile]} profil` : "Uygulanmayacak"],
+        ["Ek işlemler", extras.filter(([key]) => clean[key]).map(([, label]) => label).join(" · ") || "Seçilmedi"]],
+      warning: clean.restrictStoreUpdates ? "Play Store seçeneği sürüm kodunu yükseltir. Orijinal sürüm koduna dönüş yeniden kurulum gerektirebilir." : "",
+    };
+  }
+  globalThis.StudioPresets = Object.freeze({ MAX_BYTES, MAX_PROFILES, parse, serialize, merge, options, name, summary });
 })();

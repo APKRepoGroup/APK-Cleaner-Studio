@@ -21,3 +21,11 @@ Android dosya kaydetme sistem ekranı ve gerçek APK akışı son cihaz testleri
 Kontroller: 186 JavaScript testi geçti; lint temiz. Seçilen 130 Python testinde hata yok (129 geçti, mevcut Android çıktı paketi kontrolü derleme yapılmadığı için atlandı). Üretim web çıktısını isteyen test de yeni derleme yapılmaması nedeniyle çalışma listesinin dışında bırakıldı. 390 px mobil ve 1440 px masaüstü görünümünde karşılaştırma ve izin açıklamaları denetlendi; profil JSON indirmesi tarayıcıda doğrulandı.
 
 Yerel örnek veri ekranları: `http://127.0.0.1:18087/?capture=dev7-desktop` ve `http://127.0.0.1:18087/?capture=dev7-mobile`. Bunlar gerçek APK işlemez; demo profil deposu gerçek kayıtlarla paylaşılmaz.
+
+## Dev.7 ikinci grup — onaylandı ve uygulandı
+
+- Karşılaştırmada yalnızca farkları gösterme ve iki APK'nın yerini değiştirme. Aynı sayıda ancak farklı içerikte izin/ağ kümeleri de fark sayılır. Yerel commit: `095037d`.
+- Final paketlerden tek SHA-256 listesi ve dağıtım kaydı oluşturma; paket değişikliği ve eski checksum dosyalarını reddetme. `packaging/release_integrity.py prepare` ve `verify` final paketler hazır olduğunda kullanılacak. Yerel commit: `9829156`.
+- Profil içe aktarma onayında etkin seçeneklerin, ad çakışmasının ve sürüm kodu uyarısının önizlenmesi. Başka sekmede değişen kayıtlar sessizce ezilmez; yeniden önizleme istenir.
+
+Kontroller: 190 JavaScript testi geçti, seçilen 142 Python testinde hata yok (mevcut Android çıktı kontrolü atlandı). Üretim web çıktısı testi derleme yapılmadığı için çalıştırılmadı. Mobil ve kısa/yatay ekranlarda önizleme, klavye odağı, fark filtresi ve dosya yer değiştirme tarayıcıda kontrol edildi. SHA-256 otomasyonu yalnızca geçici test dosyalarıyla sınandı; gerçek final paket üretilmedi, hiçbir sürüm/GitHub kaydı değiştirilmedi.

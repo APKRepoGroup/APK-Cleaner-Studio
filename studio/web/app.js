@@ -416,7 +416,25 @@ function closeAppDialog(value) {
   resolve(mode === "prompt" && value !== null ? $("#appDialogInput").value.trim() : value);
 }
 
-function openAppDialog({ title, message, confirmText = "Onayla", eyebrow = "ONAY GEREKİYOR", mode = "confirm", value = "", destructive = false }) {
+function renderAppDialogPreview(entries = []) {
+  const container = $("#appDialogPreview");
+  container.replaceChildren(...entries.map(entry => {
+    const card = document.createElement("section"), title = document.createElement("b"), rows = document.createElement("dl");
+    title.textContent = entry.title;
+    for (const [label, value] of entry.rows) {
+      const row = document.createElement("div"), term = document.createElement("dt"), description = document.createElement("dd");
+      term.textContent = label; description.textContent = value; row.append(term, description); rows.append(row);
+    }
+    card.append(title, rows);
+    if (entry.warning) { const warning = document.createElement("p"); warning.textContent = entry.warning; card.append(warning); }
+    return card;
+  }));
+  container.classList.toggle("hidden", entries.length === 0);
+  $("#appDialog").classList.toggle("has-preview", entries.length > 0);
+  container.scrollTop = 0;
+}
+
+function openAppDialog({ title, message, confirmText = "Onayla", eyebrow = "ONAY GEREKİYOR", mode = "confirm", value = "", destructive = false, preview = [] }) {
   if (activeDialog) closeAppDialog(null);
   const dialog = $("#appDialog");
   const inputWrap = $("#appDialogInputWrap");
@@ -425,6 +443,7 @@ function openAppDialog({ title, message, confirmText = "Onayla", eyebrow = "ONAY
   $("#appDialogEyebrow").textContent = eyebrow;
   $("#appDialogTitle").textContent = title;
   $("#appDialogMessage").textContent = message;
+  renderAppDialogPreview(preview);
   confirmButton.textContent = confirmText;
   confirmButton.classList.toggle("destructive", destructive);
   inputWrap.classList.toggle("hidden", mode !== "prompt");
@@ -437,8 +456,8 @@ function openAppDialog({ title, message, confirmText = "Onayla", eyebrow = "ONAY
   });
 }
 
-function confirmAction(title, message, confirmText = "Onayla", destructive = false) {
-  return openAppDialog({ title, message, confirmText, destructive });
+function confirmAction(title, message, confirmText = "Onayla", destructive = false, preview = []) {
+  return openAppDialog({ title, message, confirmText, destructive, preview });
 }
 
 let engineStopPrompt = false;
@@ -2336,9 +2355,11 @@ async function importSavedPresets(file) {
     if (file.size <= 0 || file.size > StudioPresets.MAX_BYTES) throw Error("Profil dosyası boş olmamalı ve 16 KB’ı aşmamalı.");
     const incoming = StudioPresets.parse(await file.text());
     // Capacity and file validity are checked before asking for confirmation.
-    StudioPresets.merge(readSavedPresets(), incoming, () => "preview");
-    if (!(await confirmAction("İşlem profilleri eklensin mi?", `${incoming.length} profil bu cihaza eklenecek: ${incoming.map(item => item.name).join(" · ")}. Mevcut profiller korunur; aynı adlı kayıtlar yeni adla eklenir. Seçenekler otomatik uygulanmaz.`, "İçe aktar"))) return;
-    const existing = readSavedPresets(), ids = new Set(existing.map(item => item.id));
+    const existing = readSavedPresets(), plan = StudioPresets.merge(existing, incoming, () => "preview");
+    const preview = plan.added.map(item => ({ title: item.name, ...StudioPresets.summary(item.options) }));
+    if (!(await confirmAction("İşlem profilleri eklensin mi?", `${incoming.length} profil aşağıdaki seçeneklerle kaydedilecek. Mevcut profiller korunur; aynı adlı kayıtlar yeni adla eklenir. Seçenekler otomatik uygulanmaz.`, "İçe aktar", false, preview))) return;
+    if (JSON.stringify(existing) !== JSON.stringify(readSavedPresets())) throw Error("Kayıtlı profiller bu sırada değişti. Güncel önizleme için dosyayı yeniden içe aktarın.");
+    const ids = new Set(existing.map(item => item.id));
     const merged = StudioPresets.merge(existing, incoming, () => {
       let id;
       do { id = globalThis.crypto?.randomUUID?.() || `preset-${Date.now()}-${Math.random().toString(36).slice(2)}`; } while (ids.has(id));
@@ -3284,7 +3305,15 @@ $("#shareOutputButton").addEventListener("click", () => {
 $("#appDialogCancel").addEventListener("click", () => closeAppDialog(null));
 $("#appDialogConfirm").addEventListener("click", () => closeAppDialog(true));
 $("#appDialog").addEventListener("click", (event) => { if (event.target === event.currentTarget) closeAppDialog(null); });
-containModalTouch("#appDialog");
+containModalTouch("#appDialog", "#appDialogPreview");
+$("#appDialog").addEventListener("keydown", event => {
+  if (event.key !== "Tab") return;
+  const controls = [...event.currentTarget.querySelectorAll('button, input, [tabindex="0"]')].filter(item => item.getClientRects().length && !item.disabled);
+  const index = controls.indexOf(document.activeElement);
+  if (event.shiftKey && index <= 0 || !event.shiftKey && (index === controls.length - 1 || index < 0)) {
+    event.preventDefault(); controls[event.shiftKey ? controls.length - 1 : 0]?.focus();
+  }
+});
 $("#appDialogInput").addEventListener("keydown", (event) => { if (event.key === "Enter") closeAppDialog(true); });
 $("#reportViewerClose").addEventListener("click", closeReportViewer);
 $("#reportViewerDone").addEventListener("click", closeReportViewer);
