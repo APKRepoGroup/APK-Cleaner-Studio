@@ -53,5 +53,18 @@
       description: short ? "Bu izin için yerel açıklama bulunmuyor. İşlevi, Android sürümüne ve uygulamanın kullanımına göre değerlendirilmelidir."
         : "Uygulama veya bir kütüphane tarafından tanımlanmış olabilir. Yalnızca adından erişim kapsamı belirlenemez." };
   }
-  globalThis.StudioPermissions = Object.freeze({ describe });
+  function scopeText(declarations) {
+    if (!Array.isArray(declarations) || !declarations.length) return "Android sürüm sınırları bu analizde kaydedilmemiş.";
+    const versions = { 23: "6", 24: "7", 25: "7.1", 26: "8", 27: "8.1", 28: "9", 29: "10", 30: "11", 31: "12", 32: "12L", 33: "13", 34: "14", 35: "15", 36: "16" };
+    const api = value => Object.hasOwn(versions, value) ? `Android ${versions[value]} (API ${value})` : `API ${value}`;
+    const valid = value => Number.isInteger(value) && value >= 1 && value <= 10000;
+    return [...new Set(declarations.map(item => {
+      if (!valid(item?.min_sdk)) return "Android sürüm sınırları okunamadı";
+      if (item.bounds_known !== true || item.max_sdk !== null && !valid(item.max_sdk)) return "Üst API sınırı okunamadı";
+      if (item.max_sdk !== null && item.max_sdk < item.min_sdk) return "Geçerli bir API aralığı bildirilmemiş";
+      if (item.min_sdk === 1) return item.max_sdk === null ? "Ek API sınırı belirtilmemiş" : `En fazla ${api(item.max_sdk)}`;
+      return item.max_sdk === null ? `${api(item.min_sdk)} ve sonrası` : `${api(item.min_sdk)} — ${api(item.max_sdk)}`;
+    }))].join(" veya ");
+  }
+  globalThis.StudioPermissions = Object.freeze({ describe, scopeText });
 })();

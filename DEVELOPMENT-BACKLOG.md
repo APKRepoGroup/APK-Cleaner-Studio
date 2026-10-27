@@ -29,3 +29,10 @@ Yerel örnek veri ekranları: `http://127.0.0.1:18087/?capture=dev7-desktop` ve 
 - Profil içe aktarma onayında etkin seçeneklerin, ad çakışmasının ve sürüm kodu uyarısının önizlenmesi. Başka sekmede değişen kayıtlar sessizce ezilmez; yeniden önizleme istenir.
 
 Kontroller: 190 JavaScript testi geçti, seçilen 142 Python testinde hata yok (mevcut Android çıktı kontrolü atlandı). Üretim web çıktısı testi derleme yapılmadığı için çalıştırılmadı. Mobil ve kısa/yatay ekranlarda önizleme, klavye odağı, fark filtresi ve dosya yer değiştirme tarayıcıda kontrol edildi. SHA-256 otomasyonu yalnızca geçici test dosyalarıyla sınandı; gerçek final paket üretilmedi, hiçbir sürüm/GitHub kaydı değiştirilmedi.
+
+## Dev.7 üçüncü grup — kullanıcı onayı
+
+- İzinlerde manifestin Android API sınırları: `maxSdkVersion` ve `uses-permission-sdk-23` okunur; eski veya okunamayan kayıtlara sınır uydurulmaz. Birden fazla bildirim korunur. Metin ve ikili XML testleri eklendi.
+- Paket analizinde gerçek aşama/ilerleme ve iptal desteği: uygulanacak; yama işleminin iptal akışından bağımsızdır.
+
+Bu grup için de dağıtım derlemesi ve GitHub işlemi istenmedi.

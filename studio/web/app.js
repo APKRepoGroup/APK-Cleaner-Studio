@@ -2083,7 +2083,9 @@ function renderPackageInfo(analysis) {
     title.textContent = info.title; category.textContent = info.category;
     category.className = info.category === "Hassas erişim" || info.category === "Özel erişim" ? "permission-sensitive" : "";
     description.textContent = info.description; code.textContent = info.name;
-    heading.append(title, category); item.append(heading, description, code); return item;
+    const scope = document.createElement("p");
+    scope.textContent = StudioPermissions.scopeText(analysis.package_info?.permission_declarations?.filter(item => item.name === value));
+    heading.append(title, category); item.append(heading, description, scope, code); return item;
   }));
   if (!permissions.length) {
     const item = document.createElement("li"); item.textContent = "İzin kaydı bulunamadı veya okunamadı.";

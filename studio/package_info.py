@@ -8,7 +8,7 @@ from package_icon import ANDROID_NS, MAX_MANIFEST_BYTES, _chunks, _Strings, _u16
 
 
 def manifest_fields(data: bytes) -> dict:
-    result = {"min_sdk": None, "target_sdk": None, "version_name": None, "version_code": None, "version_code_major": None, "app_name": None, "permissions": []}
+    result = {"min_sdk": None, "target_sdk": None, "version_name": None, "version_code": None, "version_code_major": None, "app_name": None, "permissions": [], "permission_declarations": []}
     try:
         if not data or len(data) > MAX_MANIFEST_BYTES:
             return result
@@ -67,10 +67,18 @@ def manifest_fields(data: bytes) -> dict:
                 value = attrs.get("name")
                 if isinstance(value, str) and not value.startswith("@") and len(value) <= 300 and len(result["permissions"]) < 500:
                     result["permissions"].append(value)
+                    upper = attrs.get("maxSdkVersion")
+                    if isinstance(upper, str) and upper.isascii() and upper.isdecimal() and len(upper) <= 5:
+                        upper = int(upper)
+                    known = "maxSdkVersion" not in attrs or type(upper) is int and 1 <= upper <= 10000
+                    declaration = {"name": value, "min_sdk": 23 if tag == "uses-permission-sdk-23" else 1,
+                                   "max_sdk": upper if known and type(upper) is int else None, "bounds_known": known}
+                    if declaration not in result["permission_declarations"]:
+                        result["permission_declarations"].append(declaration)
         result["permissions"] = sorted(set(result["permissions"]))
         return result
     except (ValueError, struct.error, IndexError, TypeError, UnicodeError, ET.ParseError):
-        return {key: [] if key == "permissions" else None for key in result}
+        return {key: [] if key in {"permissions", "permission_declarations"} else None for key in result}
 
 
 def signature_schemes(path, archive) -> list[str]:
