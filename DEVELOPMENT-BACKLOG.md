@@ -32,7 +32,12 @@ Kontroller: 190 JavaScript testi geçti, seçilen 142 Python testinde hata yok (
 
 ## Dev.7 üçüncü grup — kullanıcı onayı
 
-- İzinlerde manifestin Android API sınırları: `maxSdkVersion` ve `uses-permission-sdk-23` okunur; eski veya okunamayan kayıtlara sınır uydurulmaz. Birden fazla bildirim korunur. Metin ve ikili XML testleri eklendi.
-- Paket analizinde gerçek aşama/ilerleme ve iptal desteği: uygulanacak; yama işleminin iptal akışından bağımsızdır.
+- İzinlerde manifestin Android API sınırları: `maxSdkVersion` ve `uses-permission-sdk-23` okunur; eski veya okunamayan kayıtlara sınır uydurulmaz. Birden fazla bildirim korunur. Metin ve ikili XML testleri eklendi. Yerel commit: `6234bc8`.
+- Paket analizinde gerçek aşama/ilerleme ve iptal desteği: taranan DEX/kaynak sayısı ve mevcut aşama gösterilir. Yüzde süre tahmini değildir. İptal güvenli kontrol noktalarında gerçekleşir; çalışan araç adımının bitmesi gerekebilir. İptal edilen analizin geçici dosyaları temizlenir. Yama işleminin iptal akışından bağımsızdır.
+- Android yüklü uygulama aktarımı da analize özgü kimlik ve iptal işareti taşır; başka bir işlem motoru veya Java aracı topluca durdurulmaz. Eski JSON analiz API'si korunur.
+
+Kontroller: 197 JavaScript testi; seçilen 167 Python testi (166 geçti, APK çıktı kontrolü derleme olmadığı için atlandı). Gerçek yerel HTTP üzerinden analiz sürerken ilerleme sorgusu ve iptal isteği ayrıca doğrulandı. Lint temiz. Mobil 390 px ve masaüstü 1440 px görünümü örnek verilerle denetlendi. Android kaynakları eşitlendi; native köprüdeki değişiklikler final APK cihaz testinde ayrıca doğrulanacak.
+
+Örnek analiz / iptal: `http://127.0.0.1:18087/?embedded=android&capture=dev7-analysis`. Gerçek dosya taramaz. İzin sınırları mevcut `dev7-permissions` ekranında da gösterilir.
 
 Bu grup için de dağıtım derlemesi ve GitHub işlemi istenmedi.

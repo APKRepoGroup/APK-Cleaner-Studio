@@ -508,9 +508,16 @@ class Toolchain:
         }
 
 
-def inspect_apk(apk_path: Path, known_sha256: str | None = None) -> dict:
+def inspect_apk(apk_path: Path, known_sha256: str | None = None,
+                progress: Callable[[str, int], None] | None = None,
+                check_cancel: Callable[[], None] | None = None) -> dict:
+    notify = progress or (lambda _message, _percent: None)
+    check = check_cancel or (lambda: None)
+    check()
+    notify("Paket yapısı doğrulanıyor", 0)
     profiles = load_profiles()
     validate_package_archive(apk_path)
+    check()
 
     detections: dict[str, dict] = {}
     dex_rows: list[dict] = []
@@ -529,7 +536,8 @@ def inspect_apk(apk_path: Path, known_sha256: str | None = None) -> dict:
         if not dex_names:
             raise ValueError("APK içinde classes*.dex bulunamadı.")
 
-        for dex_name in dex_names:
+        for index, dex_name in enumerate(dex_names, 1):
+            check()
             if archive.getinfo(dex_name).file_size > MAX_DEX_BYTES:
                 raise ValueError(f"{Path(dex_name).name} güvenli DEX boyut sınırını aşıyor.")
             payload = archive.read(dex_name)
@@ -546,6 +554,7 @@ def inspect_apk(apk_path: Path, known_sha256: str | None = None) -> dict:
                     entry["dex"].append(dex_name)
             matched: list[str] = []
             for profile_id, profile in profiles.items():
+                check()
                 count = sum(payload.count(marker.encode()) for marker in profile["descriptors"])
                 if count:
                     matched.append(profile_id)
@@ -556,8 +565,10 @@ def inspect_apk(apk_path: Path, known_sha256: str | None = None) -> dict:
                     entry["references"] += count
                     entry["dex"].append(dex_name)
             dex_rows.append({"name": dex_name, "size": len(payload), "networks": matched})
+            notify(f"{Path(dex_name).name} tarandı ({index}/{len(dex_names)})", 5 + int(65 * index / len(dex_names)))
 
-        for name in names:
+        for index, name in enumerate(names, 1):
+            check()
             lowered = name.lower()
             for profile in profiles.values():
                 markers = profile.get("assets", []) + profile.get("libraries", [])
@@ -577,10 +588,15 @@ def inspect_apk(apk_path: Path, known_sha256: str | None = None) -> dict:
                         matched_layout.append(profile_id)
                 if matched_layout:
                     layout_hits.append({"name": name, "networks": matched_layout})
+            if index % 100 == 0 or index == len(names):
+                notify(f"Kaynaklar incelendi ({index}/{len(names)})", 70 + int(15 * index / len(names)))
 
         if "AndroidManifest.xml" in names:
+            check()
+            notify("Manifest ve paket kimliği okunuyor", 85)
             manifest = archive.read("AndroidManifest.xml")
             package_name = inspect_manifest_package(manifest, tools)
+            check()
             if not package_name:
                 package_name = _android_archive_package(apk_path)
             requires_splits = any(
@@ -596,8 +612,10 @@ def inspect_apk(apk_path: Path, known_sha256: str | None = None) -> dict:
                 if hits:
                     manifest_hits[profile_id] = hits
 
+    check()
+    notify("Uygulama simgesi ve izinler okunuyor", 95)
     source_integrity_risk = bool(SOURCE_INTEGRITY_RISK_LABELS.intersection(install_source_checks))
-    return {
+    result = {
         "filename": apk_path.name,
         "app_icon": extract_apk_icon(apk_path),
         "package_info": inspect_package_info(apk_path),
@@ -625,6 +643,9 @@ def inspect_apk(apk_path: Path, known_sha256: str | None = None) -> dict:
             "Yeniden imzalanan APK, mağaza sürümünün üzerine doğrudan kurulamayabilir.",
         ],
     }
+    check()
+    notify("Analiz tamamlandı", 100)
+    return result
 
 
 def inspect_split_package(
@@ -632,8 +653,11 @@ def inspect_split_package(
     inventory: dict | None = None,
     progress: Callable[[str, int], None] | None = None,
     known_sha256: str | None = None,
+    check_cancel: Callable[[], None] | None = None,
 ) -> dict:
     """Inspect base/feature APKs directly, avoiding an early universal-APK merge."""
+    check = check_cancel or (lambda: None)
+    check()
     validate_package_archive(source)
     inventory = inventory or inspect_split_components(source)
     candidates = [
@@ -664,16 +688,25 @@ def inspect_split_package(
             outer_names = set(outer.namelist())
             valid_candidates = [name for name in candidates if name in outer_names]
             for index, name in enumerate(valid_candidates, 1):
+                check()
                 notify(
                     f"Split modülü taranıyor ({index}/{len(valid_candidates)})",
-                    12 + int(70 * index / max(1, len(valid_candidates))),
+                    int(90 * (index - 1) / max(1, len(valid_candidates))),
                 )
                 extracted = temp / f"{index:03d}-{Path(name).name}"
                 with outer.open(name) as source_stream, extracted.open("wb") as target_stream:
-                    shutil.copyfileobj(source_stream, target_stream, length=1024 * 1024)
+                    while chunk := source_stream.read(1024 * 1024):
+                        check()
+                        target_stream.write(chunk)
                 if not zipfile.is_zipfile(extracted):
                     continue
-                report = inspect_apk(extracted)
+                if progress or check_cancel:
+                    def module_progress(message, percent):
+                        notify(f"Modül {index}/{len(valid_candidates)} · {message}",
+                               int(90 * ((index - 1) + percent / 100) / len(valid_candidates)))
+                    report = inspect_apk(extracted, progress=module_progress, check_cancel=check)
+                else:
+                    report = inspect_apk(extracted)
                 candidate_package = str(report.get("package_name") or "")
                 is_base = any(item.get("name") == name and item.get("kind") == "base" for item in inventory.get("modules", []))
                 if is_base:
@@ -709,6 +742,7 @@ def inspect_split_package(
 
     if not dex_rows:
         raise ValueError("Split paket içinde classes*.dex içeren geçerli bir APK bulunamadı.")
+    check()
     source_integrity_risk = bool(SOURCE_INTEGRITY_RISK_LABELS.intersection(install_source_checks))
     return {
         "filename": source.name,

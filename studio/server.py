@@ -53,6 +53,7 @@ from device_catalog import DeviceCatalog
 from package_icon import extract_apk_icon
 from app_appearance import validate_appearance
 from processing_profiles import export_profile_document
+from analysis_sessions import AnalysisCancelled, AnalysisSessions
 
 
 _JSON_WRITE_LOCK = threading.Lock()
@@ -97,6 +98,7 @@ _JOB_CANCEL_EVENTS: dict[str, threading.Event] = {}
 _JOB_THREADS: dict[str, int] = {}
 _ACTIVE_JOBS_LOCK = threading.Lock()
 _ANALYZE_SLOTS = threading.BoundedSemaphore(2)
+_ANALYSIS_SESSIONS = AnalysisSessions()
 _PUBLIC_ORIGIN_LOCK = threading.Lock()
 _PUBLIC_HTTPS_ORIGIN = ""
 _DEVICE_CATALOG = DeviceCatalog(DEVICE_CATALOG_CACHE)
@@ -1775,7 +1777,7 @@ class StudioHandler(BaseHTTPRequestHandler):
         if origin and self.request_origin_allowed():
             self.send_header("Access-Control-Allow-Origin", origin)
             self.send_header("Vary", "Origin")
-            self.send_header("Access-Control-Allow-Headers", "Content-Type, X-Client-ID")
+            self.send_header("Access-Control-Allow-Headers", "Content-Type, X-Client-ID, X-Analysis-ID")
             self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 
     def redirect_secure_http(self) -> bool:
@@ -1886,6 +1888,11 @@ class StudioHandler(BaseHTTPRequestHandler):
             return
         if path == "/local-ca.crt":
             self.send_file(LOCAL_CA_PATH, "apk-cleaner-local-ca.crt", "application/x-x509-ca-cert")
+            return
+        analysis_match = re.fullmatch(r"/api/analysis/([a-f0-9]{32})", path)
+        if analysis_match:
+            snapshot = _ANALYSIS_SESSIONS.snapshot(analysis_match.group(1), self.requester_id())
+            self.send_json(snapshot or {"error": "Aktif analiz bulunamadı."}, 200 if snapshot else 404)
             return
         if path == "/api/profiles/export":
             try:
@@ -2097,7 +2104,9 @@ class StudioHandler(BaseHTTPRequestHandler):
         try:
             with destination.open("xb") as output:
                 while remaining > 0:
+                    getattr(self, "_analysis_check", lambda: None)()
                     chunk = self.rfile.read(min(UPLOAD_CHUNK_SIZE, remaining))
+                    getattr(self, "_analysis_check", lambda: None)()
                     if not chunk:
                         break
                     remaining -= len(chunk)
@@ -2163,7 +2172,14 @@ class StudioHandler(BaseHTTPRequestHandler):
             return
         analyze_slot = False
         analyze_job: Path | None = None
+        analysis_session = None
+        analysis_token = ""
         try:
+            analysis_cancel = re.fullmatch(r"/api/analysis/([a-f0-9]{32})/cancel", path)
+            if analysis_cancel:
+                accepted = _ANALYSIS_SESSIONS.cancel(analysis_cancel.group(1), self.requester_id())
+                self.send_json({"cancel_requested": True} if accepted else {"error": "Analiz iptal isteği kabul edilmedi."}, 200 if accepted else 403)
+                return
             reuse_match = re.fullmatch(r"/api/jobs/([a-f0-9]{32})/reuse", path)
             if reuse_match:
                 try:
@@ -2301,6 +2317,10 @@ class StudioHandler(BaseHTTPRequestHandler):
                     return
                 analyze_slot = True
                 owner_id = self.requester_id()
+                analysis_token = self.headers.get("X-Analysis-ID", "")
+                if analysis_token:
+                    analysis_session = _ANALYSIS_SESSIONS.begin(analysis_token, owner_id)
+                    self._analysis_check = lambda: _ANALYSIS_SESSIONS.check(analysis_session)
                 ensure_job_capacity(owner_id)
                 job_id = uuid.uuid4().hex
                 job = JOBS / job_id
@@ -2315,18 +2335,22 @@ class StudioHandler(BaseHTTPRequestHandler):
                 suffix = source.suffix.lower()
 
                 def prepare_progress(message: str, percent: int) -> None:
+                    if analysis_session:
+                        _ANALYSIS_SESSIONS.update(analysis_session, message, percent)
                     write_json(job / "state.json", {"status": "analyzing", "message": message, "progress": percent, "filename": filename})
 
-                prepare_progress("Paket yerel olarak hazırlanıyor", 4)
+                prepare_progress("Paket yerel olarak hazırlanıyor", 0)
                 split_options = inspect_split_components(source) if suffix in SPLIT_PACKAGES else None
                 merge_log: list[str] = []
                 if suffix in SPLIT_PACKAGES:
-                    prepare_progress("Split modülleri doğrudan taranıyor", 8)
-                    report = inspect_split_package(source, split_options, prepare_progress, upload_sha256)
+                    prepare_progress("Split modülleri doğrudan taranıyor", 0)
+                    report = inspect_split_package(source, split_options, prepare_progress, upload_sha256,
+                                                   check_cancel=getattr(self, "_analysis_check", None))
                     prepared = None
                 else:
-                    prepare_progress("APK güvenli biçimde taranıyor", 12)
-                    report = inspect_apk(source, upload_sha256)
+                    prepare_progress("APK güvenli biçimde taranıyor", 0)
+                    report = inspect_apk(source, upload_sha256, progress=prepare_progress,
+                                         check_cancel=getattr(self, "_analysis_check", None))
                     prepared = source
                 report.update({
                     "filename": filename,
@@ -2339,8 +2363,12 @@ class StudioHandler(BaseHTTPRequestHandler):
                     "owner_id": owner_id,
                     "created_at": time.time(),
                 })
+                if analysis_session:
+                    _ANALYSIS_SESSIONS.check(analysis_session)
                 write_json(job / "analysis.json", report)
                 write_json(job / "state.json", {"status": "ready", "message": "Analiz tamamlandı", "progress": 100, "filename": filename})
+                if analysis_session:
+                    _ANALYSIS_SESSIONS.check(analysis_session)
                 self.send_json({"job_id": job_id, "analysis": report})
                 analyze_job = None
                 return
@@ -2371,8 +2399,11 @@ class StudioHandler(BaseHTTPRequestHandler):
         except Exception as exc:
             if analyze_job is not None:
                 shutil.rmtree(analyze_job, ignore_errors=True)
-            self.send_json({"error": public_error(exc)}, 400)
+            self.send_json({"error": public_error(exc), **({"cancelled": True} if isinstance(exc, AnalysisCancelled) else {})}, 400)
         finally:
+            if analysis_session:
+                _ANALYSIS_SESSIONS.finish(analysis_token, analysis_session)
+            self._analysis_check = lambda: None
             if analyze_slot:
                 _ANALYZE_SLOTS.release()
 

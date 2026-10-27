@@ -10,6 +10,7 @@ function runtime() {
     prepareAnalysisView() {}, applyAnalysisResult: data => applied.push(data),
     reset() { state.selectionGeneration++; state.selectionBusy = false; state.file = null; },
     FormData: class { append() {} }, clientHeaders: () => ({}),
+    stopAnalysisTracking() {}, startAnalysisTracking: () => ({ id: 'a'.repeat(32), controller: { signal: {} } }), finishAnalysisTracking() {},
     apiFetch: () => new Promise((resolve, reject) => pending.push({ resolve, reject })),
   });
   vm.runInContext(source.slice(source.indexOf('function beginPackageSelection('), source.indexOf('function prepareAnalysisView(')), context);

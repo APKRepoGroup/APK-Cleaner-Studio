@@ -772,7 +772,8 @@ function processInstalledApp(item) {
   if (state.jobRunning) { toast("Önce mevcut işlemin tamamlanmasını bekle."); return; }
   if (state.nativeImportRequest) { toast("Önce seçilen uygulamanın hazırlanmasını bekle."); return; }
   const generation = beginPackageSelection();
-  const requestId = `${clientId}-${generation}-${Date.now()}`;
+  const task = startAnalysisTracking(generation);
+  const requestId = task.id;
   state.nativeImportRequest = { generation, requestId };
   closeInstalledApps();
   state.file = { name: installedPackageFilename(item), size: 0, installed: true };
@@ -2447,7 +2448,79 @@ async function deleteSavedPreset() {
   toast("İşlem profili silindi.");
 }
 
+function renderAnalysisProgress(snapshot) {
+  const progress = $("#analysisScanProgress"), value = snapshot?.progress;
+  const percent = typeof value === "number" && Number.isFinite(value) ? Math.max(0, Math.min(100, value)) : null;
+  $("#analysisScanMessage").textContent = snapshot?.cancel_requested ? "İptal ediliyor; mevcut adımın durması bekleniyor…" : snapshot?.message || "Paket cihaza aktarılıyor…";
+  if (percent !== null) progress.value = percent;
+  else progress.removeAttribute("value");
+  $("#analysisScanCount").textContent = percent !== null ? `Analiz aşamaları · %${Math.floor(percent)}` : "Dosya aktarımı / hazırlık";
+  $("#cancelAnalysisButton").disabled = Boolean(snapshot?.cancel_requested);
+}
+
+function finishAnalysisTracking(task) {
+  if (!task) return;
+  clearTimeout(task.timer); clearTimeout(task.deadline); task.pollController?.abort();
+  if (state.analysisTask === task) state.analysisTask = null;
+}
+
+function stopAnalysisTracking() {
+  const task = state.analysisTask;
+  if (!task) return;
+  finishAnalysisTracking(task);
+  globalThis.AndroidThemeBridge?.cancelInstalledPackageImport?.(task.id);
+  task.controller.abort();
+  void apiFetch(`/api/analysis/${task.id}/cancel`, { method: "POST", headers: clientHeaders() }).catch(() => {});
+}
+
+function startAnalysisTracking(generation) {
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  const task = { id: [...bytes].map(value => value.toString(16).padStart(2, "0")).join(""), generation, controller: new AbortController() };
+  state.analysisTask = task;
+  const poll = async () => {
+    if (state.analysisTask !== task || !isCurrentPackageSelection(generation)) return;
+    task.pollController = new AbortController();
+    task.deadline = setTimeout(() => task.pollController.abort(), 4000);
+    try {
+      const response = await apiFetch(`/api/analysis/${task.id}`, { cache: "no-store", headers: clientHeaders(), signal: task.pollController.signal });
+      if (response.ok) {
+        const snapshot = await response.json();
+        if (state.analysisTask === task && isCurrentPackageSelection(generation)) {
+          task.snapshot = snapshot;
+          renderAnalysisProgress({ ...snapshot, cancel_requested: task.cancelRequested || snapshot.cancel_requested });
+        }
+      }
+    } catch { /* Upload registration and short reconnects do not fail the analysis. */ }
+    finally {
+      clearTimeout(task.deadline);
+      if (state.analysisTask === task && isCurrentPackageSelection(generation)) task.timer = setTimeout(poll, 500);
+    }
+  };
+  task.timer = setTimeout(poll, 300);
+  return task;
+}
+
+async function cancelAnalysis() {
+  const task = state.analysisTask;
+  if (!task || task.cancelRequested) return;
+  task.cancelRequested = true;
+  renderAnalysisProgress({ ...task.snapshot, cancel_requested: true });
+  globalThis.AndroidThemeBridge?.cancelInstalledPackageImport?.(task.id);
+  try {
+    const response = await apiFetch(`/api/analysis/${task.id}/cancel`, { method: "POST", headers: clientHeaders() });
+    if (!response.ok) throw new Error("Analiz iptal isteği iletilemedi; tekrar dene.");
+    // Interrupt a partial browser upload. Completed uploads stop at a checked
+    // engine boundary; native imports also check the request-specific flag.
+    if (!state.nativeImportRequest && task.snapshot?.progress == null) task.controller.abort();
+  } catch (error) {
+    if (state.analysisTask !== task) return;
+    task.cancelRequested = false;
+    renderAnalysisProgress(task.snapshot); toast(userErrorMessage(error));
+  }
+}
+
 function beginPackageSelection() {
+  stopAnalysisTracking();
   state.selectionGeneration = (state.selectionGeneration || 0) + 1;
   state.selectionBusy = true;
   state.jobId = null; state.analysis = null; state.jobSelection = null;
@@ -2468,6 +2541,7 @@ function prepareAnalysisView(name, size, split = false) {
   const ext = extension(name) || ".apk";
   $("#fileCard").innerHTML = `<div class="apk"><span>${escapeHTML(ext.slice(1).toUpperCase())}</span></div><div><b>${escapeHTML(name)}</b><span>${humanSize(size)} · ${split ? "Split modüller birleştirilecek" : "Yerel analiz"}</span></div>`;
   $("#scanProgress").classList.remove("hidden"); $("#analysisContent").classList.add("hidden");
+  renderAnalysisProgress(null);
 }
 
 function applyAnalysisResult(data) {
@@ -2496,6 +2570,7 @@ globalThis.onInstalledPackageImported = (payload) => {
     if (data.request_id && data.request_id !== pending.requestId) return;
     state.nativeImportRequest = null;
     if (!isCurrentPackageSelection(pending.generation)) return;
+    finishAnalysisTracking(state.analysisTask);
     if (data.error) throw new Error(data.error);
     const file = data.native_file || { name: "installed-app.apk", size: 0 };
     state.file = { name: file.name, size: Number(file.size || 0), installed: true };
@@ -2504,7 +2579,7 @@ globalThis.onInstalledPackageImported = (payload) => {
     state.selectionBusy = false;
   } catch (error) {
     state.nativeImportRequest = null;
-    if (isCurrentPackageSelection(pending.generation)) { toast(userErrorMessage(error, "Yüklü uygulama alınamadı.")); reset(); }
+    if (isCurrentPackageSelection(pending.generation)) { finishAnalysisTracking(state.analysisTask); toast(userErrorMessage(error, "Yüklü uygulama alınamadı.")); reset(); }
   }
 };
 
@@ -2515,14 +2590,16 @@ async function acceptFile(file) {
   if (file.size > MAX_UPLOAD_BYTES) return toast("Paket 1 GB sınırını aşıyor.");
   const generation = beginPackageSelection();
   state.file = file; prepareAnalysisView(file.name, file.size, isSplit(file.name));
+  const task = startAnalysisTracking(generation);
   const form = new FormData(); form.append("package", file);
   try {
-    const response = await apiFetch("/api/analyze", { method: "POST", headers: clientHeaders(), body: form }); const data = await response.json();
+    const response = await apiFetch("/api/analyze", { method: "POST", headers: clientHeaders({ "X-Analysis-ID": task.id }), body: form, signal: task.controller.signal }); const data = await response.json();
     if (!isCurrentPackageSelection(generation)) return;
     if (!response.ok) throw new Error(data.error || "Analiz başarısız.");
     applyAnalysisResult(data);
     state.selectionBusy = false;
-  } catch (error) { if (isCurrentPackageSelection(generation)) { toast(userErrorMessage(error)); reset(); } }
+  } catch (error) { if (isCurrentPackageSelection(generation)) { finishAnalysisTracking(task); toast(task.cancelRequested ? "Analiz iptal edildi." : userErrorMessage(error)); reset(); } }
+  finally { finishAnalysisTracking(task); }
 }
 
 function renderProgress(value) {
@@ -3141,6 +3218,7 @@ async function cancelJob() {
 
 function reset() {
   if (state.jobRunning) { toast("Önce mevcut işlemin tamamlanmasını bekle."); return; }
+  stopAnalysisTracking();
   state.selectionGeneration = (state.selectionGeneration || 0) + 1;
   state.selectionBusy = false;
   state.jobSelection = null;
@@ -3165,6 +3243,7 @@ function reset() {
 }
 
 $("#selectButton").addEventListener("click", (event) => { event.stopPropagation(); $("#fileInput").click(); });
+$("#cancelAnalysisButton").addEventListener("click", cancelAnalysis);
 $("#installedAppsButton").addEventListener("click", (event) => { event.stopPropagation(); openInstalledApps(); });
 $("#installedAppsClose").addEventListener("click", closeInstalledApps);
 $("#installedApps").addEventListener("click", (event) => { if (event.target === event.currentTarget) closeInstalledApps(); });

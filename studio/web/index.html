@@ -11,7 +11,7 @@
   <link rel="icon" type="image/png" href="/favicon.png" sizes="512x512">
   <script src="boot.js?v=0.6.3-dev.4-20260930.8"></script>
   <link rel="stylesheet" href="styles.css">
-  <link rel="stylesheet" href="theme.css?v=0.6.3-dev.7-20261027.2">
+  <link rel="stylesheet" href="theme.css?v=0.6.3-dev.7-20261027.3">
 </head>
 <body>
   <header class="topbar">
@@ -101,7 +101,13 @@
 
         <section id="analysisView" class="view hidden">
           <div id="fileCard" class="file-card"></div>
-          <div id="scanProgress" class="scan-progress"><i></i><span>Paket hazırlanıyor ve güvenli biçimde taranıyor…</span></div>
+          <section id="scanProgress" class="scan-progress analysis-scan" aria-label="Paket analizi">
+            <b id="analysisScanMessage" role="status">Paket cihaza aktarılıyor…</b>
+            <progress id="analysisScanProgress" max="100" aria-label="Analiz ilerlemesi"></progress>
+            <span id="analysisScanCount">Dosya aktarımı / hazırlık</span>
+            <p>Aşamalar ve taranan dosyalara göre ilerleme gösterilir; kalan süreyi belirtmez. Orijinal paket değiştirilmez.</p>
+            <button id="cancelAnalysisButton" type="button" class="button secondary">Analizi iptal et</button>
+          </section>
           <div id="analysisContent" class="hidden">
             <details id="packageInfo" class="package-info"><summary>APK bilgileri ve uyumluluk</summary>
               <dl id="packageInfoRows"></dl>
@@ -468,9 +474,9 @@
     </section>
   </div>
   <script src="ui-runtime.js?v=0.6.3-dev.4-20260927.1"></script>
-  <script src="permissions.js"></script>
+  <script src="permissions.js?v=0.6.3-dev.7-20261027.3"></script>
   <script src="apk-comparison.js?v=0.6.3-dev.7-20261027.2"></script>
   <script src="processing-presets.js?v=0.6.3-dev.7-20261027.2"></script>
-  <script src="app.js?v=0.6.3-dev.7-20261027.2"></script>
+  <script src="app.js?v=0.6.3-dev.7-20261027.3"></script>
 </body>
 </html>

@@ -57,7 +57,7 @@ class Handler(SimpleHTTPRequestHandler):
                 width = "390px" if capture == "dev7-mobile" else "100%"
                 self.reply(f'''<!doctype html><html lang="tr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Dev.7 test ekranı</title>
                 <style>html,body{{height:100%;margin:0}}body{{height:100dvh;display:flex;flex-direction:column;overflow:hidden;background:#0d1515;color:#e8efea;font:14px system-ui}}header{{padding:8px 12px;text-align:center;flex:0 0 auto}}nav{{display:flex;flex-wrap:wrap;justify-content:center;gap:6px 16px}}a{{color:#d9ff43;font-size:12px}}small{{display:block;color:#a9b6b0;font-size:11px;margin-top:5px}}iframe{{display:block;flex:1;min-height:0;box-sizing:border-box;width:min({width},100%);margin:0 auto;border:1px solid #34493f;border-radius:14px}}</style></head><body>
-                <header><nav><a href="/?{embedded}capture=dev7-compare" target="preview">APK karşılaştırma</a><a href="/?{embedded}capture=dev7-permissions" target="preview">İzin açıklamaları</a><a href="/?{embedded}capture=dev7-profiles" target="preview">Profil aktarımı</a><a href="/?{embedded}capture=dev7-import-preview" target="preview">İçe aktarma önizlemesi</a></nav><small>Dev.7 · Örnek veriler; APK analizi yapılmaz. Deneme profilleri gerçek kayıtlardan ayrıdır.</small></header>
+                <header><nav><a href="/?{embedded}capture=dev7-compare" target="preview">APK karşılaştırma</a><a href="/?{embedded}capture=dev7-permissions" target="preview">İzin açıklamaları</a><a href="/?{embedded}capture=dev7-profiles" target="preview">Profil aktarımı</a><a href="/?{embedded}capture=dev7-import-preview" target="preview">İçe aktarma önizlemesi</a><a href="/?{embedded}capture=dev7-analysis" target="preview">Analiz / iptal</a></nav><small>Dev.7 · Örnek veriler; APK analizi yapılmaz. Deneme profilleri gerçek kayıtlardan ayrıdır.</small></header>
                 <iframe name="preview" title="Dev.7 önizleme" src="/?{embedded}capture=dev7-compare"></iframe></body></html>''', "text/html")
                 return
             if capture in {"dev6-mobile", "dev6-desktop"}:
@@ -142,11 +142,13 @@ class Handler(SimpleHTTPRequestHandler):
             setup += '''const originalQaWorking=qaWorking;qaWorking=(...args)=>{originalQaWorking(...args);state.jobSelection={...qaSelection,operation:'patch',split_selection:null,clone_package_name:null};renderWorkingSelection(state.jobSelection);};'''
             setup += '''function qaDev7Comparison(){openPackageComparison();const left={filename:'Örnek_Uygulama_1.4.2.apk',package_name:'com.example.demo',size:52428800,dex_count:8,sha256:'a'.repeat(64),package_info:{app_name:'Örnek Uygulama',version_name:'1.4.2',version_code:142,min_sdk:26,target_sdk:35,abis:['arm64-v8a','armeabi-v7a'],permissions:['android.permission.INTERNET','android.permission.CAMERA','android.permission.READ_CONTACTS']},detections:[{id:'google_ads',label:'Google Ads'}]};const right={...left,filename:'Örnek_Uygulama_1.5.0.apk',size:56321024,dex_count:9,sha256:'b'.repeat(64),package_info:{...left.package_info,version_name:'1.5.0',version_code:150,target_sdk:37,abis:['arm64-v8a'],permissions:['android.permission.INTERNET','android.permission.CAMERA','android.permission.RECORD_AUDIO','android.permission.POST_NOTIFICATIONS']},detections:[...left.detections,{id:'applovin',label:'AppLovin MAX'}]};Object.assign(packageComparison.Left,{report:left,filename:left.filename});Object.assign(packageComparison.Right,{report:right,filename:right.filename});renderPackageComparison();}'''
             setup += '''function qaDev7Permissions(){qaAnalysis(true,false,false);state.analysis.package_info.permissions=['android.permission.INTERNET','android.permission.CAMERA','android.permission.RECORD_AUDIO','android.permission.ACCESS_FINE_LOCATION','android.permission.MANAGE_EXTERNAL_STORAGE','android.permission.READ_EXTERNAL_STORAGE','com.example.permission.CUSTOM'];state.analysis.package_info.permission_declarations=state.analysis.package_info.permissions.map(name=>({name,min_sdk:name.endsWith('RECORD_AUDIO')?23:1,max_sdk:name.endsWith('READ_EXTERNAL_STORAGE')?32:null,bounds_known:true}));renderPackageInfo(state.analysis);setInlineDisclosureOpen(document.querySelector('#packageInfo'),true);setInlineDisclosureOpen(document.querySelector('#packagePermissions'),true);document.querySelector('#packageInfo').scrollIntoView({block:'start'});}'''
+            setup += '''function qaDev7Analysis(){const generation=beginPackageSelection();state.file={name:'Örnek_Uygulama_1.5.0.apk',size:56321024};prepareAnalysisView(state.file.name,state.file.size);const task=startAnalysisTracking(generation);document.querySelector('#scanProgress').scrollIntoView({block:'center'});const previewTimer=setInterval(()=>{if(state.analysisTask!==task){clearInterval(previewTimer);return;}if(task.snapshot?.cancel_requested){clearInterval(previewTimer);finishAnalysisTracking(task);reset();toast('Örnek analiz iptal edildi. Gerçek APK işlenmedi.');}},250);}'''
             setup += '''function qaDev7Profiles(){qaAnalysis(true,false,false);if(!localStorage.getItem(SAVED_PRESETS_KEY)){const options=currentPresetOptions();localStorage.setItem(SAVED_PRESETS_KEY,JSON.stringify([{id:'preview-balanced',name:'Dengeli temizlik',options:{...options,profile:'balanced',patchAds:true}},{id:'preview-clone',name:'Klon ve optimizasyon',options:{...options,operation:'clone',optimizeApk:true}}]));}renderSavedPresets('preview-balanced');setInlineDisclosureOpen(document.querySelector('.preset-transfer'),true);document.querySelector('.saved-presets').scrollIntoView({block:'center'});}'''
             setup += '''function qaIconIdentity(){openInstalledApps();const images=[...document.querySelectorAll('.installed-app-icon')];const same=()=>images.every((image,i)=>image===document.querySelectorAll('.installed-app-icon')[i]);renderInstalledApps('Test uygulaması 2');renderInstalledApps();openInstalledApps();onInstalledPackagesLoaded(JSON.stringify(qaApps));const passed=images.length===100&&same();document.querySelector('#qaResult').textContent=passed?'PASS: 100 ikon düğümü korundu':'FAIL: ikon değişti';}'''
             setup += '''function qaDev7ImportPreview(){qaDev7Profiles();const preview=[{title:'Dengeli temizlik (2)',...StudioPresets.summary({operation:'patch',profile:'balanced',patchAds:true,optimizeApk:true})},{title:'Klon ve mağaza güncelleme tercihi',...StudioPresets.summary({operation:'clone',profile:'deep',patchAds:false,restrictStoreUpdates:true,optimizeApk:true})}];confirmAction('İşlem profilleri eklensin mi?','Örnek önizleme: iki profilin işlem seçenekleri gösteriliyor. Bu ekrandaki onay gerçek kayıtları değiştirmez.','İçe aktar',false,preview);}'''
             capture_actions = {
                 "dev7-import-preview": "setTimeout(qaDev7ImportPreview,600);",
+                "dev7-analysis": "setTimeout(qaDev7Analysis,600);",
                 "dev7-compare": "setTimeout(qaDev7Comparison,600);",
                 "dev7-permissions": "setTimeout(qaDev7Permissions,600);",
                 "dev7-profiles": "setTimeout(qaDev7Profiles,600);",
@@ -196,6 +198,14 @@ class Handler(SimpleHTTPRequestHandler):
             self.wfile.write(payload)
         elif path == "/qa-motion.js":
             self.reply((ROOT / "tests" / "ui_motion_probe.js").read_text(encoding="utf-8"), "text/javascript")
+        elif path.startswith("/api/analysis/"):
+            token = path.rsplit("/", 1)[-1]
+            if len(self.preview_jobs) > 128:
+                self.preview_jobs.pop(next(iter(self.preview_jobs)))
+            job = self.preview_jobs.setdefault("analysis-" + token, {"start": time.monotonic(), "cancelled": False})
+            count = min(19, 1 + int((time.monotonic() - job["start"]) / 2))
+            self.reply(json.dumps({"message": f"Örnek: classes{count}.dex tarandı ({count}/20)",
+                                   "progress": 5 + 3 * count, "cancel_requested": job["cancelled"]}))
         elif path == "/api/status":
             self.reply(json.dumps(dict(toolchain=TOOLS, platform="android", clients=[], channel="dev", version=VERSION, engine_version="2.0")))
         elif path == "/api/history":
@@ -291,6 +301,12 @@ class Handler(SimpleHTTPRequestHandler):
             return
         raw = self.rfile.read(int(self.headers.get("Content-Length", "0")))
         request_path = urlsplit(self.path).path
+        if request_path.startswith("/api/analysis/") and request_path.endswith("/cancel"):
+            token = request_path.split("/")[-2]
+            job = self.preview_jobs.setdefault("analysis-" + token, {"start": time.monotonic(), "cancelled": False})
+            job["cancelled"] = True
+            self.reply('{"cancel_requested":true}')
+            return
         if request_path.startswith(("/api/jobs/preview-", "/api/jobs/f1f1f1f1")) and request_path.endswith("/cancel"):
             job_id = request_path.split("/")[-2]
             job = self.preview_jobs.get(job_id)

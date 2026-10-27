@@ -135,6 +135,7 @@ public final class MainActivity extends Activity {
     private final AtomicBoolean installedPackagesLoading = new AtomicBoolean(false);
     private final AtomicBoolean installedPackagesPublishRequested = new AtomicBoolean(false);
     private final Map<String, Object> installedShareLocks = new ConcurrentHashMap<>();
+    private final Map<String, AtomicBoolean> installedAnalysisCancellations = new ConcurrentHashMap<>();
     private volatile String installedPackagesCache = "[]";
     private volatile boolean installedPackagesReady;
     private volatile File pendingNativeInstall;
@@ -795,9 +796,12 @@ public final class MainActivity extends Activity {
         }
 
         @JavascriptInterface public void importInstalledPackageWithRequest(String packageName, String requestId) {
+            AtomicBoolean cancelled = new AtomicBoolean(false);
+            if (requestId != null && !requestId.isEmpty()) installedAnalysisCancellations.put(requestId, cancelled);
             executeIo(() -> {
                 File staged = null;
                 try {
+                    checkAnalysisCancellation(cancelled);
                     PackageInfo info = getPackageManager().getPackageInfo(packageName, 0);
                     if (info.applicationInfo == null || info.applicationInfo.sourceDir == null) {
                         throw new IOException("Uygulamanın kurulum paketi okunamadı.");
@@ -814,6 +818,7 @@ public final class MainActivity extends Activity {
                             addZipFile(output, new File(info.applicationInfo.sourceDir), "base.apk");
                             int index = 1;
                             for (String split : info.applicationInfo.splitSourceDirs) {
+                                checkAnalysisCancellation(cancelled);
                                 File source = new File(split);
                                 String entry = source.getName();
                                 if (!entry.toLowerCase(Locale.ROOT).endsWith(".apk")) entry = "split-" + index + ".apk";
@@ -822,7 +827,8 @@ public final class MainActivity extends Activity {
                             }
                         }
                     }
-                    String response = uploadForAnalysis(staged);
+                    checkAnalysisCancellation(cancelled);
+                    String response = uploadForAnalysis(staged, requestId, cancelled);
                     JSONObject payload = new JSONObject(response);
                     payload.put("request_id", requestId);
                     payload.put("native_file", new JSONObject()
@@ -834,9 +840,15 @@ public final class MainActivity extends Activity {
                                 messageOf(error, "Yüklü uygulama alınamadı.")).toString());
                     } catch (Exception ignored) {}
                 } finally {
+                    if (requestId != null) installedAnalysisCancellations.remove(requestId, cancelled);
                     if (staged != null) staged.delete();
                 }
             });
+        }
+
+        @JavascriptInterface public void cancelInstalledPackageImport(String requestId) {
+            AtomicBoolean cancelled = requestId == null ? null : installedAnalysisCancellations.get(requestId);
+            if (cancelled != null) cancelled.set(true);
         }
 
         @JavascriptInterface public void prepareInstall(String url, String filename) {
@@ -1549,13 +1561,19 @@ public final class MainActivity extends Activity {
         output.closeEntry();
     }
 
-    private String uploadForAnalysis(File packageFile) throws Exception {
+    private static void checkAnalysisCancellation(AtomicBoolean cancelled) throws IOException {
+        if (cancelled.get()) throw new IOException("Analiz iptal edildi.");
+    }
+
+    private String uploadForAnalysis(File packageFile, String requestId, AtomicBoolean cancelled) throws Exception {
+        checkAnalysisCancellation(cancelled);
         if (!awaitEngineReady(30000)) {
             throw new IOException(EngineService.startupError.isEmpty()
                     ? "Yerel işlem motoruna bağlanılamadı. Uygulamayı kapatmadan yeniden dene."
                     : EngineService.startupError);
         }
         String boundary = "----APKCleanerNative" + Long.toHexString(System.nanoTime());
+        checkAnalysisCancellation(cancelled);
         byte[] prefix = ("--" + boundary + "\r\nContent-Disposition: form-data; name=\"package\"; filename=\""
                 + packageFile.getName().replace("\"", "") + "\"\r\nContent-Type: application/octet-stream\r\n\r\n")
                 .getBytes(java.nio.charset.StandardCharsets.UTF_8);
@@ -1571,13 +1589,17 @@ public final class MainActivity extends Activity {
         if (cookies != null) connection.setRequestProperty("Cookie", cookies);
         String client = cookieValue(cookies, CLIENT_COOKIE_NAME);
         if (!client.isEmpty()) connection.setRequestProperty("X-Client-ID", client);
+        if (requestId != null && requestId.matches("[a-f0-9]{32}")) connection.setRequestProperty("X-Analysis-ID", requestId);
         connection.setFixedLengthStreamingMode(prefix.length + packageFile.length() + suffix.length);
         try {
             try (OutputStream output = connection.getOutputStream(); InputStream input = new FileInputStream(packageFile)) {
                 output.write(prefix);
                 byte[] buffer = new byte[1024 * 1024];
                 int count;
-                while ((count = input.read(buffer)) >= 0) output.write(buffer, 0, count);
+                while ((count = input.read(buffer)) >= 0) {
+                    checkAnalysisCancellation(cancelled);
+                    output.write(buffer, 0, count);
+                }
                 output.write(suffix);
             }
             int status = connection.getResponseCode();
