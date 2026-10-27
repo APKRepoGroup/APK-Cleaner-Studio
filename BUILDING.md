@@ -35,6 +35,19 @@ npm run lint
 npm test
 ```
 
+## Final paketlerin SHA-256 doğrulaması
+
+Android, Windows ve Termux için **son** dosyalar `outputs/` içinde hazır olduktan sonra:
+
+```powershell
+python packaging/release_integrity.py prepare
+python packaging/release_integrity.py verify
+```
+
+Bu komutlar derleme veya GitHub işlemi yapmaz. Üç paketin gerçek baytlarından `outputs/SHA256-v<SÜRÜM>.txt` dosyasını ve `release-assets/v<SÜRÜM>/package-manifest.json` doğrulama kaydını oluşturur. Eksik/boş paketler, eski checksum değerleri ve sonradan değişmiş dosyalar denetimden geçmez. Final paket denetimleri de aynı kaydı zorunlu olarak kontrol eder.
+
+Kayıt zaten varsa `prepare` dosyaları sessizce yeniden onaylamaz, mevcut kaydı doğrular. Bir paket gerçekten yeniden üretilip tekrar test edildiyse kaydı bilinçli olarak yenilemek için `prepare --refresh` kullanılır. GitHub'a checksum olarak yalnızca `SHA256-v<SÜRÜM>.txt` yüklenir; doğrulama kaydı iç denetim içindir. Yayın öncesinde `verify` son kez çalıştırılmalıdır.
+
 ## Windows paketi
 
 Gereksinimler:

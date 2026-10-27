@@ -226,10 +226,12 @@ def packaged_server(label, command, folder, asset_fixture, user_fixture=None, se
 
 
 def main():
+    from package_audit import verify_release
     parser = argparse.ArgumentParser()
     parser.add_argument("--user-apk", type=Path)
     parser.add_argument("--case", action="append", dest="selected_cases")
     args = parser.parse_args()
+    verify_release()
     user_fixture = args.user_apk
     user_digest = digest(user_fixture) if user_fixture else None
     artifacts = [OUTPUTS / f"APK-Cleaner-Studio-v{VERSION}-{platform}.{extension}"

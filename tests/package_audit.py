@@ -9,6 +9,7 @@ import signal
 import socket
 import ssl
 import subprocess
+import sys
 import tempfile
 import time
 import urllib.request
@@ -16,6 +17,8 @@ import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "packaging"))
+from release_integrity import verify_release
 VERSION = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))["version"]
 EXE = ROOT / "outputs" / f"APK-Cleaner-Studio-v{VERSION}-Windows.exe"
 TERMUX = ROOT / "outputs" / f"APK-Cleaner-Studio-v{VERSION}-Termux.zip"
@@ -27,6 +30,8 @@ def release_build_snapshot(root: Path = ROOT) -> dict | None:
     if not path.is_file():
         return None
     snapshot = json.loads(path.read_text(encoding="utf-8"))
+    if snapshot.get("schema") == 1:
+        return verify_release(root, VERSION)
     if snapshot.get("version") != VERSION:
         raise RuntimeError("Dağıtım kayıt sürümü eşleşmiyor.")
     for platform, extension in (("Android", "apk"), ("Windows", "exe"), ("Termux", "zip")):
@@ -196,6 +201,7 @@ def audit_windows() -> dict:
 
 
 def main() -> int:
+    verify_release()
     summary = {"version": VERSION, "termux": audit_termux(), "windows": audit_windows()}
     print(json.dumps(summary, ensure_ascii=False, indent=2))
     return 0
