@@ -18,6 +18,7 @@ PYTHON_FILES = (
     "package_icon.py",
     "app_appearance.py",
     "package_info.py",
+    "processing_profiles.py",
     "server.py",
     "setup_tools.py",
     "updater.py",

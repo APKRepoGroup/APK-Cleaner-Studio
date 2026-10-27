@@ -188,6 +188,7 @@
             <section class="saved-presets" aria-labelledby="savedPresetsTitle">
               <div><b id="savedPresetsTitle">Kayıtlı işlem profilleri</b><p>Yalnızca işlem seçenekleri bu cihazda saklanır; APK ve dosya bilgileri kaydedilmez.</p></div>
               <div class="saved-presets-controls"><select id="savedPresetSelect" aria-label="Kayıtlı işlem profili"><option value="">Profil seç</option></select><button id="applyPresetButton" class="secondary" type="button" disabled>Uygula</button><button id="savePresetButton" class="secondary" type="button">Seçenekleri kaydet</button><button id="deletePresetButton" class="secondary" type="button" disabled aria-label="Seçili profili sil">Sil</button></div>
+              <details class="preset-transfer"><summary>Profilleri başka cihaza taşı</summary><p>Yalnızca kayıtlı profil adları ve işlem seçenekleri aktarılır. APK, paket kimliği, özel ad, simge, dosya yolu veya hesap bilgileri dahil edilmez. İçe aktarılan seçenekler kendiliğinden uygulanmaz.</p><div class="saved-presets-controls"><button id="exportPresetButton" class="secondary" type="button" disabled>Dışa aktar</button><button id="importPresetButton" class="secondary" type="button">İçe aktar</button><input id="importPresetFile" class="hidden" type="file" accept=".json,application/json"></div><p class="fineprint">JSON · En fazla 16 KB ve 12 profil. Aynı adlı profiller mevcut kaydı değiştirmeden yeni adla eklenir.</p></details>
             </section>
             <div id="analysisSummary" class="analysis-summary"></div>
             <section id="jobFailure" class="job-failure hidden" role="alert" aria-labelledby="jobFailureTitle" tabindex="-1">
@@ -465,6 +466,7 @@
   <script src="ui-runtime.js?v=0.6.3-dev.4-20260927.1"></script>
   <script src="permissions.js"></script>
   <script src="apk-comparison.js"></script>
+  <script src="processing-presets.js"></script>
   <script src="app.js?v=0.6.3-dev.5-20261018.9"></script>
 </body>
 </html>

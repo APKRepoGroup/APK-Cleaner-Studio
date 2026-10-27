@@ -28,7 +28,8 @@ const ACTIVE_JOB_KEY = "apk-cleaner-active-job-v1";
 const ACTION_NEXT_ICON = '<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h15m-6-6 6 6-6 6"/></svg>';
 function setJobRunning(active) {
   state.jobRunning = Boolean(active);
-  $("#comparePackagesButton").disabled = state.jobRunning;
+  const comparisonButton = $("#comparePackagesButton");
+  if (comparisonButton) comparisonButton.disabled = state.jobRunning;
   if (!state.jobRunning) $("#jobConnectionNotice")?.classList.add("hidden");
   if (!state.jobRunning && state.cancelDialog && activeDialog === state.cancelDialog) closeAppDialog(false);
   for (const selector of ["#customAppName", "#customAppIcon", "#clearAppAppearance", "#selectAppIcon"]) {
@@ -2282,7 +2283,12 @@ function updateActionState() {
 function readSavedPresets() {
   try {
     const parsed = JSON.parse(localStorage.getItem(SAVED_PRESETS_KEY) || "[]");
-    return Array.isArray(parsed) ? parsed.filter((item) => item && typeof item.id === "string" && typeof item.name === "string" && item.options && typeof item.options === "object").slice(0, 12) : [];
+    return Array.isArray(parsed) ? parsed.flatMap(item => {
+      try {
+        if (!item || typeof item.id !== "string") return [];
+        return [{ id: item.id, name: StudioPresets.name(item.name), options: StudioPresets.options(item.options) }];
+      } catch { return []; }
+    }).slice(0, 12) : [];
   } catch { return []; }
 }
 
@@ -2293,6 +2299,43 @@ function renderSavedPresets(selectedId = $("#savedPresetSelect").value) {
   select.value = [...select.options].some((option) => option.value === selectedId) ? selectedId : "";
   $("#applyPresetButton").disabled = !select.value;
   $("#deletePresetButton").disabled = !select.value;
+  $("#exportPresetButton").disabled = readSavedPresets().length === 0;
+}
+
+function exportSavedPresets() {
+  try {
+    const text = StudioPresets.serialize(readSavedPresets());
+    // An HTTP attachment works in browsers and Android's existing save dialog;
+    // WebView cannot download blob: URLs through the native download listener.
+    const link = document.createElement("a");
+    link.href = `/api/profiles/export?profiles=${encodeURIComponent(text)}`;
+    link.download = "APK-Cleaner-Studio-islem-profilleri.json";
+    document.body.append(link); link.click(); link.remove();
+  } catch (error) { toast(userErrorMessage(error, "Profil dosyası hazırlanamadı.")); }
+}
+
+let presetImportBusy = false;
+async function importSavedPresets(file) {
+  if (!file || presetImportBusy) return;
+  presetImportBusy = true; $("#importPresetButton").disabled = true;
+  try {
+    if (file.size <= 0 || file.size > StudioPresets.MAX_BYTES) throw Error("Profil dosyası boş olmamalı ve 16 KB’ı aşmamalı.");
+    const incoming = StudioPresets.parse(await file.text());
+    // Capacity and file validity are checked before asking for confirmation.
+    StudioPresets.merge(readSavedPresets(), incoming, () => "preview");
+    if (!(await confirmAction("İşlem profilleri eklensin mi?", `${incoming.length} profil bu cihaza eklenecek: ${incoming.map(item => item.name).join(" · ")}. Mevcut profiller korunur; aynı adlı kayıtlar yeni adla eklenir. Seçenekler otomatik uygulanmaz.`, "İçe aktar"))) return;
+    const existing = readSavedPresets(), ids = new Set(existing.map(item => item.id));
+    const merged = StudioPresets.merge(existing, incoming, () => {
+      let id;
+      do { id = globalThis.crypto?.randomUUID?.() || `preset-${Date.now()}-${Math.random().toString(36).slice(2)}`; } while (ids.has(id));
+      ids.add(id); return id;
+    });
+    try { localStorage.setItem(SAVED_PRESETS_KEY, JSON.stringify(merged.profiles)); }
+    catch { throw Error("Profiller bu cihazda kaydedilemedi. Mevcut kayıtlar değiştirilmedi."); }
+    renderSavedPresets(merged.added[0].id);
+    toast(`${merged.added.length} işlem profili eklendi. Uygulamak için profili seçip Uygula’ya dokunun.`);
+  } catch (error) { toast(userErrorMessage(error, "Profil dosyası içe aktarılamadı.")); }
+  finally { presetImportBusy = false; $("#importPresetButton").disabled = false; }
 }
 
 function currentPresetOptions() {
@@ -3157,6 +3200,11 @@ for (const side of ["Left", "Right"]) {
 $("#applyPresetButton").addEventListener("click", applySavedPreset);
 $("#savePresetButton").addEventListener("click", saveCurrentPreset);
 $("#deletePresetButton").addEventListener("click", deleteSavedPreset);
+$("#exportPresetButton").addEventListener("click", exportSavedPresets);
+$("#importPresetButton").addEventListener("click", () => $("#importPresetFile").click());
+$("#importPresetFile").addEventListener("change", event => {
+  const file = event.target.files?.[0]; event.target.value = ""; importSavedPresets(file);
+});
 ["#stripDebug", "#normalizeDex", "#optimizeApk", "#deobfuscateResources", "#restrictStoreUpdates"].forEach((selector) => {
   $(selector).addEventListener("change", updateActionState);
   $(selector).addEventListener("input", updateActionState);

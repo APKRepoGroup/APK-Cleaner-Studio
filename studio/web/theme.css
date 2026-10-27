@@ -1251,6 +1251,9 @@ html[data-theme="dark"] .result .install-action {
 }
 .saved-presets-controls .secondary { min-height: 42px; padding: 0 12px; font-size: 11px; }
 .saved-presets-controls button:disabled { opacity: .5; cursor: not-allowed; }
+.preset-transfer { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line); }
+.preset-transfer summary { color: var(--ink); font-size: 12px; font-weight: 750; cursor: pointer; }
+.preset-transfer > p { font-size: 12px; line-height: 1.7; }
 @media (max-width: 620px) {
   .saved-presets-controls select { flex-basis: 100%; }
   .saved-presets-controls .secondary { flex: 1 1 auto; }
@@ -1322,7 +1325,7 @@ html[data-theme="dark"] .result .install-action {
 .workspace-utilities { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; padding: 14px 28px; border-bottom: 1px solid var(--line); }
 .workspace-utilities > span { color: var(--muted); font-size: 10px; font-weight: 800; letter-spacing: .12em; }
 .workspace-utilities .secondary { min-height: 40px; padding: 9px 14px; font-size: 12px; }
-.package-comparison-card { width: min(940px, 100%); }
+.report-viewer-card.package-comparison-card { width: min(940px, 100%); grid-template-rows: auto minmax(0, 1fr); }
 .package-comparison-body { min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 24px; }
 .package-comparison-body > .fineprint { margin-top: 0; }
 .comparison-files { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }

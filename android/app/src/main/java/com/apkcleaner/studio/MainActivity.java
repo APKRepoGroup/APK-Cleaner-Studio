@@ -462,11 +462,16 @@ public final class MainActivity extends Activity {
                 fileCallback = callback;
                 boolean choosingImage = params != null && params.getAcceptTypes() != null
                         && String.join(",", params.getAcceptTypes()).contains("image/");
+                boolean choosingProfiles = params != null && params.getAcceptTypes() != null
+                        && (String.join(",", params.getAcceptTypes()).contains("application/json")
+                        || String.join(",", params.getAcceptTypes()).contains(".json"));
                 Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT)
                         .addCategory(Intent.CATEGORY_OPENABLE)
-                        .setType(choosingImage ? "image/*" : "application/octet-stream")
+                        .setType(choosingImage ? "image/*" : choosingProfiles ? "*/*" : "application/octet-stream")
                         .putExtra(Intent.EXTRA_MIME_TYPES, choosingImage ? new String[] {
                                 "image/png", "image/jpeg", "image/webp"
+                        } : choosingProfiles ? new String[] {
+                                "application/json", "text/json", "text/plain", "application/octet-stream"
                         } : new String[] {
                                 "application/vnd.android.package-archive", "application/zip", "application/octet-stream"
                         });
@@ -485,7 +490,7 @@ public final class MainActivity extends Activity {
 
     private DownloadListener downloadListener() {
         return (url, userAgent, contentDisposition, mimeType, contentLength) -> {
-            if (!isTrustedJobUri(Uri.parse(url))) {
+            if (!isTrustedDownloadUri(Uri.parse(url))) {
                 Toast.makeText(this, R.string.save_failed, Toast.LENGTH_LONG).show();
                 return;
             }
@@ -517,6 +522,10 @@ public final class MainActivity extends Activity {
     private static boolean isTrustedJobUri(Uri uri) {
         String path = uri == null ? null : uri.getPath();
         return isTrustedLocalUri(uri) && path != null && path.startsWith("/api/jobs/");
+    }
+
+    private static boolean isTrustedDownloadUri(Uri uri) {
+        return isTrustedJobUri(uri) || (isTrustedLocalUri(uri) && "/api/profiles/export".equals(uri.getPath()));
     }
 
     private String suggestedDownloadFilename(String url, String contentDisposition, String mimeType) {
@@ -1660,7 +1669,7 @@ public final class MainActivity extends Activity {
     private void copyDownload(Uri destination) {
         String source = pendingDownloadUrl;
         String userAgent = pendingDownloadUserAgent;
-        if (source == null || !isTrustedJobUri(Uri.parse(source))) {
+        if (source == null || !isTrustedDownloadUri(Uri.parse(source))) {
             clearPendingDownload();
             Toast.makeText(this, R.string.save_failed, Toast.LENGTH_LONG).show();
             return;

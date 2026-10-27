@@ -52,6 +52,7 @@ from updater import check_for_updates, stage_update
 from device_catalog import DeviceCatalog
 from package_icon import extract_apk_icon
 from app_appearance import validate_appearance
+from processing_profiles import export_profile_document
 
 
 _JSON_WRITE_LOCK = threading.Lock()
@@ -1885,6 +1886,25 @@ class StudioHandler(BaseHTTPRequestHandler):
             return
         if path == "/local-ca.crt":
             self.send_file(LOCAL_CA_PATH, "apk-cleaner-local-ca.crt", "application/x-x509-ca-cert")
+            return
+        if path == "/api/profiles/export":
+            try:
+                # Fixed-name, bounded JSON only; no path, APK or identity fields.
+                if len(parsed.query) > 65536:
+                    raise ValueError("Profil dosyası en fazla 16 KB olmalı.")
+                payload = export_profile_document(parse_qs(parsed.query).get("profiles", [""])[0])
+            except (ValueError, UnicodeError) as error:
+                self.send_json({"error": public_error(error)}, HTTPStatus.BAD_REQUEST)
+                return
+            self.send_response(HTTPStatus.OK)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(payload)))
+            self.send_header("Content-Disposition", 'attachment; filename="APK-Cleaner-Studio-islem-profilleri.json"')
+            self.send_header("Cache-Control", "no-store")
+            self.security_headers()
+            self.cors()
+            self.end_headers()
+            self.wfile.write(payload)
             return
         if path == "/api/status":
             if parsed.query == "tls_probe=1":
