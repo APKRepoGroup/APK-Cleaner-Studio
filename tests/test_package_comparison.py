@@ -1,8 +1,10 @@
 import io
+import hashlib
 from pathlib import Path
 import sys
 import threading
 import unittest
+import zipfile
 from unittest.mock import Mock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "studio"))
@@ -57,6 +59,41 @@ class PackageComparisonTests(unittest.TestCase):
         self.assertEqual(self.handler.send_json.call_args.args[1], 400)
         self.assertFalse(self.paths[0].exists())
         self.assertTrue(self.slots.acquire(blocking=False))
+
+    def test_real_archive_analysis_reports_permissions_versions_and_architectures(self):
+        def upload(directory):
+            self.paths.append(directory)
+            source = directory / "real-archive.apk"
+            with zipfile.ZipFile(source, "w") as archive:
+                archive.writestr("AndroidManifest.xml", '<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.example.compare" android:versionCode="12" android:versionName="1.2"><uses-sdk android:minSdkVersion="26" android:targetSdkVersion="37"/><uses-permission android:name="android.permission.CAMERA"/><application android:label="Compare"/></manifest>')
+                archive.writestr("classes.dex", b"dex\n035\0" + bytes(120) + b"Lcom/google/android/gms/ads/AdView;")
+                archive.writestr("lib/arm64-v8a/libsample.so", b"fixture")
+            return source.name, source, hashlib.sha256(source.read_bytes()).hexdigest()
+        self.handler.receive_multipart_upload.side_effect = upload
+        # Keep the ZIP scan and metadata parsing real; Java process startup is
+        # covered by engine/device tests, not this read-only HTTP contract test.
+        with patch("engine.inspect_manifest_package", return_value="com.example.compare"):
+            self.handler.do_POST()
+        result = self.handler.send_json.call_args.args[0]["analysis"]
+        self.assertEqual(result["package_name"], "com.example.compare")
+        self.assertEqual(result["package_info"]["version_code"], 12)
+        self.assertEqual(result["package_info"]["permissions"], ["android.permission.CAMERA"])
+        self.assertEqual(result["package_info"]["abis"], ["arm64-v8a"])
+        self.assertTrue(any(row["id"] == "google_ads" for row in result["detections"]))
+        self.assertFalse(self.paths[0].exists())
+
+    def test_split_extension_is_rejected_before_analysis(self):
+        def upload(directory):
+            source = directory / "input.apks"
+            source.write_bytes(b"fixture")
+            self.paths.append(directory)
+            return source.name, source, "b" * 64
+        self.handler.receive_multipart_upload.side_effect = upload
+        with patch("server.inspect_apk") as inspect:
+            self.handler.do_POST()
+        inspect.assert_not_called()
+        self.assertEqual(self.handler.send_json.call_args.args[1], 400)
+        self.assertFalse(self.paths[0].exists())
 
     def test_concurrent_upload_limit_is_shared_with_regular_analysis(self):
         self.slots.acquire()

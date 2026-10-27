@@ -2,6 +2,8 @@
 import json
 import base64
 import time
+import argparse
+import sys
 import xml.etree.ElementTree as ET
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -12,6 +14,8 @@ WEB = ROOT / "studio" / "web"
 PROFILES = json.loads((ROOT / "studio" / "profiles.json").read_text(encoding="utf-8"))
 TOOLS = dict.fromkeys(("java", "dex_tools", "manifest_tool", "split_tool", "signer", "zipalign", "resource_tool", "fully_ready"), True)
 VERSION = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))["version"]
+sys.path.insert(0, str(ROOT / "studio"))
+from processing_profiles import export_profile_document
 
 
 def capture_mode(url):
@@ -48,6 +52,14 @@ class Handler(SimpleHTTPRequestHandler):
         path = request_url.path
         if path == "/":
             capture = capture_mode(self.path)
+            if capture in {"dev7-mobile", "dev7-desktop"}:
+                embedded = "embedded=android&" if capture == "dev7-mobile" else ""
+                width = "390px" if capture == "dev7-mobile" else "100%"
+                self.reply(f'''<!doctype html><html lang="tr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Dev.7 test ekranı</title>
+                <style>html,body{{height:100%;margin:0}}body{{height:100dvh;display:flex;flex-direction:column;overflow:hidden;background:#0d1515;color:#e8efea;font:14px system-ui}}header{{padding:8px 12px;text-align:center;flex:0 0 auto}}nav{{display:flex;flex-wrap:wrap;justify-content:center;gap:6px 16px}}a{{color:#d9ff43;font-size:12px}}small{{display:block;color:#a9b6b0;font-size:11px;margin-top:5px}}iframe{{display:block;flex:1;min-height:0;box-sizing:border-box;width:min({width},100%);margin:0 auto;border:1px solid #34493f;border-radius:14px}}</style></head><body>
+                <header><nav><a href="/?{embedded}capture=dev7-compare" target="preview">APK karşılaştırma</a><a href="/?{embedded}capture=dev7-permissions" target="preview">İzin açıklamaları</a><a href="/?{embedded}capture=dev7-profiles" target="preview">Profil aktarımı</a></nav><small>Dev.7 · Örnek veriler; APK analizi yapılmaz. Deneme profilleri gerçek kayıtlardan ayrıdır.</small></header>
+                <iframe name="preview" title="Dev.7 önizleme" src="/?{embedded}capture=dev7-compare"></iframe></body></html>''', "text/html")
+                return
             if capture in {"dev6-mobile", "dev6-desktop"}:
                 embedded = "embedded=android&" if capture == "dev6-mobile" else ""
                 width = "390px" if capture == "dev6-mobile" else "100%"
@@ -128,8 +140,14 @@ class Handler(SimpleHTTPRequestHandler):
             setup += '''function qaDev5Working(){qaWorking();state.jobId='preview-'+Date.now()+'-'+Math.floor(Math.random()*10000);setJobRunning(true);const jobId=state.jobId;async function tick(){if(state.jobId!==jobId||!state.jobRunning)return;const response=await fetch('/api/jobs/'+jobId+'/state');const data=await response.json();if(data.status==='cancelled'){setJobRunning(false);const error=new Error('İşlem isteğin üzerine iptal edildi.');error.jobStatus='cancelled';renderJobFailure(error);setStep(2);showView('#analysisView');return;}updateProgress(data.progress,data.message,data.events);setTimeout(tick,1400);}tick();}'''
             setup += '''function qaRecovery(interrupted=false){if(state.jobRunning||state.sessionRestoreInFlight||state.analysis)return;const prefix=interrupted?'f2f2f2f2':'f1f1f1f1';const id=rememberedActiveJob()||prefix+crypto.randomUUID().replaceAll('-','').slice(0,24);rememberActiveJob(id);restoreJobSession(id);}'''
             setup += '''const originalQaWorking=qaWorking;qaWorking=(...args)=>{originalQaWorking(...args);state.jobSelection={...qaSelection,operation:'patch',split_selection:null,clone_package_name:null};renderWorkingSelection(state.jobSelection);};'''
+            setup += '''function qaDev7Comparison(){openPackageComparison();const left={filename:'Örnek_Uygulama_1.4.2.apk',package_name:'com.example.demo',size:52428800,dex_count:8,sha256:'a'.repeat(64),package_info:{app_name:'Örnek Uygulama',version_name:'1.4.2',version_code:142,min_sdk:26,target_sdk:35,abis:['arm64-v8a','armeabi-v7a'],permissions:['android.permission.INTERNET','android.permission.CAMERA','android.permission.READ_CONTACTS']},detections:[{id:'google_ads',label:'Google Ads'}]};const right={...left,filename:'Örnek_Uygulama_1.5.0.apk',size:56321024,dex_count:9,sha256:'b'.repeat(64),package_info:{...left.package_info,version_name:'1.5.0',version_code:150,target_sdk:37,abis:['arm64-v8a'],permissions:['android.permission.INTERNET','android.permission.CAMERA','android.permission.RECORD_AUDIO','android.permission.POST_NOTIFICATIONS']},detections:[...left.detections,{id:'applovin',label:'AppLovin MAX'}]};Object.assign(packageComparison.Left,{report:left,filename:left.filename});Object.assign(packageComparison.Right,{report:right,filename:right.filename});renderPackageComparison();}'''
+            setup += '''function qaDev7Permissions(){qaAnalysis(true,false,false);state.analysis.package_info.permissions=['android.permission.INTERNET','android.permission.CAMERA','android.permission.RECORD_AUDIO','android.permission.ACCESS_FINE_LOCATION','android.permission.MANAGE_EXTERNAL_STORAGE','android.permission.READ_EXTERNAL_STORAGE','com.example.permission.CUSTOM'];renderPackageInfo(state.analysis);setInlineDisclosureOpen(document.querySelector('#packageInfo'),true);setInlineDisclosureOpen(document.querySelector('#packagePermissions'),true);document.querySelector('#packageInfo').scrollIntoView({block:'start'});}'''
+            setup += '''function qaDev7Profiles(){qaAnalysis(true,false,false);if(!localStorage.getItem(SAVED_PRESETS_KEY)){const options=currentPresetOptions();localStorage.setItem(SAVED_PRESETS_KEY,JSON.stringify([{id:'preview-balanced',name:'Dengeli temizlik',options:{...options,profile:'balanced',patchAds:true}},{id:'preview-clone',name:'Klon ve optimizasyon',options:{...options,operation:'clone',optimizeApk:true}}]));}renderSavedPresets('preview-balanced');setInlineDisclosureOpen(document.querySelector('.preset-transfer'),true);document.querySelector('.saved-presets').scrollIntoView({block:'center'});}'''
             setup += '''function qaIconIdentity(){openInstalledApps();const images=[...document.querySelectorAll('.installed-app-icon')];const same=()=>images.every((image,i)=>image===document.querySelectorAll('.installed-app-icon')[i]);renderInstalledApps('Test uygulaması 2');renderInstalledApps();openInstalledApps();onInstalledPackagesLoaded(JSON.stringify(qaApps));const passed=images.length===100&&same();document.querySelector('#qaResult').textContent=passed?'PASS: 100 ikon düğümü korundu':'FAIL: ikon değişti';}'''
             capture_actions = {
+                "dev7-compare": "setTimeout(qaDev7Comparison,600);",
+                "dev7-permissions": "setTimeout(qaDev7Permissions,600);",
+                "dev7-profiles": "setTimeout(qaDev7Profiles,600);",
                 "dev5": "setTimeout(qaDev5Working,700);",
                 "dev5-analysis": "setTimeout(()=>qaAnalysis(true,false,false),700);",
                 "dev5-battery": "setTimeout(()=>AndroidThemeBridge.requestBackgroundPolicy(),700);",
@@ -160,6 +178,20 @@ class Handler(SimpleHTTPRequestHandler):
             capture_action = capture_actions.get(capture, "")
             html = html.replace('</body>', controls + '<script>const qaMarks=' + json.dumps(marks) + ';' + setup + 'renderNetworks({detections:qaMarks,network_count:18,dex_count:3});' + capture_action + '</script><script src="/qa-motion.js"></script></body>')
             self.reply(html, "text/html")
+        elif path == "/app.js" and capture_mode(self.headers.get("Referer", "")).startswith("dev7-"):
+            self.reply((WEB / "app.js").read_text(encoding="utf-8").replace('"apk-cleaner-processing-presets-v1"', '"apk-cleaner-preview-presets-dev7"'), "text/javascript")
+        elif path == "/api/profiles/export":
+            try:
+                payload = export_profile_document(parse_qs(request_url.query).get("profiles", [""])[0])
+            except ValueError as error:
+                self.reply(json.dumps({"error": str(error)}), status=400)
+                return
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Disposition", 'attachment; filename="APK-Cleaner-Studio-islem-profilleri.json"')
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
         elif path == "/qa-motion.js":
             self.reply((ROOT / "tests" / "ui_motion_probe.js").read_text(encoding="utf-8"), "text/javascript")
         elif path == "/api/status":
@@ -251,6 +283,10 @@ class Handler(SimpleHTTPRequestHandler):
         return {"status": "cancelled" if job["cancelled"] else "working", "progress": min(90, 53 + count - 18), "events": events, "message": events[-1]["message"]}
 
     def do_POST(self):
+        if urlsplit(self.path).path == "/api/compare/analyze":
+            self.close_connection = True
+            self.reply('{"error":"Bu bağlantı görsel önizlemedir; gerçek APK analizi yapılmaz."}', status=400)
+            return
         raw = self.rfile.read(int(self.headers.get("Content-Length", "0")))
         request_path = urlsplit(self.path).path
         if request_path.startswith(("/api/jobs/preview-", "/api/jobs/f1f1f1f1")) and request_path.endswith("/cancel"):
@@ -305,5 +341,8 @@ class Handler(SimpleHTTPRequestHandler):
             self.send_error(404)
 
 if __name__ == "__main__":
-    print("UI fixture: http://127.0.0.1:18081/?embedded=android", flush=True)
-    ThreadingHTTPServer(("127.0.0.1", 18081), Handler).serve_forever()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--port", type=int, default=18081)
+    args = parser.parse_args()
+    print(f"UI fixture: http://127.0.0.1:{args.port}/?embedded=android", flush=True)
+    ThreadingHTTPServer(("127.0.0.1", args.port), Handler).serve_forever()
