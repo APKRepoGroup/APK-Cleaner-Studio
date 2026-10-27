@@ -8,7 +8,7 @@ from package_icon import ANDROID_NS, MAX_MANIFEST_BYTES, _chunks, _Strings, _u16
 
 
 def manifest_fields(data: bytes) -> dict:
-    result = {"min_sdk": None, "target_sdk": None, "version_name": None, "app_name": None, "permissions": []}
+    result = {"min_sdk": None, "target_sdk": None, "version_name": None, "version_code": None, "version_code_major": None, "app_name": None, "permissions": []}
     try:
         if not data or len(data) > MAX_MANIFEST_BYTES:
             return result
@@ -49,6 +49,11 @@ def manifest_fields(data: bytes) -> dict:
             if tag == "manifest":
                 value = attrs.get("versionName")
                 result["version_name"] = value if isinstance(value, str) and not value.startswith("@") else None
+                for key, attr in (("version_code", "versionCode"), ("version_code_major", "versionCodeMajor")):
+                    value = attrs.get(attr)
+                    if isinstance(value, str) and value.isascii() and value.isdecimal() and len(value) <= 10:
+                        value = int(value)
+                    result[key] = value if type(value) is int and 0 <= value <= 2147483647 else None
             elif tag == "application":
                 value = attrs.get("label")
                 result["app_name"] = value if isinstance(value, str) and not value.startswith("@") else None
@@ -65,7 +70,7 @@ def manifest_fields(data: bytes) -> dict:
         result["permissions"] = sorted(set(result["permissions"]))
         return result
     except (ValueError, struct.error, IndexError, TypeError, UnicodeError, ET.ParseError):
-        return {"min_sdk": None, "target_sdk": None, "version_name": None, "app_name": None, "permissions": []}
+        return {key: [] if key == "permissions" else None for key in result}
 
 
 def signature_schemes(path, archive) -> list[str]:

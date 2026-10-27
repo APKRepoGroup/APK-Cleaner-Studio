@@ -1319,6 +1319,36 @@ html[data-theme="dark"] .result .install-action {
 .package-info dl > div { display: grid; grid-template-columns: 130px minmax(0, 1fr); gap: 12px; padding: 10px 0; border-top: 1px solid var(--line); font-size: 12px; line-height: 1.6; }
 .package-info dt { color: var(--muted); }
 .package-info dd { margin: 0; overflow-wrap: anywhere; }
+.workspace-utilities { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; padding: 14px 28px; border-bottom: 1px solid var(--line); }
+.workspace-utilities > span { color: var(--muted); font-size: 10px; font-weight: 800; letter-spacing: .12em; }
+.workspace-utilities .secondary { min-height: 40px; padding: 9px 14px; font-size: 12px; }
+.package-comparison-card { width: min(940px, 100%); }
+.package-comparison-body { min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 24px; }
+.package-comparison-body > .fineprint { margin-top: 0; }
+.comparison-files { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.comparison-files > section { min-width: 0; padding: 18px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface-soft); }
+.comparison-files b { font-size: 13px; }
+.comparison-files p { margin: 8px 0 14px; font-size: 12px; overflow-wrap: anywhere; color: var(--muted); }
+.comparison-files .secondary { width: 100%; min-height: 42px; font-size: 12px; }
+.comparison-files span { display: block; margin-top: 10px; font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; color: var(--muted); }
+#comparisonSummary { font-size: 13px; line-height: 1.7; margin: 20px 0; color: var(--green); }
+.comparison-table-scroll { overflow-x: auto; }
+.apk-comparison-table { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: 12px; line-height: 1.6; }
+.apk-comparison-table th, .apk-comparison-table td { text-align: left; padding: 12px 10px; border-bottom: 1px solid var(--line); vertical-align: top; overflow-wrap: anywhere; }
+.apk-comparison-table th { color: var(--muted); font-weight: 650; }
+.apk-comparison-table .comparison-changed { background: var(--surface-soft); }
+.apk-comparison-table .comparison-changed th { color: var(--green); }
+.comparison-differences { margin-top: 14px; border: 1px solid var(--line); border-radius: 14px; padding: 16px; font-size: 12px; line-height: 1.7; }
+.comparison-differences summary { font-weight: 750; cursor: pointer; }
+.comparison-differences p, .comparison-differences li { color: var(--muted); overflow-wrap: anywhere; }
+.comparison-differences ul { padding-left: 18px; }
+@media (max-width: 520px) {
+  .workspace-utilities { padding: 12px 18px; }
+  .comparison-files { grid-template-columns: minmax(0, 1fr); }
+  .package-comparison-body { padding: 18px; }
+  .apk-comparison-table { font-size: 11px; }
+  .apk-comparison-table th, .apk-comparison-table td { padding: 10px 6px; }
+}
 #packagePermissionList { max-height: 340px; overflow: auto; padding: 0 8px 0 0; list-style: none; font-size: 12px; overflow-wrap: anywhere; }
 #packagePermissionList li { padding: 14px 0; border-top: 1px solid var(--line); }
 #packagePermissionList li > div { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 6px 12px; }

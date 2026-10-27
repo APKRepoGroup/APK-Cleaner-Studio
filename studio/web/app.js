@@ -23,10 +23,12 @@ const THEME_KEY = "apk-cleaner-theme";
 const CLIENT_ID_KEY = "apk-cleaner-client-id";
 const CLIENT_COOKIE_NAME = "apk_cleaner_client_id";
 const SAVED_PRESETS_KEY = "apk-cleaner-processing-presets-v1";
+const packageComparison = { Left: { generation: 0 }, Right: { generation: 0 } };
 const ACTIVE_JOB_KEY = "apk-cleaner-active-job-v1";
 const ACTION_NEXT_ICON = '<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h15m-6-6 6 6-6 6"/></svg>';
 function setJobRunning(active) {
   state.jobRunning = Boolean(active);
+  $("#comparePackagesButton").disabled = state.jobRunning;
   if (!state.jobRunning) $("#jobConnectionNotice")?.classList.add("hidden");
   if (!state.jobRunning && state.cancelDialog && activeDialog === state.cancelDialog) closeAppDialog(false);
   for (const selector of ["#customAppName", "#customAppIcon", "#clearAppAppearance", "#selectAppIcon"]) {
@@ -1252,6 +1254,7 @@ function closeHistoryStatus() {
 }
 
 globalThis.closeTransientMenu = () => {
+  if (!$("#packageComparison").classList.contains("hidden")) { closePackageComparison(); return true; }
   if ($("#historyStatusDialog").classList.contains("hidden")) return false;
   closeHistoryStatus(); return true;
 };
@@ -1935,6 +1938,85 @@ function prepareCloneOption(analysis) {
   $("#cloneOperation").setAttribute("aria-disabled", String(!original));
   $("#cloneAvailabilityNote").classList.toggle("hidden", Boolean(original));
   $("#cloneOperation").title = original ? "" : "Paket adı okunamadığı için klonlama kullanılamıyor.";
+}
+
+function openPackageComparison() {
+  if (state.jobRunning) return toast("Karşılaştırma için mevcut işlemin tamamlanmasını bekle.");
+  renderPackageComparison(); modalMotion.open($("#packageComparison")); lockPageScroll("package-comparison");
+  $("#packageComparisonClose").focus({ preventScroll: true });
+}
+
+function closePackageComparison() {
+  for (const side of ["Left", "Right"]) {
+    const slot = packageComparison[side]; slot.generation++; slot.controller?.abort();
+    slot.report = null; slot.loading = false; slot.error = ""; slot.filename = "";
+    $(`#comparison${side}File`).value = "";
+  }
+  modalMotion.close($("#packageComparison"), () => unlockPageScroll("package-comparison"));
+}
+
+function renderComparisonDifference(selector, diff, permission = false) {
+  const container = $(selector); container.replaceChildren();
+  for (const [key, label] of [["added", "Yalnızca ikinci APK’da"], ["removed", "Yalnızca birinci APK’da"]]) {
+    const title = document.createElement("b"), list = document.createElement("ul"); title.textContent = `${label} (${diff[key].length})`;
+    for (const value of diff[key]) {
+      const item = document.createElement("li");
+      item.textContent = permission ? `${StudioPermissions.describe(value).title} · ${value}` : value;
+      list.append(item);
+    }
+    if (!diff[key].length) { const item = document.createElement("li"); item.textContent = "Fark bulunmadı."; list.append(item); }
+    container.append(title, list);
+  }
+}
+
+function renderPackageComparison() {
+  for (const side of ["Left", "Right"]) {
+    const slot = packageComparison[side];
+    $(`#comparison${side}Name`).textContent = slot.filename || "Dosya seçilmedi";
+    $(`#comparison${side}Status`).textContent = slot.loading ? "APK analiz ediliyor…" : slot.error || (slot.report ? "Analiz tamamlandı." : "");
+    $(`#comparison${side}Status`).setAttribute("aria-busy", String(Boolean(slot.loading)));
+  }
+  const left = packageComparison.Left.report, right = packageComparison.Right.report;
+  $("#comparisonResults").classList.toggle("hidden", !left || !right);
+  if (!left || !right) return;
+  const result = StudioComparison.compare(left, right);
+  $("#comparisonSummary").textContent = result.sameContent ? "Dosyaların SHA-256 özetleri aynı; içerikleri eşleşiyor."
+    : result.samePackage ? "Paket adları aynı; dosya içerikleri farklı. Bu, imzaların veya kurulum uyumluluğunun eşleştiğini göstermez."
+    : "Bağımsız paketler karşılaştırılıyor; aynı uygulamanın sürümleri oldukları varsayılmaz.";
+  $("#comparisonRows").replaceChildren(...result.rows.map(item => {
+    const row = document.createElement("tr"); row.classList.toggle("comparison-changed", item.changed);
+    for (const [index, value] of [item.label, item.left, item.right].entries()) {
+      const cell = document.createElement(index ? "td" : "th"); cell.textContent = String(value);
+      if (!index) cell.scope = "row"; row.append(cell);
+    }
+    return row;
+  }));
+  for (const [key, selector, count] of [["permissions", "#comparisonPermissions", "#comparisonPermissionCount"], ["networks", "#comparisonNetworks", "#comparisonNetworkCount"]]) {
+    $(count).textContent = `(${result[key].added.length + result[key].removed.length})`;
+    renderComparisonDifference(selector, result[key], key === "permissions");
+  }
+}
+
+async function selectComparisonFile(side, file) {
+  const slot = packageComparison[side];
+  if (!slot || !file) return;
+  const generation = ++slot.generation; slot.controller?.abort(); slot.report = null; slot.error = "";
+  slot.filename = file.name; slot.loading = false;
+  if (!/\.apk$/i.test(file.name) || file.size <= 0 || file.size > MAX_UPLOAD_BYTES) {
+    slot.error = "1 GB’ı aşmayan, boş olmayan bir APK dosyası seç."; renderPackageComparison(); return;
+  }
+  slot.controller = new AbortController(); slot.loading = true; renderPackageComparison();
+  try {
+    const body = new FormData(); body.append("package", file);
+    const response = await apiFetch("/api/compare/analyze", { method: "POST", headers: clientHeaders(), body, signal: slot.controller.signal });
+    const data = await response.json();
+    if (!response.ok || !data.analysis) throw new Error(data.error || "APK analiz edilemedi.");
+    if (generation === slot.generation) slot.report = data.analysis;
+  } catch (error) {
+    if (generation === slot.generation && error.name !== "AbortError") slot.error = userErrorMessage(error, "APK karşılaştırma için analiz edilemedi.");
+  } finally {
+    if (generation === slot.generation) { slot.loading = false; renderPackageComparison(); }
+  }
 }
 
 function packageInfoRows(analysis) {
@@ -3054,6 +3136,24 @@ $("#clearAppAppearance").addEventListener("click", () => {
   resetAppAppearance(); setInlineDisclosureOpen($("#appAppearance"), true); updateActionState();
 });
 $("#savedPresetSelect").addEventListener("change", () => renderSavedPresets());
+$("#comparePackagesButton").addEventListener("click", openPackageComparison);
+$("#packageComparisonClose").addEventListener("click", closePackageComparison);
+$("#packageComparison").addEventListener("click", event => { if (event.target === event.currentTarget) closePackageComparison(); });
+$("#packageComparison").addEventListener("keydown", event => {
+  if (event.key !== "Tab") return;
+  const controls = [...event.currentTarget.querySelectorAll('button, [tabindex="0"], summary')].filter(item => item.getClientRects().length && !item.disabled);
+  const index = controls.indexOf(document.activeElement);
+  if (event.shiftKey && index <= 0 || !event.shiftKey && (index === controls.length - 1 || index < 0)) {
+    event.preventDefault(); controls[event.shiftKey ? controls.length - 1 : 0]?.focus();
+  }
+});
+containModalTouch("#packageComparison", ".package-comparison-body");
+for (const side of ["Left", "Right"]) {
+  $(`#comparison${side}Choose`).addEventListener("click", () => $(`#comparison${side}File`).click());
+  $(`#comparison${side}File`).addEventListener("change", event => {
+    const file = event.target.files?.[0]; event.target.value = ""; selectComparisonFile(side, file);
+  });
+}
 $("#applyPresetButton").addEventListener("click", applySavedPreset);
 $("#savePresetButton").addEventListener("click", saveCurrentPreset);
 $("#deletePresetButton").addEventListener("click", deleteSavedPreset);

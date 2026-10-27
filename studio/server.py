@@ -2256,6 +2256,25 @@ class StudioHandler(BaseHTTPRequestHandler):
                 self.send_json(install_tools())
                 return
 
+            if path == "/api/compare/analyze":
+                if not _ANALYZE_SLOTS.acquire(blocking=False):
+                    self.send_json({"error": "Aynı anda çok fazla paket yükleniyor; devam eden yüklemeyi bekle."}, HTTPStatus.TOO_MANY_REQUESTS)
+                    return
+                analyze_slot = True
+                # These uploads never become jobs or enter history. Cleanup also
+                # runs after malformed input, failed scans and disconnected clients.
+                with tempfile.TemporaryDirectory(prefix="apk-compare-") as temporary:
+                    filename, source, digest = self.receive_multipart_upload(Path(temporary))
+                    if source.suffix.lower() != ".apk":
+                        raise ValueError("Karşılaştırma için iki APK dosyası seçin; split paketler desteklenmiyor.")
+                    report = inspect_apk(source, digest)
+                    comparison = {key: report.get(key) for key in (
+                        "package_name", "package_info", "size", "sha256", "dex_count", "detections"
+                    )}
+                    comparison["filename"] = filename
+                    self.send_json({"analysis": comparison})
+                return
+
             if path == "/api/analyze":
                 if not _ANALYZE_SLOTS.acquire(blocking=False):
                     self.send_json({"error": "Aynı anda çok fazla paket yükleniyor; devam eden yüklemeyi bekle."}, HTTPStatus.TOO_MANY_REQUESTS)

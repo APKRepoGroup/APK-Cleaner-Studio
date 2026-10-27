@@ -78,6 +78,7 @@
     <section class="workspace">
       <div class="workspace-primary">
         <article class="panel">
+        <div class="workspace-utilities"><span>PAKET ARAÇLARI</span><button id="comparePackagesButton" class="secondary" type="button">İki APK’yı karşılaştır</button></div>
         <nav class="steps" aria-label="İşlem adımları">
           <div class="active" data-step="1"><span>1</span> Paket</div>
           <div data-step="2"><span>2</span> Yapılandır</div>
@@ -442,8 +443,28 @@
     </section>
   </div>
   <div id="toast" class="toast" role="status" aria-live="polite" aria-atomic="true"></div>
+  <div id="packageComparison" class="report-viewer hidden" role="presentation" aria-hidden="true">
+    <section class="report-viewer-card package-comparison-card" role="dialog" aria-modal="true" aria-labelledby="packageComparisonTitle">
+      <header><div><small>PAKET ARAÇLARI</small><h2 id="packageComparisonTitle">İki APK’yı karşılaştır</h2></div><button id="packageComparisonClose" type="button" aria-label="Karşılaştırmayı kapat">×</button></header>
+      <div class="package-comparison-body auto-hide-scrollbar">
+        <p class="fineprint">İki bağımsız APK’nın sürüm, paket adı, izin, mimari ve reklam ağı bilgilerini incele. Dosyalar değiştirilmez, işlem geçmişine eklenmez ve analizden sonra geçici kopyaları silinir. APKS, APKM ve XAPK desteklenmez.</p>
+        <div class="comparison-files">
+          <section><b>Birinci APK</b><p id="comparisonLeftName">Dosya seçilmedi</p><input id="comparisonLeftFile" class="hidden" type="file" accept=".apk,application/vnd.android.package-archive"><button id="comparisonLeftChoose" class="secondary" type="button">Birinci APK’yı seç</button><span id="comparisonLeftStatus" role="status"></span></section>
+          <section><b>İkinci APK</b><p id="comparisonRightName">Dosya seçilmedi</p><input id="comparisonRightFile" class="hidden" type="file" accept=".apk,application/vnd.android.package-archive"><button id="comparisonRightChoose" class="secondary" type="button">İkinci APK’yı seç</button><span id="comparisonRightStatus" role="status"></span></section>
+        </div>
+        <div id="comparisonResults" class="hidden">
+          <p id="comparisonSummary" role="status"></p>
+          <div class="comparison-table-scroll auto-hide-scrollbar" tabindex="0" aria-label="APK karşılaştırma tablosu"><table class="apk-comparison-table"><thead><tr><th scope="col">Alan</th><th scope="col">Birinci APK</th><th scope="col">İkinci APK</th></tr></thead><tbody id="comparisonRows"></tbody></table></div>
+          <p class="fineprint">Vurgulanan satırlar farklı değerleri gösterir. Farklılıklar güvenlik, zararlılık veya çalışma garantisi anlamına gelmez. Reklam tespiti yalnızca desteklenen işaretleri kapsar; izinler verilmiş erişimler değil, manifest bildirimleridir.</p>
+          <details class="comparison-differences"><summary>İzin farklılıkları <span id="comparisonPermissionCount"></span></summary><p>İkinci APK, birinci APK’ya göre karşılaştırılır. Bir güncelleme ilişkisi varsayılmaz.</p><div id="comparisonPermissions"></div></details>
+          <details class="comparison-differences"><summary>Reklam ağı farklılıkları <span id="comparisonNetworkCount"></span></summary><div id="comparisonNetworks"></div></details>
+        </div>
+      </div>
+    </section>
+  </div>
   <script src="ui-runtime.js?v=0.6.3-dev.4-20260927.1"></script>
   <script src="permissions.js"></script>
+  <script src="apk-comparison.js"></script>
   <script src="app.js?v=0.6.3-dev.5-20261018.9"></script>
 </body>
 </html>
