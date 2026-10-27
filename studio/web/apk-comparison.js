@@ -16,7 +16,7 @@
     const row = (label, a, b) => ({ label, left: a ?? "Okunamadı", right: b ?? "Okunamadı", changed: a != null && b != null && a !== b });
     const permissions = difference(info(left).permissions || [], info(right).permissions || []);
     const networks = difference((left.detections || []).map(item => item.label || item.id), (right.detections || []).map(item => item.label || item.id));
-    return {
+    const result = {
       sameContent: /^[a-f0-9]{64}$/i.test(left.sha256 || "") && left.sha256 === right.sha256,
       samePackage: Boolean(left.package_name && right.package_name && left.package_name === right.package_name),
       rows: [row("Uygulama adı", info(left).app_name, info(right).app_name), row("Paket adı", left.package_name || null, right.package_name || null),
@@ -27,6 +27,13 @@
         row("Tespit edilen reklam ağları", left.detections?.length, right.detections?.length), row("SHA-256", left.sha256 || null, right.sha256 || null)],
       permissions, networks,
     };
+    // Equal counts do not mean equal sets of permissions or detected networks.
+    result.rows.find(row => row.label === "İstenen izinler").changed ||= permissions.added.length + permissions.removed.length > 0;
+    result.rows.find(row => row.label === "Tespit edilen reklam ağları").changed ||= networks.added.length + networks.removed.length > 0;
+    return result;
   }
-  globalThis.StudioComparison = Object.freeze({ compare, difference });
+  function visibleRows(result, onlyDifferences) {
+    return onlyDifferences ? result.rows.filter(row => row.changed) : result.rows;
+  }
+  globalThis.StudioComparison = Object.freeze({ compare, difference, visibleRows });
 })();

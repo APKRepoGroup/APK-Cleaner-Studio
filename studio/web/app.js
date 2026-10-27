@@ -1948,6 +1948,7 @@ function openPackageComparison() {
 }
 
 function closePackageComparison() {
+  $("#comparisonOnlyDifferences").checked = false;
   for (const side of ["Left", "Right"]) {
     const slot = packageComparison[side]; slot.generation++; slot.controller?.abort();
     slot.report = null; slot.loading = false; slot.error = ""; slot.filename = "";
@@ -1978,13 +1979,17 @@ function renderPackageComparison() {
     $(`#comparison${side}Status`).setAttribute("aria-busy", String(Boolean(slot.loading)));
   }
   const left = packageComparison.Left.report, right = packageComparison.Right.report;
+  $("#comparisonSwap").disabled = !left || !right || packageComparison.Left.loading || packageComparison.Right.loading;
   $("#comparisonResults").classList.toggle("hidden", !left || !right);
   if (!left || !right) return;
   const result = StudioComparison.compare(left, right);
   $("#comparisonSummary").textContent = result.sameContent ? "Dosyaların SHA-256 özetleri aynı; içerikleri eşleşiyor."
     : result.samePackage ? "Paket adları aynı; dosya içerikleri farklı. Bu, imzaların veya kurulum uyumluluğunun eşleştiğini göstermez."
     : "Bağımsız paketler karşılaştırılıyor; aynı uygulamanın sürümleri oldukları varsayılmaz.";
-  $("#comparisonRows").replaceChildren(...result.rows.map(item => {
+  const rows = StudioComparison.visibleRows(result, $("#comparisonOnlyDifferences").checked);
+  $("#comparisonNoDifferences").classList.toggle("hidden", rows.length !== 0);
+  $("#comparisonRowCount").textContent = `${rows.length} alan gösteriliyor`;
+  $("#comparisonRows").replaceChildren(...rows.map(item => {
     const row = document.createElement("tr"); row.classList.toggle("comparison-changed", item.changed);
     for (const [index, value] of [item.label, item.left, item.right].entries()) {
       const cell = document.createElement(index ? "td" : "th"); cell.textContent = String(value);
@@ -1996,6 +2001,15 @@ function renderPackageComparison() {
     $(count).textContent = `(${result[key].added.length + result[key].removed.length})`;
     renderComparisonDifference(selector, result[key], key === "permissions");
   }
+}
+
+function swapPackageComparison() {
+  const left = packageComparison.Left, right = packageComparison.Right;
+  if (left.loading || right.loading || !left.report || !right.report) return;
+  for (const slot of [left, right]) { slot.generation++; slot.controller?.abort(); }
+  [left.report, right.report] = [right.report, left.report];
+  [left.filename, right.filename] = [right.filename, left.filename];
+  renderPackageComparison();
 }
 
 async function selectComparisonFile(side, file) {
@@ -3180,6 +3194,8 @@ $("#clearAppAppearance").addEventListener("click", () => {
 });
 $("#savedPresetSelect").addEventListener("change", () => renderSavedPresets());
 $("#comparePackagesButton").addEventListener("click", openPackageComparison);
+$("#comparisonOnlyDifferences").addEventListener("change", renderPackageComparison);
+$("#comparisonSwap").addEventListener("click", swapPackageComparison);
 $("#packageComparisonClose").addEventListener("click", closePackageComparison);
 $("#packageComparison").addEventListener("click", event => { if (event.target === event.currentTarget) closePackageComparison(); });
 $("#packageComparison").addEventListener("keydown", event => {

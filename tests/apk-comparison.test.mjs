@@ -27,6 +27,25 @@ test('unknown hashes do not imply identical files and unknown fields stay unknow
   assert.equal(result.rows.find(row => row.label === 'İşlemci mimarileri').left, 'Okunamadı');
   assert.equal(compare(apk(), apk()).sameContent, true);
 });
+test('differences-only keeps same-count permission changes and has an empty identical state', () => {
+  const left = apk(), right = apk({ package_info: { ...left.package_info, permissions: ['android.permission.CAMERA'] } });
+  const result = compare(left, right), filtered = helpers.StudioComparison.visibleRows(result, true);
+  assert.ok(filtered.some(row => row.label === 'İstenen izinler' && row.left === row.right));
+  assert.equal(helpers.StudioComparison.visibleRows(compare(left, left), true).length, 0);
+  assert.equal(helpers.StudioComparison.visibleRows(result, false).length, 12);
+});
+test('swapping reverses difference direction without another upload and refuses in-flight requests', async () => {
+  const source = await readFile(new URL('../studio/web/app.js', import.meta.url), 'utf8');
+  const slots = { Left: { report: apk(), filename: 'a.apk', generation: 1 }, Right: { report: apk({ package_name: 'other' }), filename: 'b.apk', generation: 2 } };
+  let renders = 0;
+  const context = vm.createContext({ packageComparison: slots, renderPackageComparison: () => renders++ });
+  const start = source.indexOf('function swapPackageComparison(');
+  vm.runInContext(source.slice(start, source.indexOf('async function selectComparisonFile(', start)), context);
+  slots.Left.loading = true; context.swapPackageComparison(); assert.equal(renders, 0);
+  slots.Left.loading = false; context.swapPackageComparison();
+  assert.equal(slots.Left.filename, 'b.apk'); assert.equal(slots.Right.filename, 'a.apk');
+  assert.equal(slots.Left.generation, 2); assert.equal(slots.Right.generation, 3); assert.equal(renders, 1);
+});
 test('out-of-order uploads and closing the comparison cannot replace the latest result', async () => {
   const source = await readFile(new URL('../studio/web/app.js', import.meta.url), 'utf8');
   const pending = [], slot = { generation: 0 }, activeJob = { jobId: 'existing-job' };
