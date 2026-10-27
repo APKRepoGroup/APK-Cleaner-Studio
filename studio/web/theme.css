@@ -1319,7 +1319,13 @@ html[data-theme="dark"] .result .install-action {
 .package-info dl > div { display: grid; grid-template-columns: 130px minmax(0, 1fr); gap: 12px; padding: 10px 0; border-top: 1px solid var(--line); font-size: 12px; line-height: 1.6; }
 .package-info dt { color: var(--muted); }
 .package-info dd { margin: 0; overflow-wrap: anywhere; }
-#packagePermissionList { max-height: 200px; overflow: auto; padding-left: 18px; font-size: 11px; overflow-wrap: anywhere; }
+#packagePermissionList { max-height: 340px; overflow: auto; padding: 0 8px 0 0; list-style: none; font-size: 12px; overflow-wrap: anywhere; }
+#packagePermissionList li { padding: 14px 0; border-top: 1px solid var(--line); }
+#packagePermissionList li > div { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 6px 12px; }
+#packagePermissionList small { color: var(--muted); font-size: 10px; }
+#packagePermissionList small.permission-sensitive { color: var(--orange, #ff986e); }
+#packagePermissionList p { margin: 6px 0; }
+#packagePermissionList code { color: var(--muted); font-size: 10px; }
 @media (max-width: 480px) { .package-info dl > div { grid-template-columns: 105px minmax(0, 1fr); gap: 8px; } }
 @media (max-width: 420px) {
   .selection-summary { padding: 14px; }

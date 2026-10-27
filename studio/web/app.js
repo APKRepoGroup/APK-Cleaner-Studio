@@ -1960,10 +1960,19 @@ function renderPackageInfo(analysis) {
     term.textContent = label; description.textContent = value; row.append(term, description); return row;
   }));
   const permissions = analysis.package_info?.permissions || [];
-  $("#packagePermissionList").replaceChildren(...(permissions.length ? permissions : ["İzin kaydı bulunamadı veya okunamadı."]).map(value => {
-    const labels = { "android.permission.INTERNET": "İnternet erişimi", "android.permission.ACCESS_NETWORK_STATE": "Ağ durumunu görüntüleme", "android.permission.POST_NOTIFICATIONS": "Bildirim gönderme", "android.permission.CAMERA": "Kamera erişimi", "android.permission.RECORD_AUDIO": "Mikrofon erişimi", "android.permission.ACCESS_FINE_LOCATION": "Hassas konum erişimi", "android.permission.READ_CONTACTS": "Kişileri okuma", "android.permission.READ_MEDIA_IMAGES": "Görsellere erişim", "android.permission.READ_EXTERNAL_STORAGE": "Depolamayı okuma", "android.permission.WRITE_EXTERNAL_STORAGE": "Depolamaya yazma" };
-    const item = document.createElement("li"); item.textContent = Object.hasOwn(labels, value) ? `${labels[value]} · ${value}` : value; return item;
+  $("#packagePermissionList").replaceChildren(...permissions.map(value => {
+    const info = StudioPermissions.describe(value);
+    const item = document.createElement("li"), heading = document.createElement("div"), title = document.createElement("b");
+    const category = document.createElement("small"), description = document.createElement("p"), code = document.createElement("code");
+    title.textContent = info.title; category.textContent = info.category;
+    category.className = info.category === "Hassas erişim" || info.category === "Özel erişim" ? "permission-sensitive" : "";
+    description.textContent = info.description; code.textContent = info.name;
+    heading.append(title, category); item.append(heading, description, code); return item;
   }));
+  if (!permissions.length) {
+    const item = document.createElement("li"); item.textContent = "İzin kaydı bulunamadı veya okunamadı.";
+    $("#packagePermissionList").append(item);
+  }
 }
 
 function resetAppAppearance() {
