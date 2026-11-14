@@ -17,7 +17,8 @@ import threading
 from urllib.parse import urlsplit
 import webbrowser
 
-from desktop_output import SavedOutputs, add_output_controls, expose_output_controls, watch_output_downloads
+from desktop_output import (OutputFolderPreference, SavedOutputs, add_output_controls, choose_output_destination,
+                            expose_output_controls, watch_output_downloads)
 
 TITLE = "APK Cleaner Studio"
 ROOT = Path(__file__).resolve().parent
@@ -370,7 +371,7 @@ def main():
         save_status("starting")
         webview.settings.update({"ALLOW_DOWNLOADS": True, "ALLOW_FILE_URLS": False,
                                  "OPEN_EXTERNAL_LINKS_IN_BROWSER": False, "REMOTE_DEBUGGING_PORT": None})
-        outputs = SavedOutputs()
+        outputs = SavedOutputs(OutputFolderPreference(engine.DATA_ROOT / "desktop-output-folder.json"))
         window = webview.create_window(TITLE, host.url, width=1200, height=860, min_size=(760, 600),
                                        background_color="#0d1515", text_select=True)
         expose_output_controls(window, outputs)
@@ -403,7 +404,10 @@ def main():
                     core.NewWindowRequested += new_window
                     event_handlers.append(new_window)
                     try:
-                        event_handlers.append(watch_output_downloads(core, host.url, outputs))
+                        event_handlers.append(watch_output_downloads(
+                            core, host.url, outputs, default_dialog=window.native.browser.on_download_starting,
+                            choose_destination=lambda folder, filename: choose_output_destination(
+                                window.native, folder, filename, window.localization["windows.fileFilter.allFiles"])))
                     except Exception:
                         logging.exception("Windows indirme takibi başlatılamadı")
             control.NavigationStarting += navigating

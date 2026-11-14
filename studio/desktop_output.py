@@ -1,15 +1,17 @@
-"""Reveal only APKs actually saved by the Windows application's WebView."""
+"""Track and reveal APKs actually saved by the Windows application."""
 from collections import OrderedDict
 import ctypes
 import json
 import logging
 from pathlib import Path
 import re
+from tempfile import NamedTemporaryFile
 from threading import Lock
 from urllib.parse import urlsplit
 
 
 JOB_ID = re.compile(r"[a-f0-9]{32}")
+MAX_FOLDER_SETTING_BYTES = 256 * 1024
 
 
 def add_output_controls(page):
@@ -69,10 +71,72 @@ def select_in_explorer(path):
         ole.CoUninitialize()
 
 
+class OutputFolderPreference:
+    def __init__(self, path):
+        self.path = Path(path)
+        self._lock = Lock()
+        self._folder = None
+        try:
+            with self.path.open("rb") as settings:
+                raw = settings.read(MAX_FOLDER_SETTING_BYTES + 1)
+            if len(raw) <= MAX_FOLDER_SETTING_BYTES:
+                value = json.loads(raw)
+                folder = value.get("directory") if isinstance(value, dict) else None
+                if isinstance(folder, str) and "\0" not in folder and Path(folder).is_absolute():
+                    self._folder = Path(folder)
+        except (OSError, ValueError, RecursionError):
+            pass  # Missing or corrupt preferences must not affect downloading.
+
+    def current(self):
+        with self._lock:
+            folder = self._folder
+        try:
+            return folder if folder is not None and folder.is_dir() else None
+        except OSError:
+            return None
+
+    def remember(self, folder):
+        with self._lock:
+            self._folder = folder
+            temporary = None
+            try:
+                self.path.parent.mkdir(parents=True, exist_ok=True)
+                with NamedTemporaryFile(mode="w", encoding="utf-8", dir=self.path.parent,
+                                        prefix="output-folder-", suffix=".tmp", delete=False) as settings:
+                    temporary = Path(settings.name)
+                    json.dump({"directory": str(folder)}, settings, ensure_ascii=False)
+                temporary.replace(self.path)
+            except OSError:
+                logging.getLogger("desktop.output").warning("Son APK kayıt klasörü diske kaydedilemedi")
+                if temporary is not None:
+                    try:
+                        temporary.unlink(missing_ok=True)
+                    except OSError:
+                        pass
+
+
+def choose_output_destination(form, directory, filename, all_files_label):
+    from System.Windows.Forms import DialogResult, SaveFileDialog
+
+    dialog = SaveFileDialog()
+    try:
+        dialog.InitialDirectory = str(directory)
+        dialog.FileName = filename
+        dialog.Filter = f"{all_files_label} (*.*)|*.*"
+        dialog.RestoreDirectory = True
+        return str(dialog.FileName) if dialog.ShowDialog(form) == DialogResult.OK else None
+    finally:
+        dialog.Dispose()
+
+
 class SavedOutputs:
-    def __init__(self):
+    def __init__(self, folder_preference=None):
         self._paths = OrderedDict()
         self._lock = Lock()
+        self._folder_preference = folder_preference
+
+    def _last_folder(self):
+        return self._folder_preference.current() if self._folder_preference is not None else None
 
     def _record(self, job, filename):
         path = Path(filename)
@@ -83,6 +147,8 @@ class SavedOutputs:
             self._paths.move_to_end(job)
             if len(self._paths) > 100:
                 self._paths.popitem(last=False)
+        if self._folder_preference is not None:
+            self._folder_preference.remember(path.parent)
         return True
 
     def _saved_path(self, job):
@@ -106,11 +172,25 @@ class SavedOutputs:
             return {"opened": False, "error": "APK'nın bulunduğu klasör açılamadı."}
 
 
-def watch_output_downloads(core, origin, outputs):
-    def starting(_sender, event):
+def watch_output_downloads(core, origin, outputs, *, default_dialog=None, choose_destination=None):
+    def starting(sender, event):
         operation = event.DownloadOperation
         job = output_download_job(str(operation.Uri), origin)
-        if not job:
+        if default_dialog is not None:
+            folder = outputs._last_folder() if job else None
+            if folder is None:
+                default_dialog(sender, event)
+            else:
+                try:
+                    destination = choose_destination(folder, Path(str(event.ResultFilePath)).name)
+                    if destination is None:
+                        event.Cancel = True
+                    else:
+                        event.ResultFilePath = destination
+                except Exception:
+                    logging.getLogger("desktop.output").exception("Son kayıt klasörü açılamadı; varsayılan pencere kullanılıyor")
+                    default_dialog(sender, event)
+        if not job or event.Cancel:
             return
 
         def state_changed(_sender, _event):
@@ -127,5 +207,14 @@ def watch_output_downloads(core, origin, outputs):
 
         operation.StateChanged += state_changed
 
-    core.DownloadStarting += starting
+    # pywebview already installed its own SaveFileDialog handler. Replace it
+    # with this wrapper; it still handles reports and the default directory.
+    if default_dialog is not None:
+        core.DownloadStarting -= default_dialog
+    try:
+        core.DownloadStarting += starting
+    except Exception:
+        if default_dialog is not None:
+            core.DownloadStarting += default_dialog
+        raise
     return starting
