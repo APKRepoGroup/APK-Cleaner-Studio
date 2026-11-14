@@ -15,5 +15,6 @@
 - APK karşılaştırmasında yalnızca farklı alanlar gösterilebilir ve iki dosyanın yeri değiştirilebilir. ([095037d](https://github.com/APKRepoGroup/APK-Cleaner-Studio/commit/095037d))
 - Profiller içe aktarılmadan önce işlem seçenekleri ve önemli uyarılar önizlenir. ([f6f7d9d](https://github.com/APKRepoGroup/APK-Cleaner-Studio/commit/f6f7d9d))
 - Final paketler, SHA-256 listesiyle birlikte otomatik doğrulanır; eski checksum listeleri reddedilir. ([9829156](https://github.com/APKRepoGroup/APK-Cleaner-Studio/commit/9829156))
+- Windows’ta kaydedilen APK, sonuç ekranındaki “Klasörde göster” ile Dosya Gezgini’nde seçili açılabilir.
 
 Yerel commit bağlantıları kaynak gönderimi onaylanana kadar GitHub’da açılmayabilir.

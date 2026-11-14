@@ -19,3 +19,4 @@ html[data-desktop-native]:not([data-lan-enabled="true"]) #clientCard { display:n
 #desktopNotificationChoices label:has(input:checked) { border-color:var(--focus); background:var(--surface-soft); }
 #desktopNotificationChoices input { width:16px; height:16px; margin:0; accent-color:var(--focus); flex-shrink:0; }
 #desktopNotificationStatus[data-error="true"] { color:var(--orange); }
+.result #revealSavedOutput:disabled { opacity: .55; cursor: default; }

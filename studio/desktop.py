@@ -17,6 +17,8 @@ import threading
 from urllib.parse import urlsplit
 import webbrowser
 
+from desktop_output import SavedOutputs, add_output_controls, expose_output_controls, watch_output_downloads
+
 TITLE = "APK Cleaner Studio"
 ROOT = Path(__file__).resolve().parent
 
@@ -157,13 +159,15 @@ def handler_for(runtime, tools, network=None, preferences=None):
                                         (ROOT / "desktop/network.html").read_text(encoding="utf-8") +
                                         (ROOT / "desktop/preferences.html").read_text(encoding="utf-8") + '<section id="clientCard"', 1)
                 source = source.replace("</body>", '<script src="/desktop-network.js" defer></script><script src="/desktop-preferences.js" defer></script></body>', 1)
-                self.send_text(source, "text/html", html=True)
+                self.send_text(add_output_controls(source), "text/html", html=True)
             elif path == "/desktop-window.css":
                 self.send_text((ROOT / "desktop/desktop.css").read_text(encoding="utf-8"), "text/css")
             elif path == "/desktop-network.js":
                 self.send_text((ROOT / "desktop/network.js").read_text(encoding="utf-8"), "text/javascript")
             elif path == "/desktop-preferences.js":
                 self.send_text((ROOT / "desktop/preferences.js").read_text(encoding="utf-8"), "text/javascript")
+            elif path == "/desktop-output.js":
+                self.send_text((ROOT / "desktop/output.js").read_text(encoding="utf-8"), "text/javascript")
             elif path == "/api/desktop/preferences" and preferences is not None:
                 self.send_json(preferences.state())
             elif path == "/api/desktop/network" and network is not None:
@@ -366,8 +370,10 @@ def main():
         save_status("starting")
         webview.settings.update({"ALLOW_DOWNLOADS": True, "ALLOW_FILE_URLS": False,
                                  "OPEN_EXTERNAL_LINKS_IN_BROWSER": False, "REMOTE_DEBUGGING_PORT": None})
+        outputs = SavedOutputs()
         window = webview.create_window(TITLE, host.url, width=1200, height=860, min_size=(760, 600),
                                        background_color="#0d1515", text_select=True)
+        expose_output_controls(window, outputs)
         event_handlers = []
         shell_integrations = []
 
@@ -386,7 +392,7 @@ def main():
                 if not internal_url(str(event.Uri), host.url):
                     event.Cancel = True
 
-            def ready(sender, event):
+            def ready(sender=None, event=None):
                 core = control.CoreWebView2
                 if core is not None:
                     def new_window(sender, event):
@@ -396,8 +402,15 @@ def main():
                             webbrowser.open(url)  # Only an explicit external-link click.
                     core.NewWindowRequested += new_window
                     event_handlers.append(new_window)
+                    try:
+                        event_handlers.append(watch_output_downloads(core, host.url, outputs))
+                    except Exception:
+                        logging.exception("Windows indirme takibi başlatılamadı")
             control.NavigationStarting += navigating
-            control.CoreWebView2InitializationCompleted += ready
+            if control.CoreWebView2 is None:
+                control.CoreWebView2InitializationCompleted += ready
+            else:
+                ready()
             event_handlers.extend([navigating, ready])
 
         window.events.before_show += before_show

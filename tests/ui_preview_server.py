@@ -16,6 +16,7 @@ TOOLS = dict.fromkeys(("java", "dex_tools", "manifest_tool", "split_tool", "sign
 VERSION = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))["version"]
 sys.path.insert(0, str(ROOT / "studio"))
 from processing_profiles import export_profile_document
+from desktop_output import add_output_controls
 
 
 def capture_mode(url):
@@ -119,7 +120,11 @@ class Handler(SimpleHTTPRequestHandler):
             </nav>'''
             if capture == "dev5-battery":
                 controls = ""
-            if capture in {"analysis", "analysis-apk", "selection-summary", "result", "comparison", "failure", "store-updates", "dev5-analysis"}:
+            if capture == "dev7-desktop-output":
+                html = add_output_controls(html)
+                html = html.replace("</head>", '<link rel="stylesheet" href="/desktop-window.css"></head>', 1)
+                bridge += '''<script>globalThis.pywebview={api:{saved_output_exists:async()=>true,reveal_saved_output:async()=>({opened:false,error:'Bu önizlemedir. Dosya Gezgini yalnızca Windows uygulamasında açılır.'})}};</script>'''
+            if capture in {"analysis", "analysis-apk", "selection-summary", "result", "dev7-desktop-output", "comparison", "failure", "store-updates", "dev5-analysis"}:
                 html = html.replace(
                     "</head>",
                     "<style>.hero,#mobileHttpsBanner,.starter-content,footer{display:none!important}.workspace{margin-top:24px!important}</style></head>",
@@ -149,6 +154,7 @@ class Handler(SimpleHTTPRequestHandler):
             capture_actions = {
                 "dev7-import-preview": "setTimeout(qaDev7ImportPreview,600);",
                 "dev7-analysis": "setTimeout(qaDev7Analysis,600);",
+                "dev7-desktop-output": "setTimeout(async()=>{qaAnalysis(true,false,false);state.jobId='a'.repeat(32);await renderCompletedJob({operation:'patch',output:'Örnek_1.4.2.apk',signed:true,verification:{passed:true}});document.querySelector('#downloadButton').addEventListener('click',event=>{event.preventDefault();toast('Bu önizlemede gerçek APK kaydedilmez.');});},600);",
                 "dev7-compare": "setTimeout(qaDev7Comparison,600);",
                 "dev7-permissions": "setTimeout(qaDev7Permissions,600);",
                 "dev7-profiles": "setTimeout(qaDev7Profiles,600);",
@@ -182,6 +188,10 @@ class Handler(SimpleHTTPRequestHandler):
             capture_action = capture_actions.get(capture, "")
             html = html.replace('</body>', controls + '<script>const qaMarks=' + json.dumps(marks) + ';' + setup + 'renderNetworks({detections:qaMarks,network_count:18,dex_count:3});' + capture_action + '</script><script src="/qa-motion.js"></script></body>')
             self.reply(html, "text/html")
+        elif path == "/desktop-window.css":
+            self.reply((ROOT / "studio/desktop/desktop.css").read_text(encoding="utf-8"), "text/css")
+        elif path == "/desktop-output.js":
+            self.reply((ROOT / "studio/desktop/output.js").read_text(encoding="utf-8"), "text/javascript")
         elif path == "/app.js" and capture_mode(self.headers.get("Referer", "")).startswith("dev7-"):
             self.reply((WEB / "app.js").read_text(encoding="utf-8").replace('"apk-cleaner-processing-presets-v1"', '"apk-cleaner-preview-presets-dev7"'), "text/javascript")
         elif path == "/api/profiles/export":
