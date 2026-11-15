@@ -4,20 +4,16 @@ from __future__ import annotations
 
 import json
 import hashlib
-import os
-import signal
-import socket
-import ssl
-import subprocess
 import sys
 import tempfile
 import time
-import urllib.request
 import zipfile
 from pathlib import Path
+from local_artifact_runtime import local_open, local_package_server
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "packaging"))
+from build_termux import WINDOWS_SHELL_FILES
 from release_integrity import verify_release
 VERSION = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))["version"]
 EXE = ROOT / "outputs" / f"APK-Cleaner-Studio-v{VERSION}-Windows.exe"
@@ -45,31 +41,9 @@ def release_build_snapshot(root: Path = ROOT) -> dict | None:
     return snapshot
 
 
-def free_port() -> int:
-    with socket.socket() as probe:
-        probe.bind(("127.0.0.1", 0))
-        return int(probe.getsockname()[1])
-
-
-def fetch(url: str) -> dict:
-    context = ssl._create_unverified_context() if url.startswith("https:") else None
-    with urllib.request.urlopen(url, timeout=5, context=context) as response:
-        if response.status != 200:
-            raise RuntimeError(f"Beklenmeyen API durumu: {response.status}")
-        return json.loads(response.read())
-
-
-def fetch_text(url: str) -> str:
-    context = ssl._create_unverified_context() if url.startswith("https:") else None
-    with urllib.request.urlopen(url, timeout=5, context=context) as response:
-        if response.status != 200:
-            raise RuntimeError(f"Beklenmeyen dosya durumu: {response.status}")
-        return response.read().decode("utf-8")
-
-
 def audit_termux() -> dict:
     snapshot = release_build_snapshot()
-    forbidden_suffixes = (".pyc", ".pem", ".key", ".part", ".tmp")
+    forbidden_suffixes = (".pyc", ".pem", ".key", ".part", ".tmp", ".new")
     forbidden_credentials = {"signing.properties", "apk-repo.jks", "apk-cleaner-studio-release.p12"}
     allowed_pkcs12 = {"studio/tools/output-signing.p12"}
     with zipfile.ZipFile(TERMUX) as archive:
@@ -88,11 +62,16 @@ def audit_termux() -> dict:
         ]
         if leaked:
             raise RuntimeError(f"Termux paketinde çalışma verisi bulundu: {leaked[:5]}")
+        shell_files = [name for name in names if name.startswith("studio/desktop/")
+                       or name.removeprefix("studio/") in WINDOWS_SHELL_FILES]
+        if shell_files:
+            raise RuntimeError(f"Termux paketinde Windows'a özel pencere dosyaları bulundu: {shell_files[:5]}")
         for relative in (
             "studio/server.py", "studio/engine.py", "studio/setup_tools.py", "studio/package_icon.py",
             "studio/package_info.py", "studio/app_appearance.py", "studio/web/index.html",
             "studio/web/app.js", "studio/web/boot.js", "studio/web/boot.css",
             "studio/web/theme.css", "studio/web/ui-runtime.js",
+            "studio/web/icons/patreon.svg",
             "studio/tools/direct-dex-patcher.jar", "studio/tools/binary-xml-patcher.jar",
             "install-termux.sh", "start-termux.sh", "README.md", "README-TR.md", "README-TERMUX.md",
             f"RELEASE-NOTES-v{VERSION}.md", "VERSION.txt",
@@ -116,88 +95,33 @@ def audit_termux() -> dict:
 
 
 def audit_windows() -> dict:
-    if EXE.read_bytes()[:2] != b"MZ":
-        raise RuntimeError("Windows çıktısı geçerli PE imzası taşımıyor.")
-    port = free_port()
-    command = [str(EXE), "--host", "127.0.0.1", "--port", str(port), "--no-open", "--no-trust-prompt"]
-    flags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
-    # Test the packaged app without touching the user's live Studio data.
-    audit_data = tempfile.TemporaryDirectory(prefix="apk-cleaner-package-audit-")
-    environment = os.environ.copy()
-    environment["LOCALAPPDATA"] = audit_data.name
-    try:
-        process = subprocess.Popen(
-            command,
-            cwd=ROOT,
-            env=environment,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            creationflags=flags,
-        )
-    except Exception:
-        audit_data.cleanup()
-        raise
+    with EXE.open("rb") as artifact:
+        if artifact.read(2) != b"MZ":
+            raise RuntimeError("Windows çıktısı geçerli PE imzası taşımıyor.")
     started = time.perf_counter()
-    try:
-        deadline = time.monotonic() + 35
-        while True:
-            try:
-                http = fetch(f"http://127.0.0.1:{port}/api/status")
-                https = fetch(f"https://127.0.0.1:{port}/api/status")
-                break
-            except Exception:
-                if process.poll() is not None:
-                    raise RuntimeError(process.stdout.read() if process.stdout else "EXE erken kapandı.")
-                if time.monotonic() > deadline:
-                    raise RuntimeError("EXE zamanında API yanıtı vermedi.")
-                time.sleep(0.15)
-        if http["version"] != VERSION or https["version"] != VERSION:
-            raise RuntimeError("EXE API sürümü paket adıyla eşleşmiyor.")
-        expected_channel = "dev" if "-dev." in VERSION else "stable"
-        if http.get("channel") != expected_channel or https.get("channel") != expected_channel:
-            raise RuntimeError(f"EXE, API üzerinde {expected_channel} kanalını raporlamıyor.")
-        if not http["toolchain"]["fully_ready"]:
-            raise RuntimeError(f"EXE içindeki araç zinciri eksik: {http['toolchain']}")
-        app_js = fetch_text(f"http://127.0.0.1:{port}/app.js")
-        theme_css = fetch_text(f"http://127.0.0.1:{port}/theme.css")
-        for name in ("index.html", "app.js", "boot.js", "boot.css", "theme.css", "ui-runtime.js"):
-            shipped = fetch_text(f"http://127.0.0.1:{port}/{name}")
-            if shipped != (ROOT / "studio" / "web" / name).read_text(encoding="utf-8"):
-                raise RuntimeError(f"Windows arayüz kaynağı güncel değil: {name}")
-        if "}, 510);" not in app_js or "opacity .51s" not in theme_css:
-            raise RuntimeError("Windows EXE güncel başlık animasyonunu içermiyor.")
-        return {
-            "size": EXE.stat().st_size,
-            "startup_seconds": round(time.perf_counter() - started, 2),
-            "http": True,
-            "https": True,
-            "toolchain_fully_ready": True,
-        }
-    finally:
-        try:
-            if process.poll() is None and hasattr(signal, "CTRL_BREAK_EVENT"):
-                process.send_signal(signal.CTRL_BREAK_EVENT)
-            elif process.poll() is None:
-                process.terminate()
-            try:
-                process.wait(timeout=12)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                process.wait(timeout=5)
-            if process.poll() is None:
-                raise RuntimeError("Windows EXE süreci kapanmadı.")
-            # Tek dosyalı PyInstaller başlatıcısının alt çalışma süreci de aynı
-            # konsol olayını almalı; port dinlenmeye devam ediyorsa kapanış eksiktir.
-            time.sleep(0.4)
-            with socket.socket() as probe:
-                probe.settimeout(0.5)
-                if probe.connect_ex(("127.0.0.1", port)) == 0:
-                    raise RuntimeError("Windows EXE alt süreci kapanıştan sonra portu dinlemeye devam ediyor.")
-        finally:
-            audit_data.cleanup()
+    with tempfile.TemporaryDirectory(prefix="apk-cleaner-package-audit-", ignore_cleanup_errors=True) as folder:
+        with local_package_server([str(EXE)], folder, native=True) as (base, status):
+            expected_channel = "dev" if "-dev." in VERSION else "stable"
+            if status["version"] != VERSION or status.get("channel") != expected_channel:
+                raise RuntimeError("EXE sürümü veya kanalı paket adıyla eşleşmiyor.")
+            if not status["toolchain"]["fully_ready"]:
+                raise RuntimeError(f"EXE araç zinciri hazır değil: {status['toolchain']}")
+            with local_open(base + "/api/desktop/network") as reply:
+                if json.load(reply)["enabled"]:
+                    raise RuntimeError("Windows EXE, yerel ağı varsayılan olarak açık başlattı.")
+            with local_open(base + "/") as reply:
+                if b'data-desktop-native="true"' not in reply.read():
+                    raise RuntimeError("Windows EXE, yerel pencere arayüzünü sunmadı.")
+            for name in ("index.html", "app.js", "boot.css", "theme.css", "ui-runtime.js",
+                         "favicon.svg", "favicon-16.svg", "favicon.ico", "icons/patreon.svg"):
+                with local_open(base + "/" + name) as reply:
+                    if reply.read() != (ROOT / "studio" / "web" / name).read_bytes():
+                        raise RuntimeError(f"Windows arayüz kaynağı güncel değil: {name}")
+            with local_open(base + "/boot.js") as reply:
+                if b"Native loopback window needs no LAN TLS probe." not in reply.read():
+                    raise RuntimeError("Windows başlatıcısının yerel bağlantı ayarı bulunamadı.")
+            return {"size": EXE.stat().st_size, "startup_seconds": round(time.perf_counter() - started, 2),
+                    "native_loopback": True, "lan_enabled": False, "toolchain_fully_ready": True}
 
 
 def main() -> int:

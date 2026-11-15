@@ -41,3 +41,29 @@ Kontroller: 197 JavaScript testi; seçilen 167 Python testi (166 geçti, APK ç�
 Örnek analiz / iptal: `http://127.0.0.1:18087/?embedded=android&capture=dev7-analysis`. Gerçek dosya taramaz. İzin sınırları mevcut `dev7-permissions` ekranında da gösterilir.
 
 Bu grup için de dağıtım derlemesi ve GitHub işlemi istenmedi.
+
+## Dev.7 Windows kayıt akışı — 14 Kasım 2026
+
+- Kaynak koddan açılan gerçek Windows/WebView2 penceresinde, ayrı bir test profili ve kurulamayan örnek arşiv kullanıldı. Mevcut kullanıcı tercihleri ve geçmişi kullanılmadı.
+- Türkçe karakter içeren farklı bir adla kaydetme doğrulandı. “Klasörde göster” kaydedilen dosyayı Dosya Gezgini’nde seçili açtı.
+- Uygulama kapatılıp yeniden açıldığında “Farklı Kaydet” önceki klasörde başladı. Kaydetmeyi iptal etmek yeni dosya oluşturmadı veya kayıt klasörü tercihini değiştirmedi.
+- Dağıtım EXE’si derlenmedi; paketli sürümde kısa tekrar testi, Windows dağıtım kontrol listesinde kalır.
+
+## Daha sonraya bırakılan Windows fikirleri
+
+- Geçmişteki bir APK kaydından, dosya hâlâ yerindeyse bulunduğu klasöre gitme.
+- Dosya Gezgini’nden “Birlikte aç” ile bir APK’yı Studio’da analize açma; işlem otomatik başlamamalı.
+
+Dev.7 için bu ikisinin yerine yalnızca son APK kaydetme klasörünü hatırlama seçildi. Kararlı sürüm öncesinde dayanıklılık kontrolleri önceliklidir.
+
+## Kararlı sürüme geçiş — onaylı dayanıklılık kontrolleri
+
+27 Ekim 2026: Kullanıcı aşağıdaki taramanın **dev.7 sonrasında, kararlı sürüme geçiş aşamasında** yapılmasını açıkça istedi. Bu iş unutulmamalı; yeni büyük özelliklerden önce hata ve regresyon kontrollerine öncelik verilmeli.
+
+1. **Bozuk paketler:** Eksik/kesilmiş ZIP, hatalı manifest veya DEX ve eksik split bileşenleriyle analiz/işleme sınanacak. Çökme ya da sahte başarı yerine anlaşılır Türkçe hata gösterilmeli; orijinal dosya korunmalı.
+2. **Bağlantı kesilmesi:** Yükleme, analiz ve yama sırasında arayüz bağlantısının kesilmesi, yenilenmesi ve geri gelmesi sınanacak. İşlemin durumu doğru gösterilmeli; aynı işlem yanlışlıkla ikinci kez başlatılmamalı, eski yanıt yeni seçimi değiştirmemeli.
+3. **Düşük depolama:** İşlem öncesinde ve işlem sürerken alan yetersizliği sınanacak. Eksik çıktı tamamlanmış gibi sunulmamalı; iptal/hata sonrasında geçici dosyalar güvenli biçimde temizlenmeli ve yeniden deneme mümkün olmalı.
+
+Windows, Android ve desteklenen Termux akışları için uygulanabilir senaryolar ayrı kaydedilecek. Bu aşamada yalnızca geçici test dosyaları/izole test alanı kullanılmalı; kullanıcının diskini doldurma veya önemli dosyalarını silme yoluyla test yapılmamalı. Sonuçlar, düzeltmeler ve yeniden testler kararlı sürüm kontrol listesinde raporlanmalı.
+
+Bu kayıt hemen test başlatma, dağıtım derlemesi veya GitHub işlemi yapma talimatı değildir; ilgili işler kararlı sürüm hazırlığında ele alınacaktır.

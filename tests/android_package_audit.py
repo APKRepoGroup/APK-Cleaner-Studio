@@ -11,7 +11,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 VERSION = "0.6.3-dev.7"
-APK = ROOT / "outputs" / f"APK-Cleaner-Studio-v{VERSION}-Android.apk"
+APK = Path(os.environ.get("APK_CLEANER_ANDROID_APK", ROOT / "outputs" / f"APK-Cleaner-Studio-v{VERSION}-Android.apk"))
 SIGNING_DIR = Path(os.environ.get("LOCALAPPDATA", "")) / "APKCleanerStudio" / "release-signing"
 
 
@@ -43,7 +43,7 @@ def manifest_text() -> str:
 
 
 def assert_release_credentials_absent(apk_bytes: bytes) -> None:
-    properties = SIGNING_DIR / "signing.properties"
+    properties = Path(os.environ.get("APK_CLEANER_SIGNING_PROPERTIES", str(SIGNING_DIR / "signing.properties")))
     if not properties.is_file():
         raise RuntimeError("Haricî Release imza yapılandırması bulunamadı.")
     secrets: list[bytes] = []
@@ -51,8 +51,14 @@ def assert_release_credentials_absent(apk_bytes: bytes) -> None:
         if "=" not in line or line.lstrip().startswith("#"):
             continue
         key, value = (part.strip() for part in line.split("=", 1))
-        if key in {"storePassword", "keyPassword"} and len(value) >= 4:
-            secrets.append(value.encode("utf-8"))
+        if key not in {"storePassword", "keyPassword"} or len(value) < 4:
+            continue
+        secrets.append(value.encode("utf-8"))
+        # The local setup writes Java Properties Unicode escapes, not a hash.
+        if re.fullmatch(r"(?:\\u[0-9a-fA-F]{4})+", value):
+            decoded = bytes.fromhex(value.replace("\\u", "")).decode("utf-16-be").encode("utf-8")
+            if len(decoded) >= 4:
+                secrets.append(decoded)
     if not secrets:
         raise RuntimeError("Release parola alanları doğrulanamadı.")
     if any(secret in apk_bytes for secret in secrets):
