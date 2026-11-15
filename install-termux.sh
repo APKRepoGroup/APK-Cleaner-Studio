@@ -1,7 +1,12 @@
 #!/data/data/com.termux/files/usr/bin/bash
 set -e
 
-echo "APK Cleaner Studio v0.6.3-dev.2 Termux kurulumu"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+RELEASE=""
+if [ -r "$SCRIPT_DIR/VERSION.txt" ]; then
+  IFS= read -r RELEASE < "$SCRIPT_DIR/VERSION.txt" || true
+fi
+printf '%s — Termux kurulumu\n' "${RELEASE:-APK Cleaner Studio}"
 pkg update -y
 pkg install -y python python-cryptography
 if pkg show openjdk-25 >/dev/null 2>&1; then
@@ -12,7 +17,6 @@ else
 fi
 termux-setup-storage || true
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR"
 python studio/setup_tools.py
 

@@ -1,6 +1,6 @@
-# APK Cleaner Studio v0.6.2 — Termux
+# APK Cleaner Studio — Termux
 
-Bu paket Android/Termux sürümüdür. Windows EXE içermez.
+Bu paket Android/Termux sürümüdür. Windows EXE içermez. Paket sürümü `VERSION.txt` dosyasında yazılıdır.
 
 ## İlk kurulum
 
@@ -11,10 +11,10 @@ Bu paket Android/Termux sürümüdür. Windows EXE içermez.
 termux-setup-storage
 ```
 
-3. `cd` komutuyla ZIP’i çıkardığın APK Cleaner Studio klasörüne gir. Örneğin paketi Android’in **Download/İndirilenler** klasörüne çıkardıysan:
+3. `cd` komutuyla ZIP’i çıkardığın APK Cleaner Studio klasörüne gir. Örneğin paketi Android’in **Download/İndirilenler** klasörüne çıkardıysan, aşağıdaki `PAKET_KLASÖRÜ` yerine kendi klasörünün adını yaz:
 
 ```bash
-cd ~/storage/downloads/APK-Cleaner-Studio-v0.6.2-Termux
+cd "$HOME/storage/downloads/PAKET_KLASÖRÜ"
 ```
 
 Klasörün adı veya konumu farklıysa kendi tam klasör yolunu kullan:

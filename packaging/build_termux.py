@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import zipfile
 from pathlib import Path
 
@@ -17,6 +18,10 @@ ROOT_FILES = (
     "THIRD-PARTY-NOTICES.md",
     "VERSION.txt",
 )
+WINDOWS_SHELL_FILES = frozenset({
+    "desktop.py", "desktop_network.py", "desktop_output.py", "desktop_pairing.py",
+    "desktop_preferences.py", "windows_shell.py",
+})
 
 
 def should_include(relative: Path) -> bool:
@@ -28,14 +33,17 @@ def should_include(relative: Path) -> bool:
         "studio/client-labels.json",
     }
     generated_cache = "__pycache__" in relative.parts or relative.suffix == ".pyc"
-    transient = relative.suffix in {".part", ".tmp"}
-    return not any((runtime_job, runtime_tls, runtime_updates, runtime_state, generated_cache, transient))
+    transient = relative.suffix.casefold() in {".part", ".tmp", ".new"}
+    desktop_shell = relative.parts[:2] == ("studio", "desktop") or (
+        len(relative.parts) == 2 and relative.name in WINDOWS_SHELL_FILES
+    )
+    return not any((runtime_job, runtime_tls, runtime_updates, runtime_state, generated_cache, transient, desktop_shell))
 
 
-def main() -> None:
+def main(output: Path = OUTPUT) -> None:
     build_java_tools()
-    OUTPUT.parent.mkdir(parents=True, exist_ok=True)
-    temporary = OUTPUT.with_suffix(".zip.part")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    temporary = output.with_suffix(".zip.part")
     with zipfile.ZipFile(temporary, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
         for name in ROOT_FILES:
             path = ROOT / name
@@ -47,8 +55,10 @@ def main() -> None:
             relative = path.relative_to(ROOT)
             if path.is_file() and should_include(relative):
                 archive.write(path, relative.as_posix())
-    temporary.replace(OUTPUT)
+    temporary.replace(output)
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--output", type=Path, default=OUTPUT, help="Termux ZIP dosyasının yolu")
+    main(parser.parse_args().output)
