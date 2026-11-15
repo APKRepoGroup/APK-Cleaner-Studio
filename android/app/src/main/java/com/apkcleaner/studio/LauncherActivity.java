@@ -93,7 +93,8 @@ public final class LauncherActivity extends Activity {
         emblem.addView(logoGlow, new FrameLayout.LayoutParams(dp(140), dp(140), Gravity.CENTER));
 
         ImageView icon = new ImageView(this);
-        icon.setImageResource(R.mipmap.ic_launcher);
+        // Keep the original splash artwork independent of the launcher icon's intrinsic size.
+        icon.setImageResource(R.drawable.splash_emblem);
         icon.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
         icon.setScaleX(.72f);
         icon.setScaleY(.72f);

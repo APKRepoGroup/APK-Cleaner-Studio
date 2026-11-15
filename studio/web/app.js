@@ -156,6 +156,7 @@ function syncUiActivity() {
   for (const resolve of uiWaiters) resolve();
   uiWaiters.clear();
   refreshStatus(); refreshHistory();
+  scheduleDisclosurePreload();
   requestBackgroundPolicy();
   if (state.displayedProgress < state.targetProgress) updateProgress(state.targetProgress, progressElements.phase.textContent);
 }
@@ -848,6 +849,7 @@ globalThis.onNativeAction = async (action, payload) => {
       toast("Kuruluma devam etmek için bu kaynaktan uygulama yükleme iznini etkinleştir.");
     } else if (result.status === "session_submitted") {
       state.nativeSplitInstallBusy = false;
+      refreshInstallHistory();
       toast(`${result.modules || 0} özgün APK bileşeni Android kurulumuna gönderildi.`);
     } else if (result.status === "confirmation_opened") {
       toast("Android kurulum onayı açıldı.");
@@ -1337,7 +1339,7 @@ async function deleteHistoryJob(jobId, filename) {
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || "İşlem kaydı silinemedi.");
     state.historyGeneration++;
-    await refreshHistory();
+    await Promise.all([refreshHistory(), refreshStorage({ force: true })]);
     toast("İşlem kaydı ve ilişkili dosyalar silindi.");
   } catch (error) { toast(error.message); }
 }
@@ -1384,22 +1386,107 @@ function changeHistoryFilter(debounce = false) {
   else refreshHistory();
 }
 
-async function refreshStorage() {
-  if (!$("#storageCard").open) return;
-  try {
-    const response = await apiFetch("/api/storage", { cache: "no-store", headers: clientHeaders() });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error || "Depolama bilgisi okunamadı.");
-    const totals = data.totals || {};
-    $("#storageTitle").textContent = `${(data.jobs || []).length} yerel işlem kaydı`;
-    $("#storageTotals").textContent = `Kaynak: ${humanSize(totals.source || 0)} · Çıktı: ${humanSize(totals.output || 0)} · Çalışma dosyaları: ${humanSize(totals.working || 0)}`;
-    $("#storageList").innerHTML = (data.jobs || []).length ? data.jobs.map((job) => {
-      const sizes = job.sizes || {};
-      return `<label class="storage-row"><input type="checkbox" value="${escapeHTML(job.job_id)}" ${job.can_delete ? "" : "disabled"}><span><b>${escapeHTML(job.filename || "Paket")}</b><small>Kaynak ${humanSize(sizes.source || 0)} · Çıktı ${humanSize(sizes.output || 0)} · Çalışma ${humanSize(sizes.working || 0)}${job.can_delete ? "" : " · İşlem sürüyor"}</small></span></label>`;
-    }).join("") : '<p class="fineprint">Temizlenecek işlem dosyası yok.</p>';
-    $("#storageCleanButton").disabled = true;
-    refreshNativeCacheStorage();
-  } catch (error) { $("#storageTitle").textContent = userErrorMessage(error, "Depolama bilgisi okunamadı."); }
+let storageRequest = null;
+let storageOpenRequest = null;
+let storageLoadedAt = 0;
+let disclosurePreloadTimer = null;
+const STORAGE_READ_TIMEOUT_MS = 2500;
+
+function scheduleDisclosurePreload() {
+  if (disclosurePreloadTimer !== null || !isUiActive() || !document.documentElement.classList.contains("ui-ready")) return;
+  // Do not put disk reads or a native bridge call on the first-paint path.
+  disclosurePreloadTimer = setTimeout(() => {
+    disclosurePreloadTimer = null;
+    if (!isUiActive()) return;
+    refreshStorage();
+    refreshInstallHistory();
+  }, 0);
+}
+
+async function refreshStorage({ force = false } = {}) {
+  const card = $("#storageCard");
+  if (!isUiActive()) return false;
+  const signal = uiReadController.signal;
+  if (!force && storageRequest?.signal === signal) return storageRequest.promise;
+  if (!force && card.dataset.storageReady === "true" && Date.now() - storageLoadedAt < 30000) return true;
+
+  const request = { signal, promise: null };
+  storageRequest = request;
+  request.promise = (async () => {
+    const controller = new AbortController();
+    const cancel = () => controller.abort();
+    let timedOut = false;
+    const timer = setTimeout(() => { timedOut = true; cancel(); }, STORAGE_READ_TIMEOUT_MS);
+    const cancelled = new Promise((_, reject) => {
+      controller.signal.addEventListener("abort", () => reject(controller.signal.reason), { once: true });
+    });
+    if (signal.aborted) cancel();
+    else signal.addEventListener("abort", cancel, { once: true });
+    try {
+      const read = async () => {
+        const response = await apiFetch("/api/storage", { cache: "no-store", headers: clientHeaders(), signal: controller.signal });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "Depolama bilgisi okunamadı.");
+        return data;
+      };
+      const data = await Promise.race([cancelled, read()]);
+      if (storageRequest !== request || signal.aborted || !isUiActive()) return false;
+      updateInlineDisclosureContent(card, () => renderStorage(data));
+      card.dataset.storageReady = "true";
+      storageLoadedAt = Date.now();
+      return true;
+    } catch (error) {
+      if (storageRequest === request && !signal.aborted && (timedOut || error?.name !== "AbortError")
+          && card.dataset.storageReady !== "true" && (card.open || storageOpenRequest)) {
+        updateInlineDisclosureContent(card, () => {
+          $("#storageTitle").textContent = timedOut ? "Depolama bilgisi zamanında alınamadı." : userErrorMessage(error, "Depolama bilgisi okunamadı.");
+          $("#storageRetry").classList.remove("hidden");
+        });
+      }
+      return false;
+    } finally {
+      clearTimeout(timer);
+      signal.removeEventListener("abort", cancel);
+      if (storageRequest === request) storageRequest = null;
+    }
+  })();
+  return request.promise;
+}
+
+function openStorageDisclosure() {
+  const card = $("#storageCard");
+  if (card.open && card.dataset.expanded !== "false") return Promise.resolve(true);
+  const open = () => {
+    if (!isUiActive()) return false;
+    if (!card.open || card.dataset.expanded === "false") toggleInlineDisclosure(card, { preventDefault() {} });
+    return true;
+  };
+  if (card.dataset.storageReady === "true") return Promise.resolve(open());
+  if (storageOpenRequest) return storageOpenRequest;
+  const signal = uiReadController.signal;
+  card.querySelector("summary").setAttribute("aria-busy", "true");
+  storageOpenRequest = refreshStorage().then(async () => {
+    // A mutation can supersede the original read while the click is queued.
+    while (!signal.aborted && storageRequest?.signal === signal) await storageRequest.promise;
+    return !signal.aborted && open();
+  }).finally(() => {
+    storageOpenRequest = null;
+    card.querySelector("summary").setAttribute("aria-busy", "false");
+  });
+  return storageOpenRequest;
+}
+
+function renderStorage(data) {
+  $("#storageRetry").classList.add("hidden");
+  const totals = data.totals || {};
+  $("#storageTitle").textContent = `${(data.jobs || []).length} yerel işlem kaydı`;
+  $("#storageTotals").textContent = `Kaynak: ${humanSize(totals.source || 0)} · Çıktı: ${humanSize(totals.output || 0)} · Çalışma dosyaları: ${humanSize(totals.working || 0)}`;
+  $("#storageList").innerHTML = (data.jobs || []).length ? data.jobs.map((job) => {
+    const sizes = job.sizes || {};
+    return `<label class="storage-row"><input type="checkbox" value="${escapeHTML(job.job_id)}" ${job.can_delete ? "" : "disabled"}><span><b>${escapeHTML(job.filename || "Paket")}</b><small>Kaynak ${humanSize(sizes.source || 0)} · Çıktı ${humanSize(sizes.output || 0)} · Çalışma ${humanSize(sizes.working || 0)}${job.can_delete ? "" : " · İşlem sürüyor"}</small></span></label>`;
+  }).join("") : '<p class="fineprint">Temizlenecek işlem dosyası yok.</p>';
+  $("#storageCleanButton").disabled = true;
+  refreshNativeCacheStorage();
 }
 
 function refreshNativeCacheStorage() {
@@ -1439,14 +1526,19 @@ async function cleanSelectedStorage() {
     }
     toast(`${removed} işlem kaydı temizlendi.`);
   } catch (error) { toast(`${removed} kayıt temizlendi. ${error.message}`); }
-  finally { await Promise.all([refreshStorage(), refreshHistory()]); }
+  finally { await Promise.all([refreshStorage({ force: true }), refreshHistory()]); }
 }
 
 function refreshInstallHistory() {
   const card = $("#installHistoryCard");
-  if (card.classList.contains("hidden") || !card.open) return;
+  if (card.classList.contains("hidden")) return;
   let rows = [];
   try { rows = JSON.parse(globalThis.AndroidThemeBridge?.getInstallHistory?.() || "[]"); } catch {}
+  updateInlineDisclosureContent(card, () => renderInstallHistory(rows));
+  card.dataset.historyReady = "true";
+}
+
+function renderInstallHistory(rows) {
   const list = $("#installHistoryList");
   list.innerHTML = rows.length ? rows.map((row) => {
     const success = row.status === "installed";
@@ -1620,11 +1712,15 @@ function resetUpdateNotes() {
   setInlineDisclosureOpen($("#updateReleaseNotes"), false);
 }
 
-function setInlineDisclosureOpen(details, expanded) {
+function cancelInlineDisclosureMotion(details) {
   const animation = inlineDisclosureAnimations.get(details);
   inlineDisclosureAnimations.delete(details);
   animation?.cancel();
   details.classList.remove("is-animating");
+}
+
+function setInlineDisclosureOpen(details, expanded) {
+  cancelInlineDisclosureMotion(details);
   delete details.dataset.expanded;
   details.open = expanded;
   details.querySelector("summary").setAttribute("aria-expanded", String(expanded));
@@ -1642,37 +1738,66 @@ function handleInlineDisclosureClick(event) {
   // Links or controls embedded in a summary retain their own action. Event
   // delegation also covers disclosures created later, without double toggles.
   if (event.target.closest("a, button, input, select, textarea")) return;
-  if (details === $("#updateReleaseNotes")) toggleUpdateNotes(event);
-  else toggleInlineDisclosure(details, event);
+  if (details === $("#storageCard") && !details.open) {
+    event.preventDefault();
+    openStorageDisclosure();
+  } else if (details === $("#updateReleaseNotes")) toggleUpdateNotes(event);
+  else {
+    if (details === $("#installHistoryCard") && details.dataset.historyReady !== "true") refreshInstallHistory();
+    toggleInlineDisclosure(details, event);
+  }
 }
 
 function toggleInlineDisclosure(details, event) {
   event.preventDefault();
-  const startHeight = details.getBoundingClientRect().height;
   const previous = inlineDisclosureAnimations.get(details);
   const expanded = previous ? details.dataset.expanded !== "true" : !details.open;
-  inlineDisclosureAnimations.delete(details);
-  previous?.cancel();
-  details.classList.remove("is-animating");
-  details.open = expanded;
-  details.dataset.expanded = String(expanded);
-  details.querySelector("summary").setAttribute("aria-expanded", String(expanded));
-  if (motionMedia.matches || !isUiActive() || typeof details.animate !== "function") return;
+  if (!canAnimateInlineDisclosure(details)) { setInlineDisclosureOpen(details, expanded); return; }
+  const startHeight = details.getBoundingClientRect().height;
+  setInlineDisclosureOpen(details, expanded);
   const endHeight = details.getBoundingClientRect().height;
   // Keep the body rendered until the closing transition finishes. Reversals
   // start at the current animated height, not at either full-size endpoint.
+  animateInlineDisclosure(details, expanded, startHeight, endHeight);
+}
+
+function canAnimateInlineDisclosure(details) {
+  return !motionMedia.matches && isUiActive() && typeof details.animate === "function";
+}
+
+function updateInlineDisclosureContent(details, render) {
+  if (!details.open || details.dataset.expanded === "false" || !canAnimateInlineDisclosure(details)) {
+    render();
+    return;
+  }
+  // Sample the currently visible height, not the height of the old data.
+  // Render and measure in one turn so no frame shows the uncapped new height.
+  const startHeight = details.getBoundingClientRect().height;
+  const time = inlineDisclosureAnimations.get(details)?.currentTime ?? 0;
+  cancelInlineDisclosureMotion(details);
+  render();
+  const endHeight = details.getBoundingClientRect().height;
+  const duration = Math.max(160, INLINE_REFLOW_MOTION.duration - Number(time));
+  animateInlineDisclosure(details, true, startHeight, endHeight, duration);
+}
+
+function animateInlineDisclosure(details, expanded, startHeight, endHeight, duration = INLINE_REFLOW_MOTION.duration, recheck = true) {
+  if (Math.abs(startHeight - endHeight) < 1) { setInlineDisclosureOpen(details, expanded); return; }
   details.open = true;
+  details.dataset.expanded = String(expanded);
   details.classList.add("is-animating");
   const animation = details.animate([
     { height: `${startHeight}px` }, { height: `${endHeight}px` },
-  ], { ...INLINE_REFLOW_MOTION, fill: "both" });
+  ], { ...INLINE_REFLOW_MOTION, duration, fill: "both" });
   inlineDisclosureAnimations.set(details, animation);
   animation.finished.then(() => {
     if (inlineDisclosureAnimations.get(details) !== animation) return;
-    inlineDisclosureAnimations.delete(details);
-    details.open = expanded;
-    details.classList.remove("is-animating");
-    animation.cancel();
+    setInlineDisclosureOpen(details, expanded);
+    // Font loading, wrapping, or a nested section can also change the natural
+    // open size. Bridge the last few pixels instead of snapping to auto.
+    if (expanded && recheck && canAnimateInlineDisclosure(details)) {
+      animateInlineDisclosure(details, true, endHeight, details.getBoundingClientRect().height, 160, false);
+    }
   }, () => {});
 }
 
@@ -2257,7 +2382,7 @@ function processingSelectionSummary(selection) {
   ].filter(([key]) => selection[key]).map(([, label]) => label);
   if (selection.messageCount) extras.push(`${selection.messageCount} başlangıç çağrısını kaldır`);
   if (selection.appearanceIcon) extras.push("Uygulama simgesini değiştir");
-  rows.push(["Ek işlemler", extras.length ? extras.join(" · ") : "Seçilmedi"]);
+  rows.push(["Ek işlemler", extras.length ? extras : "Seçilmedi"]);
   return {
     rows,
     note: !selection.canRun
@@ -2266,6 +2391,26 @@ function processingSelectionSummary(selection) {
       : "Orijinal dosya korunur; seçilen işlemler yeni APK’ya uygulanır.",
     needsSelection: !selection.canRun,
   };
+}
+
+function renderSelectionRows(container, rows) {
+  container.replaceChildren(...rows.map(([label, value]) => {
+    const row = document.createElement("div"), term = document.createElement("dt"), description = document.createElement("dd");
+    term.textContent = label;
+    if (Array.isArray(value)) {
+      const list = document.createElement("ul");
+      list.className = "selection-extras";
+      for (const label of value) {
+        const item = document.createElement("li");
+        item.textContent = label;
+        list.append(item);
+      }
+      description.append(list);
+    } else {
+      description.textContent = value;
+    }
+    row.append(term, description); return row;
+  }));
 }
 
 function renderSelectionSummary(patchAds, canRun) {
@@ -2285,11 +2430,7 @@ function renderSelectionSummary(patchAds, canRun) {
   const signature = JSON.stringify(summary);
   if (list.dataset.selection === signature) return;
   list.dataset.selection = signature;
-  list.replaceChildren(...summary.rows.map(([label, value]) => {
-    const row = document.createElement("div"), term = document.createElement("dt"), description = document.createElement("dd");
-    term.textContent = label; description.textContent = value;
-    row.append(term, description); return row;
-  }));
+  renderSelectionRows(list, summary.rows);
   $("#selectionSummaryNote").textContent = summary.note;
   $("#selectionSummaryNote").classList.toggle("needs-selection", summary.needsSelection);
 }
@@ -2978,10 +3119,7 @@ function renderWorkingSelection(selected) {
     stripDebug: selected.strip_debug, normalizeDex: selected.normalize_dex, optimizeApk: selected.optimize_apk,
     restrictStoreUpdates: selected.restrict_store_updates, deobfuscateResources: selected.deobfuscate_resources,
   }) : null;
-  $("#workingSelectionRows").replaceChildren(...(summary?.rows || []).map(([label, value]) => {
-    const row = document.createElement("div"), name = document.createElement("dt"), text = document.createElement("dd");
-    name.textContent = label; text.textContent = value; row.append(name, text); return row;
-  }));
+  renderSelectionRows($("#workingSelectionRows"), summary?.rows || []);
   $("#workingSelectionNote").textContent = selected ? "Bu işleme gönderilen seçenekler gösterilir; işlem kendiliğinden yeniden başlatılmaz." : "Bu eski işleme ait seçenekler kaydedilmemiş. Geçerli ayarlar doğrulanamıyor.";
   setInlineDisclosureOpen($("#workingSelection"), false);
 }
@@ -3098,6 +3236,7 @@ async function renderCompletedJob(result) {
   $("#reportButton").dataset.jobId = state.jobId;
   setStep(4); showView("#resultView"); focusProcessingView("#resultView");
   refreshHistory();
+  if ($("#storageCard").dataset.storageReady === "true") refreshStorage({ force: true });
   if (!result.signed) toast(result.sign_warning || "Çıktı imzalanamadı.");
 }
 
@@ -3329,9 +3468,8 @@ $("#importPresetFile").addEventListener("change", event => {
 });
 $("#cleanButton").addEventListener("click", runJob); $("#resetButton").addEventListener("click", reset); $("#againButton").addEventListener("click", reset);
 $("#cancelJobButton").addEventListener("click", cancelJob);
-$("#storagePreflightManage").addEventListener("click", () => {
-  setInlineDisclosureOpen($("#storageCard"), true);
-  refreshStorage(); $("#storageCard").scrollIntoView({ behavior: "smooth", block: "center" });
+$("#storagePreflightManage").addEventListener("click", async () => {
+  if (await openStorageDisclosure()) $("#storageCard").scrollIntoView({ behavior: "smooth", block: "center" });
 });
 progressElements.log.addEventListener("scroll", syncProgressLogFollow, { passive: true });
 $("#progressLogLatest").addEventListener("click", scrollProgressLogToEnd);
@@ -3401,11 +3539,19 @@ $("#reportViewerDone").addEventListener("click", closeReportViewer);
 $("#reportViewer").addEventListener("click", (event) => { if (event.target === event.currentTarget) closeReportViewer(); });
 containModalTouch("#reportViewer", "#reportViewerContent");
 $("#diagnosticButton").addEventListener("click", () => openDiagnosticViewer());
-$("#storageCard").addEventListener("toggle", refreshStorage);
+$("#storageCard").addEventListener("toggle", () => {
+  const card = $("#storageCard");
+  if (card.open && card.dataset.expanded !== "false" && card.dataset.storageReady === "true") refreshStorage();
+});
+$("#storageRetry").addEventListener("click", async (event) => {
+  const button = event.currentTarget;
+  button.disabled = true;
+  try { await refreshStorage(); }
+  finally { button.disabled = false; }
+});
 $("#storageList").addEventListener("change", () => { $("#storageCleanButton").disabled = !$("#storageList input:checked"); });
 $("#storageCleanButton").addEventListener("click", cleanSelectedStorage);
 $("#nativeCacheCleanButton").addEventListener("click", cleanNativeCache);
-$("#installHistoryCard").addEventListener("toggle", refreshInstallHistory);
 $("#diagnosticAfterFailure").addEventListener("click", () => openDiagnosticViewer(state.jobId));
 $("#diagnosticViewerClose").addEventListener("click", closeDiagnosticViewer);
 $("#diagnosticViewerDone").addEventListener("click", closeDiagnosticViewer);
@@ -3458,6 +3604,7 @@ function revealReadyInterface() {
   const reveal = () => requestAnimationFrame(() => requestAnimationFrame(() => {
     document.documentElement.classList.remove("ui-boot");
     document.documentElement.classList.add("ui-ready");
+    scheduleDisclosurePreload();
   }));
   reveal();
 }

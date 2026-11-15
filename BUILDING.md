@@ -35,6 +35,8 @@ npm run lint
 npm test
 ```
 
+Uygulama simgeleri kaynak ağacında hazırdır. Çizim güncellenirse `npm ci` sonrasında `node packaging/build_icons.cjs` komutuyla web SVG/PNG, çok boyutlu Windows ICO ve Android VectorDrawable dosyaları yeniden üretilir. 16, 20, 24 ve 32 piksel çizimleri ayrı ayarlanır.
+
 ## Final paketlerin SHA-256 doğrulaması
 
 Android, Windows ve Termux için **son** dosyalar `outputs/` içinde hazır olduktan sonra:

@@ -154,8 +154,8 @@ test("ships the current local studio interface", async () => {
   assert.match(theme, /html, body\s*\{\s*overflow-x:\s*clip/i);
   assert.match(theme, /@media \(max-width:\s*620px\)[\s\S]*?\.topbar\s*\{[\s\S]*?position:\s*sticky;[\s\S]*?top:\s*0;[\s\S]*?z-index:\s*100/i);
   assert.match(theme, /\.option\s*\{[\s\S]*?min-height:\s*64px;[\s\S]*?padding:\s*11px 12px/i);
-  assert.match(theme, /\.footer-links\s*\{\s*grid-template-columns:\s*repeat\(3, minmax\(0, 1fr\)\);\s*gap:\s*8px/i);
-  assert.match(theme, /\.footer-links a\s*\{\s*min-height:\s*64px;/i);
+  assert.match(theme, /\.footer-links\s*\{\s*grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\);\s*gap:\s*8px/i);
+  assert.match(theme, /\.footer-links a\s*\{\s*min-height:\s*48px;/i);
   assert.match(html, /<small>GITHUB<\/small><b>Projeyi incele<\/b>/i);
   assert.match(theme, /@media \(min-width:\s*901px\)[\s\S]*?\.operation p\s*\{\s*font-size:\s*11\.5px;\s*line-height:\s*1\.55/i);
   assert.match(theme, /@media \(min-width:\s*901px\)[\s\S]*?\.option p\s*\{\s*font-size:\s*10\.5px;\s*line-height:\s*1\.55/i);

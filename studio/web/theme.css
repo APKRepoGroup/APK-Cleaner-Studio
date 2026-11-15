@@ -437,7 +437,6 @@ html[data-theme="dark"] .side-card { box-shadow: 0 25px 80px var(--shadow); }
 html[data-theme="dark"] .steps { background: var(--surface-raised); }
 html[data-theme="dark"] .steps span { background: var(--surface); }
 
-html[data-theme="dark"] .brand > span,
 html[data-theme="dark"] .steps div.active span,
 html[data-theme="dark"] .upload-icon,
 html[data-theme="dark"] .file-card .apk,
@@ -446,12 +445,6 @@ html[data-theme="dark"] .progress-ring::after {
   color: var(--lime);
   background: #050908;
   border-color: #050908;
-}
-
-html[data-theme="dark"] .brand > span {
-  border: 1px solid #34443f;
-  background: #070c0b;
-  box-shadow: 0 0 0 1px rgba(217,255,67,.07) inset, 0 7px 18px rgba(0,0,0,.34);
 }
 
 html[data-theme="dark"] .dropzone {
@@ -581,13 +574,15 @@ html[data-theme="light"] .installed-app-entry.selected .installed-app-row {
 .footer-brand p { margin: 5px 0 0; color: var(--muted); font-size: 10.5px; }
 
 .footer-links {
-  display: flex;
-  align-items: center;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  flex: 0 1 748px;
+  min-width: 0;
   gap: 9px;
 }
 
 .footer-links a {
-  min-width: 180px;
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -655,6 +650,11 @@ html[data-theme="light"] .installed-app-entry.selected .installed-app-row {
   -webkit-mask: url("icons/github.svg") center / contain no-repeat;
   mask: url("icons/github.svg") center / contain no-repeat;
 }
+.patreon-icon::before {
+  -webkit-mask: url("icons/patreon.svg") center / contain no-repeat;
+  mask: url("icons/patreon.svg") center / contain no-repeat;
+}
+.footer-links a > span:last-child { min-width: 0; overflow-wrap: anywhere; }
 .footer-links small,
 .footer-links b { display: block; }
 .footer-links small { color: var(--muted); font-size: 9px; font-weight: 900; letter-spacing: .12em; }
@@ -873,8 +873,7 @@ html[data-theme="dark"] .mobile-https-banner summary { color: var(--green); }
 
 @media (max-width: 900px) {
   .footer-main { align-items: stretch; flex-direction: column; gap: 18px; padding-top: 23px; }
-  .footer-links { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  .footer-links a { min-width: 0; }
+  .footer-links { flex: none; }
 }
 
 @media (max-width: 720px) {
@@ -900,7 +899,6 @@ html[data-theme="dark"] .mobile-https-banner summary { color: var(--green); }
 @media (max-width: 460px) {
   .footer-main,
   .footer-bottom { width: calc(100% - 20px); }
-  .footer-links { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 
 /* Mobile-first repair pass: stable type, clear steps and visible selections. */
@@ -1025,7 +1023,6 @@ html[data-theme="dark"] .mobile-https-banner summary { color: var(--green); }
     border-radius: 11px;
     backdrop-filter: none;
   }
-  .footer-links a > span:last-child { min-width: 0; }
   .footer-link-icon { width: 36px; height: 36px; flex-basis: 36px; border-radius: 10px; }
   .footer-link-icon::before { width: 20px; height: 20px; }
   .footer-links small { font-size: 7.5px; letter-spacing: .08em; }
@@ -1041,7 +1038,7 @@ html[data-theme="dark"] .mobile-https-banner summary { color: var(--green); }
   .footer-links a { gap: 6px; padding: 7px; }
   .footer-link-icon { width: 34px; height: 34px; flex-basis: 34px; }
   .footer-links small { font-size: 7px; }
-  .footer-links b { font-size: 9px; white-space: nowrap; }
+  .footer-links b { font-size: 9px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1066,6 +1063,10 @@ html[data-theme="dark"] {
   --line: #2d3b36;
   --muted: #9caaa5;
   --green: #50d8ac;
+  --brand-frame-edge: #34443f;
+  --brand-frame-fill: #070c0b;
+  --brand-frame-highlight: rgba(217, 255, 67, .07);
+  --brand-frame-shadow: 0 7px 18px rgba(0, 0, 0, .34);
 }
 
 body {
@@ -1090,11 +1091,16 @@ body {
 .brand > span {
   width: 42px;
   height: 42px;
-  border: 1px solid color-mix(in srgb, var(--green) 45%, #0d1515);
+  flex: none;
   border-radius: 12px;
+  background: var(--brand-frame-fill, #0d1515);
   transform: none;
-  box-shadow: 0 7px 20px color-mix(in srgb, var(--shadow) 90%, transparent), inset 0 0 0 1px rgba(255,255,255,.04);
+  /* Draw the old frame inside the box without scaling the SVG. */
+  box-shadow: inset 0 0 0 1px var(--brand-frame-edge, color-mix(in srgb, var(--green) 45%, #0d1515)),
+    inset 0 0 0 2px var(--brand-frame-highlight, rgba(255, 255, 255, .04)),
+    var(--brand-frame-shadow, 0 7px 20px color-mix(in srgb, var(--shadow) 90%, transparent));
 }
+.brand > span > img { display: block; width: 100%; height: 100%; }
 .brand b { font-size: 15.5px; letter-spacing: -.018em; }
 .brand small { margin-top: 5px; font-size: 9.5px; letter-spacing: .21em; }
 
@@ -1312,6 +1318,8 @@ html[data-theme="dark"] .result .install-action {
 .selection-summary dl > div { display: grid; grid-template-columns: 125px minmax(0, 1fr); gap: 12px; padding: 10px 0; border-top: 1px solid var(--line); font-size: 12px; line-height: 1.65; }
 .selection-summary dt { color: var(--muted); }
 .selection-summary dd { margin: 0; font-weight: 650; overflow-wrap: anywhere; }
+.selection-extras { margin: 0; padding-inline-start: 1.25em; list-style: disc; line-height: 1.6; }
+.selection-extras li + li { margin-block-start: 4px; }
 .selection-summary > .selection-summary-note { padding-top: 12px; border-top: 1px solid var(--line); }
 .selection-summary-note.needs-selection { color: var(--orange); }
 .app-appearance, .package-info { min-width: 0; margin: 18px 0; padding: 18px; border: 1px solid var(--line); border-radius: 15px; background: var(--surface-soft); }
@@ -2325,16 +2333,16 @@ html[data-theme="dark"] .option input:checked + span {
   .footer-main,
   .footer-bottom { width: calc(100% - 20px); }
   .footer-brand p { font-size: 10.5px; line-height: 1.5; }
-  .footer-links { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
-  .footer-links a { min-height: 64px; gap: 8px; padding: 8px; }
+  .footer-links { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .footer-links a { min-height: 48px; gap: 8px; padding: 4px 8px; }
   .footer-links small { font-size: 8px; letter-spacing: .075em; }
   .footer-links b { font-size: 10.5px; line-height: 1.2; }
   .footer-bottom { font-size: 10.25px; line-height: 1.45; }
 }
 
 @media (max-width: 360px) {
-  .footer-links { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
-  .footer-links a { min-height: 64px; gap: 4px; padding: 5px; }
+  .footer-links { gap: 6px; }
+  .footer-links a { gap: 4px; padding-inline: 5px; }
   .footer-link-icon { width: 28px; height: 28px; flex-basis: 28px; }
   .footer-link-icon::before { width: 17px; height: 17px; }
   .footer-links small { font-size: 7.5px; }
@@ -2523,6 +2531,9 @@ html[data-embedded="android"] .hero-rotator em { transition-duration: .51s; }
 /* v0.6.2-dev.3 — Güvenli mobil popup alanı, rapor indirme ve özel teşekkürler. */
 html,
 body { max-width: 100%; overflow-x: clip; }
+/* A fixed body no longer paints the viewport canvas. Preserve the current
+   theme behind every modal instead of exposing the WebView's dark base. */
+html:has(> body.modal-scroll-locked) { background-color: var(--paper); }
 body.modal-scroll-locked {
   position: fixed;
   inset-inline: 0;

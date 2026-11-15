@@ -9,7 +9,6 @@ ROOT = Path(__file__).resolve().parents[1]
 ANDROID = ROOT / "android" / "app"
 PYTHON = ANDROID / "src" / "main" / "python"
 LIBS = ANDROID / "libs"
-RES = ANDROID / "src" / "main" / "res"
 ASSETS = ANDROID / "src" / "main" / "assets"
 STUDIO = ROOT / "studio"
 
@@ -88,21 +87,11 @@ def copy_tools() -> None:
     shutil.copy2(tools / "output-signing.p12", ASSETS / "output-signing.p12")
 
 
-def copy_icons() -> None:
-    source = STUDIO / "web" / "favicon.png"
-    for density in ("xhdpi", "xxhdpi"):
-        folder = RES / f"mipmap-{density}"
-        folder.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(source, folder / "ic_launcher.png")
-        shutil.copy2(source, folder / "ic_launcher_round.png")
-
-
 def main() -> None:
     if ROOT not in ANDROID.parents:
         raise RuntimeError("Android hedefi çalışma alanının dışında.")
     copy_engine()
     copy_tools()
-    copy_icons()
     print("Android motoru, web arayüzü ve gömülü araçlar eşitlendi.")
 
 

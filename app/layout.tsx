@@ -17,7 +17,11 @@ export const metadata: Metadata = {
   title: `APK Cleaner Studio ${packageInfo.version}`,
   description: "PC ve Termux için yerel APK reklam temizleme ve split paket dönüştürme yöneticisi.",
   icons: {
-    icon: [{ url: "/favicon.ico" }, { url: "/favicon.png", type: "image/png", sizes: "512x512" }],
+    icon: [
+      { url: "/favicon.ico?v=dev7-ac", sizes: "16x16 20x20 24x24 32x32 48x48 64x64 128x128 256x256" },
+      { url: "/favicon.svg?v=dev7-ac", type: "image/svg+xml", sizes: "512x512" },
+      ...[32, 24, 20, 16].map(size => ({ url: `/favicon-${size}.svg?v=dev7-ac`, type: "image/svg+xml", sizes: `${size}x${size}` })),
+    ],
     shortcut: "/favicon.ico",
   },
   openGraph: {

@@ -5,6 +5,7 @@ import test from 'node:test';
 
 const source = await readFile(new URL('../studio/web/app.js', import.meta.url), 'utf8');
 const helpers = source.slice(source.indexOf('const INLINE_REFLOW_MOTION ='), source.indexOf('function openUpdateLink('));
+const storage = source.slice(source.indexOf('let storageRequest = null;'), source.indexOf('function renderStorage('));
 const nativeVisibility = source.slice(source.indexOf('globalThis.setNativeVisibility ='), source.indexOf('document.addEventListener("visibilitychange"'));
 const pageShow = source.slice(source.indexOf('window.addEventListener("pageshow"'), source.indexOf('let embeddedNativeTheme ='));
 
@@ -26,7 +27,7 @@ class Element {
   setAttribute(name, value) { (this.attributes ||= {})[name] = value; }
   getBoundingClientRect() {
     return { height: this.animation?.running && this.animation.currentHeight !== undefined
-      ? this.animation.currentHeight : (this.open ? 300 : 45) };
+      ? this.animation.currentHeight : (this.open ? (this.contentHeight ?? 300) : 45) };
   }
 }
 
@@ -60,7 +61,7 @@ function runtime({ animated = false, reduced = false } = {}) {
             frames, options, running: true,
             finished: new Promise((yes, no) => { resolve = yes; reject = no; }),
             finish() { resolve(); },
-            cancel() { this.running = false; reject(new Error('animation cancelled')); },
+            cancel() { this.running = false; this.currentTime = null; reject(new Error('animation cancelled')); },
           };
           element.animation = animation;
           return animation;
@@ -72,10 +73,13 @@ function runtime({ animated = false, reduced = false } = {}) {
     document: { documentElement: new Element('html'), readyState: 'complete', createElement: tag => new Element(tag), createTextNode: value => ({ tag: '#text', textContent: value }) },
     apiFetch: async () => { requests++; return { ok: true, json: async () => reply }; },
     clientHeaders: () => ({}), syncUiActivity() {}, isUiActive: () => true,
+    setTimeout, clearTimeout, AbortController, uiReadController: new AbortController(), renderStorage() {}, refreshInstallHistory() {},
+    userErrorMessage: (error, fallback) => error?.message || fallback,
     // A previous release saved permanent dismissal here. New code must ignore it.
     localStorage: { getItem: () => update.latest_version, setItem() { throw new Error('Dismissal must not persist'); } },
   });
-  vm.runInContext('let nativeUiVisible = true;\n' + helpers + nativeVisibility + pageShow, context);
+  vm.runInContext('let nativeUiVisible = true;\n' + storage + helpers + nativeVisibility + pageShow, context);
+  context.$('#storageCard').dataset.storageReady = 'true';
   return {
     context, state, pageScrollLocks, scrolls, session,
     flushFrames() { while (frames.length) frames.shift()(); },
@@ -431,6 +435,162 @@ test('delegated disclosure clicks honor reduced motion', () => {
   assert.equal(details.animation, undefined);
   app.context.handleInlineDisclosureClick(summaryClick(details));
   assert.equal(details.open, false);
+});
+
+test('storage rows arriving during opening animate from the current height to the new full height', async () => {
+  const app = runtime({ animated: true });
+  const details = app.get('#storageCard');
+  app.context.handleInlineDisclosureClick(summaryClick(details));
+  const opening = details.animation;
+  opening.currentHeight = 240;
+  opening.currentTime = 180;
+  app.context.updateInlineDisclosureContent(details, () => { details.contentHeight = 500; });
+  assert.equal(opening.running, false);
+  const extension = details.animation;
+  assert.equal(extension.frames[0].height, '240px');
+  assert.equal(extension.frames[1].height, '500px');
+  assert.equal(extension.options.duration, 180);
+  opening.finish(); await Promise.resolve();
+  assert.equal(details.animation, extension);
+  extension.finish(); await Promise.resolve();
+  assert.equal(details.open, true);
+  assert.equal(details.getBoundingClientRect().height, 500);
+  assert.equal(details.classList.contains('is-animating'), false);
+});
+
+test('late content animates an open panel without reopening one being closed', async () => {
+  const app = runtime({ animated: true });
+  const details = app.get('#installHistoryCard');
+  details.open = true;
+  app.context.updateInlineDisclosureContent(details, () => { details.contentHeight = 420; });
+  assert.equal(details.animation.frames[0].height, '300px');
+  assert.equal(details.animation.frames[1].height, '420px');
+  details.animation.finish(); await Promise.resolve();
+  app.context.handleInlineDisclosureClick(summaryClick(details));
+  const closing = details.animation;
+  app.context.updateInlineDisclosureContent(details, () => { details.contentHeight = 500; });
+  assert.equal(details.animation, closing);
+  closing.finish(); await Promise.resolve();
+  assert.equal(details.open, false);
+  assert.equal(details.querySelector('summary').attributes['aria-expanded'], 'false');
+});
+
+test('layout changes outside a render callback are reconciled without a final jump', async () => {
+  const app = runtime({ animated: true });
+  const details = app.get('#toolCertificate');
+  app.context.handleInlineDisclosureClick(summaryClick(details));
+  details.contentHeight = 340;
+  details.animation.finish(); await Promise.resolve();
+  assert.equal(details.animation.frames[0].height, '300px');
+  assert.equal(details.animation.frames[1].height, '340px');
+  details.animation.finish(); await Promise.resolve();
+  assert.equal(details.getBoundingClientRect().height, 340);
+  assert.equal(details.classList.contains('is-animating'), false);
+});
+
+test('refreshing unchanged content or using reduced motion does not add a resize animation', () => {
+  for (const reduced of [true, false]) {
+    const app = runtime({ animated: true, reduced });
+    const details = app.get('#storageCard');
+    details.open = true;
+    app.context.updateInlineDisclosureContent(details, () => { details.contentHeight = reduced ? 490 : 300; });
+    assert.equal(details.animation, undefined);
+  }
+});
+
+test('preload fills storage while closed and the first click animates to the full size', async () => {
+  const app = runtime({ animated: true });
+  const details = app.get('#storageCard');
+  delete details.dataset.storageReady;
+  app.context.renderStorage = () => { details.contentHeight = 500; };
+  await app.context.refreshStorage();
+  assert.equal(details.dataset.storageReady, 'true');
+  assert.equal(details.open, false);
+  app.context.handleInlineDisclosureClick(summaryClick(details));
+  assert.equal(details.animation.frames[0].height, '45px');
+  assert.equal(details.animation.frames[1].height, '500px');
+  await app.context.refreshStorage();
+  assert.equal(app.requests(), 1);
+});
+
+test('first-paint warmup schedules both panels once without opening either', async () => {
+  const app = runtime();
+  const timers = [];
+  let historyReads = 0;
+  app.context.setTimeout = callback => { timers.push(callback); return timers.length; };
+  app.context.refreshInstallHistory = () => { historyReads++; };
+  app.context.scheduleDisclosurePreload();
+  assert.equal(timers.length, 0);
+  app.context.document.documentElement.classList.add('ui-ready');
+  app.context.scheduleDisclosurePreload(); app.context.scheduleDisclosurePreload();
+  assert.equal(timers.length, 1);
+  timers.shift()();
+  assert.equal(await app.context.refreshStorage(), true);
+  assert.equal(app.requests(), 1);
+  assert.equal(historyReads, 1);
+  assert.equal(app.get('#storageCard').open, false);
+  assert.equal(app.get('#installHistoryCard').open, false);
+});
+
+test('a click before preload completes shares the request and only opens when rows are ready', async () => {
+  const app = runtime({ animated: true });
+  const details = app.get('#storageCard');
+  delete details.dataset.storageReady;
+  let complete, requests = 0;
+  app.context.apiFetch = () => { requests++; return new Promise(resolve => { complete = resolve; }); };
+  app.context.renderStorage = () => { details.contentHeight = 450; };
+  const preload = app.context.refreshStorage();
+  const open = app.context.openStorageDisclosure();
+  assert.equal(app.context.openStorageDisclosure(), open);
+  assert.equal(details.open, false);
+  assert.equal(details.querySelector('summary').attributes['aria-busy'], 'true');
+  complete({ ok: true, json: async () => ({ jobs: [] }) });
+  await Promise.all([preload, open]);
+  assert.equal(requests, 1);
+  assert.equal(details.animation.frames[1].height, '450px');
+  assert.equal(details.querySelector('summary').attributes['aria-busy'], 'false');
+});
+
+test('a cancelled preload never opens storage or paints a connection error', async () => {
+  const app = runtime({ animated: true });
+  const details = app.get('#storageCard');
+  delete details.dataset.storageReady;
+  let complete;
+  app.context.apiFetch = () => new Promise(resolve => { complete = resolve; });
+  const open = app.context.openStorageDisclosure();
+  app.context.uiReadController.abort();
+  complete({ ok: true, json: async () => ({ jobs: [] }) });
+  assert.equal(await open, false);
+  assert.equal(details.open, false);
+  assert.equal(details.animation, undefined);
+  assert.equal(details.dataset.storageReady, undefined);
+});
+
+test('a stalled first read opens a retry state, aborts the request, and succeeds on retry', async () => {
+  const app = runtime({ animated: true });
+  const details = app.get('#storageCard');
+  delete details.dataset.storageReady;
+  let alarm, requestSignal;
+  app.context.setTimeout = callback => { alarm = callback; return 1; };
+  app.context.clearTimeout = () => {};
+  app.context.apiFetch = (_url, init) => {
+    requestSignal = init.signal;
+    return new Promise(() => {});
+  };
+  const open = app.context.openStorageDisclosure();
+  assert.equal(details.open, false);
+  alarm();
+  assert.equal(await open, true);
+  assert.equal(requestSignal.aborted, true);
+  assert.equal(details.open, true);
+  assert.equal(details.querySelector('summary').attributes['aria-busy'], 'false');
+  assert.equal(app.get('#storageTitle').textContent, 'Depolama bilgisi zamanında alınamadı.');
+  assert.equal(app.get('#storageRetry').classList.contains('hidden'), false);
+  app.context.apiFetch = async () => ({ ok: true, json: async () => ({ jobs: [] }) });
+  app.context.renderStorage = () => { app.get('#storageRetry').classList.add('hidden'); details.contentHeight = 450; };
+  assert.equal(await app.context.refreshStorage(), true);
+  assert.equal(details.dataset.storageReady, 'true');
+  assert.equal(app.get('#storageRetry').classList.contains('hidden'), true);
 });
 
 test('checks and Android resume do not interrupt an active update', async () => {

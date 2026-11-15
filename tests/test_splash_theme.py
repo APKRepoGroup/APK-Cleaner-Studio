@@ -1,3 +1,4 @@
+import hashlib
 import unittest
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -34,6 +35,16 @@ class SplashThemeTests(unittest.TestCase):
             values = {node.get("name"): node.text for node in splash}
             self.assertEqual(values["android:windowLightStatusBar"], "@bool/splash_light_bars")
             self.assertEqual(values["android:navigationBarColor"], "@color/splash_background_color")
+
+    def test_splash_keeps_the_original_emblem_separate_from_the_launcher(self):
+        java = (ROOT / "android/app/src/main/java/com/apkcleaner/studio/LauncherActivity.java").read_text(encoding="utf-8")
+        self.assertIn("icon.setImageResource(R.drawable.splash_emblem);", java)
+        self.assertNotIn("icon.setImageResource(R.mipmap.ic_launcher);", java)
+        self.assertIn("ImageView.ScaleType.CENTER_INSIDE", java)
+        self.assertIn("new FrameLayout.LayoutParams(dp(112), dp(112), Gravity.CENTER)", java)
+        original = RES / "drawable-nodpi/splash_emblem.png"
+        self.assertEqual(hashlib.sha256(original.read_bytes()).hexdigest(),
+                         "a8c099a2acb360ce7ae765fd044ebe8437981e528791be4f1440ea1bddbf6241")
 
     def test_light_navigation_bar_is_scoped_to_supported_android_versions(self):
         for folder in ("values", "values-v27", "values-v31"):

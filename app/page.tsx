@@ -131,7 +131,7 @@ export default function Home() {
     <main className="app-shell">
       <header className="topbar">
         <a className="brand" href="#top" aria-label="APK Cleaner Studio ana sayfa">
-          <span className="brand-mark" aria-hidden="true">AC</span>
+          <span className="brand-mark" aria-hidden="true" />
           <span>
             <b>APK Cleaner</b>
             <small>Studio</small>
@@ -271,6 +271,7 @@ export default function Home() {
           <a href="https://linktr.ee/apkrepomod" target="_blank" rel="noopener noreferrer"><span className="website" aria-hidden="true" /><div><small>WEB SİTESİ</small><b>APK Repo</b></div></a>
           <a href="https://t.me/+WZbVyByWkExjNmZk" target="_blank" rel="noopener noreferrer"><span className="telegram" aria-hidden="true" /><div><small>TELEGRAM</small><b>Topluluğa katıl</b></div></a>
           <a href="https://github.com/APKRepoGroup/APK-Cleaner-Studio" target="_blank" rel="noopener noreferrer"><span className="github" aria-hidden="true" /><div><small>GITHUB</small><b>Projeyi incele</b></div></a>
+          <a href="https://www.patreon.com/cw/APKRepo" target="_blank" rel="noopener noreferrer" aria-label="APK Repo Patreon sayfasını yeni sekmede aç"><span className="patreon" aria-hidden="true" /><div><small>PATREON</small><b>Destek ol</b></div></a>
         </nav>
         <div className="community-legal"><span>© 2026 APK Repo Grubu.</span><span>APK Cleaner Studio · Yerel paket araçları</span></div>
       </footer>

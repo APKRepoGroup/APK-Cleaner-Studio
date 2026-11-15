@@ -7,15 +7,19 @@
   <meta http-equiv="Accept-CH" content="Sec-CH-UA-Model, Sec-CH-UA-Platform, Sec-CH-UA-Platform-Version, Sec-CH-UA-Mobile, Sec-CH-UA-Form-Factors">
   <title>APK Cleaner Studio</title>
   <link rel="stylesheet" href="boot.css?v=0.6.3-dev.4-20260930.8">
-  <link rel="icon" href="/favicon.ico" sizes="any">
-  <link rel="icon" type="image/png" href="/favicon.png" sizes="512x512">
+  <link rel="icon" href="/favicon.ico?v=dev7-ac" sizes="16x16 20x20 24x24 32x32 48x48 64x64 128x128 256x256">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=dev7-ac" sizes="512x512">
+  <link rel="icon" type="image/svg+xml" href="/favicon-32.svg?v=dev7-ac" sizes="32x32">
+  <link rel="icon" type="image/svg+xml" href="/favicon-24.svg?v=dev7-ac" sizes="24x24">
+  <link rel="icon" type="image/svg+xml" href="/favicon-20.svg?v=dev7-ac" sizes="20x20">
+  <link rel="icon" type="image/svg+xml" href="/favicon-16.svg?v=dev7-ac" sizes="16x16">
   <script src="boot.js?v=0.6.3-dev.4-20260930.8"></script>
   <link rel="stylesheet" href="styles.css">
-  <link rel="stylesheet" href="theme.css?v=0.6.3-dev.7-20261027.3">
+  <link rel="stylesheet" href="theme.css?v=0.6.3-dev.7-20261115.5">
 </head>
 <body>
   <header class="topbar">
-    <a class="brand" href="/" aria-label="APK Cleaner Studio ana ekranı"><span>AC</span><div><b>APK Cleaner</b><small>STUDIO</small></div></a>
+    <a class="brand" href="/" aria-label="APK Cleaner Studio ana ekranı"><span><img src="/favicon.svg?v=dev7-ac" alt="" width="42" height="42"></span><div><b>APK Cleaner</b><small>STUDIO</small></div></a>
     <div id="connection" class="connection"><i></i> Yerel motor denetleniyor</div>
     <div class="top-actions">
       <div class="theme-switcher" role="group" aria-label="Görünüm teması">
@@ -309,7 +313,7 @@
           <nav id="historyPagination" class="history-pagination hidden" aria-label="İşlem geçmişi sayfaları"><button id="historyPrevious" type="button">Önceki</button><span id="historyPageInfo"></span><button id="historyNext" type="button">Sonraki</button></nav>
           <button id="diagnosticButton" class="secondary diagnostic-open" type="button">Hata raporu oluştur</button><p class="fineprint">Hata raporunu önce inceleyebilir, istersen indirebilirsin. Kayıtlar bu cihazda tutulur.</p>
         </section>
-        <details id="storageCard" class="side-card side-data-card storage-card"><summary>DEPOLAMA YÖNETİMİ <span>Yerel dosyaları incele</span></summary><h3 id="storageTitle">Kullanılan alan hesaplanıyor</h3><p id="storageTotals" class="fineprint"></p><div id="storageList" class="storage-list auto-hide-scrollbar" aria-live="polite"></div><button id="storageCleanButton" class="secondary" type="button" disabled>Seçilen kayıtları temizle</button><div id="nativeCacheStorage" class="native-cache-storage hidden"><b>Android kurulum önbelleği</b><small id="nativeCacheTotals"></small><button id="nativeCacheCleanButton" class="secondary" type="button">Eski önbelleği temizle</button></div><p class="fineprint">Seçtiğin işlem kaydı, kaynağı, çıktısı ve çalışma dosyalarıyla birlikte silinir. Devam eden işlemler korunur.</p></details>
+        <details id="storageCard" class="side-card side-data-card storage-card"><summary>DEPOLAMA YÖNETİMİ <span>Yerel dosyaları incele</span></summary><h3 id="storageTitle" role="status">Kullanılan alan hesaplanıyor</h3><button id="storageRetry" class="secondary hidden" type="button">Yeniden dene</button><p id="storageTotals" class="fineprint"></p><div id="storageList" class="storage-list auto-hide-scrollbar" aria-live="polite"></div><button id="storageCleanButton" class="secondary" type="button" disabled>Seçilen kayıtları temizle</button><div id="nativeCacheStorage" class="native-cache-storage hidden"><b>Android kurulum önbelleği</b><small id="nativeCacheTotals"></small><button id="nativeCacheCleanButton" class="secondary" type="button">Eski önbelleği temizle</button></div><p class="fineprint">Seçtiğin işlem kaydı, kaynağı, çıktısı ve çalışma dosyalarıyla birlikte silinir. Devam eden işlemler korunur.</p></details>
         <details id="installHistoryCard" class="side-card side-data-card install-history-card hidden"><summary>KURULUM GEÇMİŞİ <span>Doğrudan split kurulumları</span></summary><h3>Android kurulum sonuçları</h3><div id="installHistoryList" class="install-history-list auto-hide-scrollbar" aria-live="polite"></div><p class="fineprint">Yalnızca doğrudan split kurulumları bu cihazda kaydedilir. Normal APK kurulum ekranının sonucu Android tarafından uygulamaya bildirilmez.</p></details>
         <section class="privacy"><span>⌾</span><div><b>Cihazında ve özel</b><p>Paket uzak bir sunucuya gönderilmez; analiz ve düzenleme işlemleri bu cihazda tamamlanır.</p></div></section>
       </aside>
@@ -357,7 +361,7 @@
     <p class="special-thanks-note"><strong>ʙʏᴛᴇᴄʜɴᴏ</strong>’ya bugüne kadar verdiği tüm destekler için ayrıca teşekkür ederiz.</p>
   </section>
 
-  <footer class="site-footer">
+  <footer id="siteFooter" class="site-footer">
     <div class="footer-main">
       <div class="footer-brand">
         <img class="footer-brand-mark" src="apk-repo-icon.png" alt="" aria-hidden="true">
@@ -375,6 +379,10 @@
         <a href="https://github.com/APKRepoGroup/APK-Cleaner-Studio" target="_blank" rel="noopener noreferrer" aria-label="APK Cleaner Studio GitHub deposunu yeni sekmede aç">
           <span class="footer-link-icon github-icon" aria-hidden="true"></span>
           <span><small>GITHUB</small><b>Projeyi incele</b></span>
+        </a>
+        <a href="https://www.patreon.com/cw/APKRepo" target="_blank" rel="noopener noreferrer" aria-label="APK Repo Patreon sayfasını yeni sekmede aç">
+          <span class="footer-link-icon patreon-icon" aria-hidden="true"></span>
+          <span><small>PATREON</small><b>Destek ol</b></span>
         </a>
       </nav>
     </div>
@@ -477,6 +485,6 @@
   <script src="permissions.js?v=0.6.3-dev.7-20261027.3"></script>
   <script src="apk-comparison.js?v=0.6.3-dev.7-20261027.2"></script>
   <script src="processing-presets.js?v=0.6.3-dev.7-20261027.2"></script>
-  <script src="app.js?v=0.6.3-dev.7-20261027.3"></script>
+  <script src="app.js?v=0.6.3-dev.7-20261115.3"></script>
 </body>
 </html>

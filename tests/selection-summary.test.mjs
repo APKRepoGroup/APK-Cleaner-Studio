@@ -22,11 +22,11 @@ function runtime() {
   const context = vm.createContext({ $: get, ACTION_NEXT_ICON: '',
     state: { analysis: { network_count: 18 }, operation: 'patch', profile: 'balanced', patchAdsSelected: true,
       splitSelection: { abis: [], languages: [] }, messageTargets: [] },
-    updateAdProfileAvailability() {}, validClonePackageName: () => true,
-    document: { createElement() { return { children: [], append(...items) { this.children.push(...items); },
+    updateAdProfileAvailability() {}, validClonePackageName: () => true, setInlineDisclosureOpen() {},
+    document: { createElement(tag) { return { tag, children: [], append(...items) { this.children.push(...items); },
       set innerHTML(_) { throw Error('Summary must be safe text'); } }; } },
   });
-  for (const name of ['processingSelectionSummary', 'renderSelectionSummary', 'currentPresetOptions', 'updateActionState']) {
+  for (const name of ['processingSelectionSummary', 'renderSelectionRows', 'renderSelectionSummary', 'renderWorkingSelection', 'currentPresetOptions', 'updateActionState']) {
     vm.runInContext(functionText(name), context);
   }
   return { context, get };
@@ -38,8 +38,7 @@ test('summary identifies the actual ad operation, profile and selected extras', 
   const rows = rowMap(context.processingSelectionSummary({ ...base, profile: 'deep', stripDebug: true, messageCount: 3 }));
   assert.equal(rows['İşlem'], 'Reklam izlerini temizle');
   assert.equal(rows['Reklam temizliği'], 'Gelişmiş profil');
-  assert.match(rows['Ek işlemler'], /DEX hata ayıklama verilerini kaldır.*3 başlangıç çağrısını kaldır/);
-  assert.doesNotMatch(rows['Ek işlemler'], /Play Store|optimize|RES/);
+  assert.deepEqual([...rows['Ek işlemler']], ['DEX hata ayıklama verilerini kaldır', '3 başlangıç çağrısını kaldır']);
 });
 test('a remembered profile is not presented as active when ad cleaning is off or unsupported', () => {
   const { context, get } = runtime();
@@ -48,7 +47,7 @@ test('a remembered profile is not presented as active when ad cleaning is off or
   context.updateActionState();
   assert.equal(get('#cleanButton').disabled, false);
   assert.equal(get('#selectionSummaryRows').children[1].children[1].textContent, 'Uygulanmayacak');
-  assert.match(get('#selectionSummaryRows').children.at(-1).children[1].textContent, /Play Store/);
+  assert.equal(get('#selectionSummaryRows').children.at(-1).children[1].children[0].children[0].textContent, 'Play Store güncellemesini kapat');
   context.state.patchAdsSelected = true; context.state.analysis.network_count = 0;
   context.updateActionState();
   assert.equal(get('#selectionSummaryRows').children[1].children[1].textContent, 'Uygulanmayacak');
@@ -93,9 +92,29 @@ test('raw clone identifiers remain literal and repeated status checks preserve s
   assert.ok(list.children.some(row => row.children[1].textContent === get('#clonePackageName').value));
   context.updateActionState(); assert.equal(list.writes, writes); assert.equal(list.children[0], first);
   get('#normalizeDex').checked = true; context.updateActionState();
-  assert.match(list.children.at(-1).children[1].textContent, /DEX yapısını yeniden düzenle/);
+  assert.equal(list.children.at(-1).children[1].children[0].children[0].textContent, 'DEX yapısını yeniden düzenle');
   get('#normalizeDex').checked = false; context.updateActionState();
   assert.equal(list.children.at(-1).children[1].textContent, 'Seçilmedi');
+});
+test('working options render one bullet per extra while leaving other rows and empty states unchanged', () => {
+  const { context, get } = runtime();
+  context.renderWorkingSelection({ operation: 'patch', profile: 'deep', patch_ads: true,
+    strip_debug: true, restrict_store_updates: true, optimize_apk: true });
+  const rows = get('#workingSelectionRows');
+  assert.equal(rows.children[1].children[1].textContent, 'Gelişmiş profil');
+  const [term, description] = rows.children.at(-1).children;
+  assert.equal(term.textContent, 'Ek işlemler');
+  assert.equal(description.children[0].tag, 'ul');
+  assert.equal(description.children[0].className, 'selection-extras');
+  assert.deepEqual(description.children[0].children.map(item => [item.tag, item.textContent]), [
+    ['li', 'DEX hata ayıklama verilerini kaldır'],
+    ['li', 'Play Store güncellemesini kapat'],
+    ['li', 'Yamalanan APK’yı optimize et'],
+  ]);
+  context.renderWorkingSelection({ operation: 'patch' });
+  assert.equal(rows.children.at(-1).children[1].textContent, 'Seçilmedi');
+  context.renderWorkingSelection(null);
+  assert.equal(rows.children.length, 0);
 });
 test('summary is next to the final action, and all dynamic selection paths refresh it', () => {
   const start = html.indexOf('id="selectionSummary"'), end = html.indexOf('id="cleanButton"');

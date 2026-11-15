@@ -53,6 +53,23 @@ class Handler(SimpleHTTPRequestHandler):
         path = request_url.path
         if path == "/":
             capture = capture_mode(self.path)
+            query = parse_qs(request_url.query)
+            footer_row = query.get("layout", [""])[0] == "row"
+            if capture == "dev7-header-mobile":
+                self.reply('''<!doctype html><html lang="tr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Başlık logosu · Mobil önizleme</title>
+                <style>body{margin:0;height:100dvh;display:grid;grid-template-rows:auto minmax(0,1fr);background:#0d1515;color:#e8efea;font:14px system-ui}header{padding:8px 12px;text-align:center}iframe{display:block;width:min(390px,100%);height:100%;margin:auto;border:0;outline:1px solid #34493f}</style></head>
+                <body><header>Başlık logosu · Mobil görünüm (390 px)</header><iframe title="Başlık logosu mobil önizlemesi" src="/?embedded=android&amp;capture=dev7-header"></iframe></body></html>''', "text/html")
+                return
+            if capture == "dev7-footer-mobile":
+                row_query = "&amp;layout=row" if footer_row else ""
+                selected = ' aria-current="page"'
+                self.reply(f'''<!doctype html><html lang="tr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Alt bilgi · Dar mobil önizleme</title>
+                <style>body{{margin:0;height:100dvh;overflow:hidden;display:grid;grid-template-rows:auto minmax(0,1fr);background:#0d1515;color:#e8efea;font:14px system-ui}}header{{text-align:center;padding:8px 12px}}nav{{display:flex;justify-content:center;gap:8px;margin-top:7px}}nav a{{color:#e8efea;border:1px solid #34493f;border-radius:8px;padding:5px 10px;text-decoration:none;font-size:12px}}nav a[aria-current]{{background:#d9ff43;border-color:#d9ff43;color:#0d1515}}iframe{{display:block;width:min(360px,100%);height:100%;min-height:0;margin:0 auto;border:0;outline:1px solid #34493f;box-sizing:border-box}}</style></head>
+                <body><header>Dar mobil önizleme · 360 px<nav aria-label="Alt bilgi düzeni">
+                  <a href="/?capture=dev7-footer-mobile"{'' if footer_row else selected}>Mevcut · 2 × 2</a>
+                  <a href="/?capture=dev7-footer-mobile&amp;layout=row"{selected if footer_row else ''}>Deneme · tek sıra</a>
+                </nav></header><iframe title="Mobil alt bilgi önizlemesi" src="/?embedded=android&amp;capture=dev7-footer{row_query}#siteFooter"></iframe></body></html>''', "text/html")
+                return
             if capture in {"dev7-mobile", "dev7-desktop"}:
                 embedded = "embedded=android&" if capture == "dev7-mobile" else ""
                 width = "390px" if capture == "dev7-mobile" else "100%"
@@ -94,11 +111,26 @@ class Handler(SimpleHTTPRequestHandler):
                 <body><iframe title="Mobil sonuç" src="/?embedded=android&amp;capture=result"></iframe></body></html>''', "text/html")
                 return
             html = (WEB / "index.html").read_text(encoding="utf-8")
+            if capture == "dev7-footer" and footer_row:
+                html = html.replace("</head>", '''<style id="qa-footer-row">
+                  @media (max-width: 620px) {
+                    #siteFooter .footer-links { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+                    #siteFooter .footer-links a { flex-direction: column; align-items: center; justify-content: center; min-height: 76px; gap: 4px; padding: 6px 4px; text-align: center; }
+                    #siteFooter .footer-link-icon { width: 32px; height: 32px; flex-basis: 32px; }
+                    #siteFooter .footer-links small { font-size: 8px; letter-spacing: .045em; }
+                    #siteFooter .footer-links b { font-size: 9.5px; line-height: 1.2; text-wrap: balance; }
+                  }
+                </style></head>''', 1)
             marks = [dict(id=key, label=value["label"], references=4313 - i * 199) for i, (key, value) in enumerate(PROFILES.items())]
             bridge = '''<script>const qaApps=Array.from({length:100},(_,i)=>({package:'com.example.app'+i,label:'Test uygulaması '+(i+1),version:'1.2.0',splits:i%3,icon:'data:image/svg+xml,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48"><rect width="48" height="48" rx="12" fill="#239b84"/><circle cx="24" cy="24" r="12" fill="#d9ff43"/></svg>')})); globalThis.AndroidThemeBridge={setTheme(){},requestInstalledPackages(){onInstalledPackagesLoaded(JSON.stringify(qaApps));}};</script>'''
             bridge = bridge.replace("</script>", '''let qaBatteryUnrestricted=false;AndroidThemeBridge.requestBackgroundPolicy=()=>{if(new URLSearchParams(location.search).get('capture')==='dev5-battery')globalThis.onBackgroundPolicy?.({known:true,backgroundRestricted:!qaBatteryUnrestricted,ignoringOptimizations:qaBatteryUnrestricted});};AndroidThemeBridge.openBatterySettings=()=>toast('Tarayıcı önizlemesi cihaz ayarlarını değiştirmez.');AndroidThemeBridge.requestBatteryExemption=()=>toast('Android uygulamasında sistem onayı açılır. Bu tarayıcı önizlemesi cihaz ayarlarını değiştirmez.');</script>''')
             bridge = bridge.replace("</script>", '''AndroidThemeBridge.resolveEngineStop=(token,approved)=>toast(approved?'Önizleme: onay alındı; gerçek motor kapatılmadı.':'Önizleme: motor çalışmaya devam eder.');</script>''')
             bridge = bridge.replace("</script>", '''AndroidThemeBridge.shareOutput=(url,filename)=>{globalThis.qaSharedName=filename;toast('Paylaşılacak dosya: '+filename);globalThis.onNativeAction?.('share',JSON.stringify({status:'opened'}));};</script>''')
+            if capture == "dev7-disclosures":
+                bridge += '''<script>
+                AndroidThemeBridge.getInstallHistory=()=>JSON.stringify(Array.from({length:5},(_,i)=>({package:'com.example.preview'+(i+1),status:'installed',timestamp:Date.now()-i*7200000,modules:i+2,message:'Örnek kurulum kaydı'})));
+                AndroidThemeBridge.getNativeCacheStorage=()=>JSON.stringify({count:2,bytes:4194304});
+                </script>'''
             # Fixture pointers must not attach to unrelated demos; never clear real job pointers.
             bridge = bridge.replace("</script>", '''for(const storage of [localStorage,sessionStorage]){const key='apk-cleaner-active-job-v1';try{const record=JSON.parse(storage.getItem(key)||'null');const capture=new URLSearchParams(location.search).get('capture');const prefix=capture==='dev5-recovery'?'f1f1f1f1':capture==='dev5-interrupted'?'f2f2f2f2':'';if(/^f[12]f[12]f[12]f[12]/.test(record?.jobId||'')&&!record.jobId.startsWith(prefix||'not-a-fixture'))storage.removeItem(key);}catch{}}</script>''')
             controls_display = "none" if capture else "flex"
@@ -156,6 +188,7 @@ class Handler(SimpleHTTPRequestHandler):
                 "dev7-analysis": "setTimeout(qaDev7Analysis,600);",
                 "dev7-desktop-output": "setTimeout(async()=>{qaAnalysis(true,false,false);state.jobId='a'.repeat(32);await renderCompletedJob({operation:'patch',output:'Örnek_1.4.2.apk',signed:true,verification:{passed:true}});document.querySelector('#downloadButton').addEventListener('click',event=>{event.preventDefault();toast('Bu önizlemede gerçek APK kaydedilmez.');});},600);",
                 "dev7-compare": "setTimeout(qaDev7Comparison,600);",
+                "dev7-disclosures": "window.addEventListener('load',()=>document.querySelector('#storageCard').scrollIntoView({block:'center'}));",
                 "dev7-permissions": "setTimeout(qaDev7Permissions,600);",
                 "dev7-profiles": "setTimeout(qaDev7Profiles,600);",
                 "dev5": "setTimeout(qaDev5Working,700);",
@@ -272,6 +305,10 @@ class Handler(SimpleHTTPRequestHandler):
                 "failure": {"message": "Çıktı doğrulanamadı: seçilen paketin native kütüphanesi eksik.",
                             "stage": "Çıktı APK doğrulanıyor", "operation": "patch", "profile": "balanced"}}))
         elif path == "/api/storage":
+            if capture_mode(self.headers.get("Referer", "")) == "dev7-disclosures":
+                # Reproduce late data both during and after the 360 ms transition.
+                delay = parse_qs(urlsplit(self.headers.get("Referer", "")).query).get("delay", [""])[0]
+                time.sleep(0.45 if delay == "late" else 0.18)
             jobs = [
                 {"job_id": f"{index:032x}", "filename": f"Örnek paket {index}.apk", "can_delete": False,
                  "sizes": {"source": 32_000_000, "output": 24_000_000, "working": 40_000_000}}

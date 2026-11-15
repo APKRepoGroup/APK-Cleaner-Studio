@@ -2,6 +2,7 @@ import io
 import os
 import re
 import unittest
+import xml.etree.ElementTree as ET
 import zipfile
 from pathlib import Path
 
@@ -50,10 +51,18 @@ class AndroidPackageTests(unittest.TestCase):
         self.assertIn('abiFilters "arm64-v8a", "armeabi-v7a"', gradle)
         self.assertNotRegex(gradle, r'abiFilters[^\n]*(?:x86|mips)')
         self.assertIn('resourceConfigurations += ["en", "tr"]', gradle)
-        self.assertEqual(
-            {path.name for path in (ANDROID / "app" / "src" / "main" / "res").glob("mipmap-*")},
-            {"mipmap-xhdpi", "mipmap-xxhdpi"},
-        )
+
+    def test_one_vector_supplies_both_launcher_icons(self):
+        resources = ANDROID / "app/src/main/res"
+        launcher = resources / "mipmap-anydpi/ic_launcher.xml"
+        self.assertEqual(list(resources.glob("mipmap-*/ic_launcher.*")), [launcher])
+        self.assertEqual(list(resources.glob("mipmap-*/ic_launcher_round.*")), [])
+        vector = ET.parse(launcher).getroot()
+        self.assertEqual(vector.tag, "vector")
+        self.assertEqual(vector.get("{http://schemas.android.com/apk/res/android}viewportWidth"), "512")
+        self.assertEqual(len(list(vector.iter("path"))), 5)
+        aliases = ET.parse(resources / "values/launcher_icons.xml").getroot()
+        self.assertEqual(aliases.find("item[@type='mipmap'][@name='ic_launcher_round']").text, "@mipmap/ic_launcher")
 
     def test_android_shell_does_not_require_termux_or_external_java(self):
         manifest = (ANDROID / "app" / "src" / "main" / "AndroidManifest.xml").read_text(encoding="utf-8")
@@ -261,7 +270,7 @@ class AndroidPackageTests(unittest.TestCase):
             "web/index.html", "web/app.js", "web/styles.css", "web/ui-runtime.js",
         ):
             self.assertIn(required, embedded)
-        for relative in ("engine.py", "package_icon.py", "package_info.py", "app_appearance.py", "server.py", "profiles.json", "web/index.html", "web/app.js", "web/theme.css", "web/ui-runtime.js"):
+        for relative in ("engine.py", "package_icon.py", "package_info.py", "app_appearance.py", "server.py", "profiles.json", "web/index.html", "web/app.js", "web/theme.css", "web/ui-runtime.js", "web/favicon.svg", "web/favicon-16.svg", "web/icons/patreon.svg"):
             self.assertEqual(
                 app_archive.read(relative),
                 (ROOT / "studio" / relative).read_bytes(),
@@ -360,7 +369,7 @@ class AndroidPackageTests(unittest.TestCase):
         self.assertIn("view.setPadding(0, 0, 0, bottom)", activity)
         self.assertIn("--android-safe-right", activity)
         self.assertIn("OvershootInterpolator", launcher)
-        self.assertIn("R.mipmap.ic_launcher", launcher)
+        self.assertIn("R.drawable.splash_emblem", launcher)
         self.assertIn("progress.animate().scaleX(1f)", launcher)
 
     def test_android_status_inset_is_converted_from_physical_to_css_pixels(self):
@@ -373,7 +382,7 @@ class AndroidPackageTests(unittest.TestCase):
         for name in ("engine.py", "package_icon.py", "app_appearance.py", "package_info.py", "server.py", "setup_tools.py", "updater.py", "device_catalog.py"):
             self.assertIn(f'"{name}"', sync)
         self.assertIn("shutil.copytree(STUDIO / \"web\"", sync)
-        for relative in ("engine.py", "package_icon.py", "app_appearance.py", "package_info.py", "server.py", "profiles.json", "web/app.js", "web/theme.css", "web/ui-runtime.js"):
+        for relative in ("engine.py", "package_icon.py", "app_appearance.py", "package_info.py", "server.py", "profiles.json", "web/app.js", "web/theme.css", "web/ui-runtime.js", "web/favicon.svg", "web/favicon-16.svg", "web/icons/patreon.svg"):
             self.assertEqual(
                 (ANDROID / "app" / "src" / "main" / "python" / relative).read_bytes(),
                 (ROOT / "studio" / relative).read_bytes(),
