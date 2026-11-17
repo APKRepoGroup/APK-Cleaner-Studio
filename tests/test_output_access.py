@@ -1,4 +1,5 @@
 """Completed-output access guards; all fixtures are disposable, not release packages."""
+import errno
 import sys
 import tempfile
 import unittest
@@ -10,6 +11,50 @@ import server
 
 
 class OutputAccessTests(unittest.TestCase):
+    def test_full_disk_during_processing_or_completion_keeps_terminal_state_and_allows_retry(self):
+        class InlineWorker:
+            def __init__(self, target, args, **_): self.target, self.args = target, args
+            def start(self): self.target(*self.args)
+        for phase in ('processing', 'completion'):
+            with self.subTest(phase=phase), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                job = self.fixture(root, 'ready')
+                analysis = server.read_json(job / 'analysis.json')
+                analysis.update(source_path='source.apk', prepared_path='source.apk', filename='Source.apk')
+                server.write_json(job / 'analysis.json', analysis)
+                writes_blocked = [False]
+                attempts = []
+                original_write = server.write_json
+                def write(path, payload):
+                    if writes_blocked[0]:
+                        raise OSError(errno.ENOSPC, 'No space left on device')
+                    return original_write(path, payload)
+                def process(_source, output, *_args, **_kwargs):
+                    output.mkdir(parents=True, exist_ok=True)
+                    (output / 'result.apk').write_bytes(b'generated')
+                    attempts.append(True)
+                    result = {'output': 'result.apk', 'signed': True}
+                    original_write(output / 'report.json', result)
+                    if len(attempts) == 1:
+                        writes_blocked[0] = True
+                        if phase == 'processing':
+                            raise OSError(errno.ENOSPC, 'No space left on device')
+                    return result
+                with mock.patch.object(server, 'JOBS', root), mock.patch.object(server, '_ACTIVE_JOBS', set()), mock.patch.object(server, '_SCANNING_JOBS', set()), mock.patch.object(server, '_JOB_CANCEL_EVENTS', {}), mock.patch.object(server, '_JOB_THREADS', {}), mock.patch.object(server, '_INTERRUPTED_STATE_FALLBACKS', {}), mock.patch.object(server.threading, 'Thread', InlineWorker), mock.patch.object(server, 'process_apk', side_effect=process), mock.patch.object(server, 'write_json', side_effect=write):
+                    server.start_clean_job(job.name, {'patch_ads': False})
+                    self.assertEqual(server.read_json(job / 'state.json')['status'], 'error')
+                    self.assertFalse((job / 'output').exists())
+                    self.assertNotIn(job.name, server._ACTIVE_JOBS)
+                    self.assertIn('depolama', server.read_json(job / 'state.json')['message'].lower())
+                    file, response = self.request(job, 'download')
+                    file.assert_not_called()
+                    self.assertEqual(response.call_args.args[1], 409)
+                    writes_blocked[0] = False
+                    server.start_clean_job(job.name, {'patch_ads': False})
+                    self.assertEqual(server.read_json(job / 'state.json')['status'], 'done')
+                    self.assertEqual(server._INTERRUPTED_STATE_FALLBACKS, {})
+                    self.assertEqual((job / 'source.apk').read_bytes(), b'original-source')
+
     def fixture(self, root, status, output='result.apk'):
         job = root / ('a' * 32)
         server.write_json(job / 'analysis.json', {'owner_id': server.client_identity('127.0.0.1', {})})
@@ -69,6 +114,7 @@ class OutputAccessTests(unittest.TestCase):
             server.write_json(job / 'analysis.json', analysis)
             attempts = []
             def process(_source, output, *_args, **_kwargs):
+                output.mkdir(parents=True, exist_ok=True)
                 attempts.append(True)
                 if len(attempts) == 1:
                     (output / 'partial.apk').write_bytes(b'unfinished')

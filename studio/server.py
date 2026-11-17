@@ -76,8 +76,8 @@ MAX_JOB_DIRECTORIES = 100
 MAX_OWNER_JOBS = 25
 MAX_JOB_STORAGE_BYTES = 4 * 1024 * 1024 * 1024
 JOB_ID = re.compile(r"^[a-f0-9]{32}$")
-VERSION = "0.6.3-dev.7"
-RELEASE_CHANNEL = "dev"
+VERSION = "0.6.3"
+RELEASE_CHANNEL = "stable"
 DEFAULT_HOST = "0.0.0.0"
 CONSOLE_COLUMNS = 110
 CONSOLE_ROWS = 30
@@ -767,6 +767,16 @@ def read_json(path: Path, fallback: dict | None = None) -> dict:
         return json.loads(content)
     except json.JSONDecodeError:
         return fallback or {}
+
+
+def write_terminal_job_state(job: Path, payload: dict) -> None:
+    """Keep a failed worker terminal even when a full disk blocks its state file."""
+    path = job / "state.json"
+    try:
+        write_json(path, payload)
+    except OSError:
+        with _JSON_WRITE_LOCK:
+            _INTERRUPTED_STATE_FALLBACKS[path.resolve()] = payload
 
 
 def reconcile_interrupted_jobs() -> int:
@@ -1567,7 +1577,7 @@ def _execute_clean_job(job_id: str, payload: dict) -> None:
         shutil.rmtree(job / "output", ignore_errors=True)
         shutil.rmtree(job / "prepared-selected", ignore_errors=True)
         with _ACTIVE_JOBS_LOCK:
-            write_json(job / "state.json", {
+            write_terminal_job_state(job, {
                 "status": "cancelled", "message": str(exc), "progress": 0, "filename": filename,
                 "events": journal.record("İşlem kullanıcı tarafından iptal edildi.", 0),
             })
@@ -1576,12 +1586,16 @@ def _execute_clean_job(job_id: str, payload: dict) -> None:
             shutil.rmtree(job / "output", ignore_errors=True)
             shutil.rmtree(job / "prepared-selected", ignore_errors=True)
             with _ACTIVE_JOBS_LOCK:
-                write_json(job / "state.json", {
+                write_terminal_job_state(job, {
                     "status": "cancelled", "message": "İşlem kullanıcı tarafından iptal edildi.",
                     "progress": 0, "filename": filename,
                     "events": journal.record("İşlem kullanıcı tarafından iptal edildi.", 0),
                 })
             return
+        # A failed output is never reusable. Reclaim it before trying to write
+        # the compact error state, especially after a disk-full exception.
+        shutil.rmtree(job / "output", ignore_errors=True)
+        shutil.rmtree(job / "prepared-selected", ignore_errors=True)
         details = failure_diagnostic(exc, analysis=analysis, payload=payload)
         details["stage"] = diagnostic_error(RuntimeError(last_stage))
         try:
@@ -1591,7 +1605,7 @@ def _execute_clean_job(job_id: str, payload: dict) -> None:
         with _ACTIVE_JOBS_LOCK:
             cancelled = cancel_event.is_set()
             message = "İşlem kullanıcı tarafından iptal edildi." if cancelled else details["message"]
-            write_json(job / "state.json", {
+            write_terminal_job_state(job, {
                 "status": "cancelled" if cancelled else "error", "message": message, "progress": 0, "filename": filename,
                 **({} if cancelled else {"failure": {key: details[key] for key in ("message", "stage", "operation", "profile")}}),
                 "events": journal.record(message, 0),

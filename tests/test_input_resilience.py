@@ -13,6 +13,28 @@ import server
 
 
 class InputResilienceTests(unittest.TestCase):
+    def test_corrupt_dex_or_manifest_stops_processing_and_preserves_the_source(self):
+        fixture = Path(__file__).resolve().parents[1] / 'work/hello-with-ad-call.apk'
+        tools = engine.Toolchain.detect()
+        if not fixture.is_file() or not tools.java or not tools.direct_patcher or not tools.binary_manifest_patcher:
+            self.skipTest('Local Java processing fixture is unavailable.')
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for broken in ('classes.dex', 'AndroidManifest.xml'):
+                with self.subTest(entry=broken):
+                    source = root / ('broken-dex.apk' if broken.endswith('.dex') else 'broken-manifest.apk')
+                    with zipfile.ZipFile(fixture) as original, zipfile.ZipFile(source, 'w') as archive:
+                        for name in original.namelist():
+                            archive.writestr(name, b'corrupt input' if name == broken else original.read(name))
+                    before = source.read_bytes()
+                    output = root / (source.stem + '-output')
+                    options = {'normalize_dex': True} if broken.endswith('.dex') else {'clone_package_name': 'com.example.invalid.clone'}
+                    with self.assertRaises((ValueError, RuntimeError, zipfile.BadZipFile)) as raised:
+                        engine.process_apk(source, output, 'safe', patch_ads=False, **options)
+                    self.assertTrue(server.public_error(raised.exception))
+                    self.assertEqual(source.read_bytes(), before)
+                    self.assertFalse((output / 'report.json').exists())
+
     def test_corrupt_and_incomplete_archives_fail_in_turkish_without_modifying_sources(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

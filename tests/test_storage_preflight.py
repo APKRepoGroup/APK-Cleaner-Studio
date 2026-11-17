@@ -98,7 +98,7 @@ class StoragePreflightTests(unittest.TestCase):
 
     def test_separate_temp_and_output_volumes_are_checked_independently(self):
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
+            root = Path(directory).resolve()
             output = root / "output"
             temporary = root / "temp"
             output.mkdir(); temporary.mkdir()
