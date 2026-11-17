@@ -13,7 +13,7 @@ class ReleaseChecksumTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
-        self.version = "0.6.3-dev.7"
+        self.version = json.loads((Path(__file__).resolve().parents[1] / "package.json").read_text(encoding="utf-8"))["version"]
         (self.root / "outputs").mkdir()
         (self.root / "package.json").write_text(json.dumps({"version": self.version}), encoding="utf-8")
         (self.root / f"RELEASE-NOTES-v{self.version}.md").write_text("Build notes", encoding="utf-8")

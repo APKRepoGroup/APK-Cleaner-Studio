@@ -1,14 +1,14 @@
-# APK Cleaner Studio v0.6.2
+# APK Cleaner Studio v0.6.3
 
 <p align="center">
   <img src="release-assets/APK-Cleaner-Studio-README-Kapagi.png" alt="APK Cleaner Studio promotional cover" width="100%">
 </p>
 
-[Türkçe README](README.md) · [Termux installation](README-TERMUX.md) · [Build from source](BUILDING.md) · [v0.6.2 release notes](RELEASE-NOTES-v0.6.2.md)
+[Türkçe README](README.md) · [Termux installation](README-TERMUX.md) · [Build from source](BUILDING.md) · [v0.6.3 release notes](RELEASE-NOTES-v0.6.3.md)
 
 APK Cleaner Studio is a local Android package-processing tool that analyzes APK, APKS, APKM, and XAPK packages, removes verified advertising traces, and merges split packages into a single installable APK. The source package is never modified; every operation is performed on a new output file.
 
-**Stable release:** v0.6.2 · **Engine:** 2.0 · **Platforms:** Android, Windows, and Termux
+**Stable release:** v0.6.3 · **Engine:** 2.0 · **Platforms:** Android, Windows, and Termux
 
 ## Download
 
@@ -16,11 +16,11 @@ Download the current stable packages from [GitHub Releases](https://github.com/A
 
 | Platform | Package |
 | --- | --- |
-| Android | `APK-Cleaner-Studio-v0.6.2-Android.apk` |
-| Windows | `APK-Cleaner-Studio-v0.6.2-Windows.exe` |
-| Termux | `APK-Cleaner-Studio-v0.6.2-Termux.zip` |
+| Android | `APK-Cleaner-Studio-v0.6.3-Android.apk` |
+| Windows | `APK-Cleaner-Studio-v0.6.3-Windows.exe` |
+| Termux | `APK-Cleaner-Studio-v0.6.3-Termux.zip` |
 
-You can verify each package against the `SHA256-v0.6.2.txt` file published with the same release. An illustrated overview of the changes is available on the [Telegraph release page](https://telegra.ph/APK-Cleaner-Studio-v062--Kararl%C4%B1-S%C3%BCr%C3%BCm-Notlar%C4%B1-09-20).
+Verify each package against the `SHA256-v0.6.3.txt` file published with the same release.
 
 ## What does it do?
 
@@ -83,7 +83,7 @@ Split package conversion also presents the **Apply ad patch during conversion** 
 
 ## Android
 
-The Android package uses the `com.apkrepo.apkcleanerstudio` application ID and version code `62`. The minimum supported Android version is Android 8.0 (API 26). The v0.6.2 package can be installed as an update over v0.6.1 when it uses the same application ID.
+The Android package uses application ID `com.apkrepo.apkcleanerstudio` and version code `6310`. Android 8.0 (API 26) or later is required. When signed with the same release key, v0.6.3 can update the previous stable release and dev.1–dev.7 installations.
 
 Android-specific features:
 
@@ -96,11 +96,11 @@ Android-specific features:
 
 ## Windows
 
-Run `APK-Cleaner-Studio-v0.6.2-Windows.exe`; no separate Python installation or BAT file is required. If Java or another required processing component is missing, the **Prepare missing components** button in the interface installs the verified portable toolchain in the user directory.
+Run `APK-Cleaner-Studio-v0.6.3-Windows.exe`; no separate Python installation or BAT file is required. If Java or another required processing component is missing, the **Prepare missing components** button in the interface installs the verified portable toolchain in the user directory.
 
-The application listens on the local network by default. The console displays `127.0.0.1` for this computer and a local network address for other devices on the same trusted network. LAN access does not include authentication and should be used only on trusted private networks.
+The EXE opens in its own application window, without a console or browser tab. Closing the window stops its local engine; an active analysis or processing job requires confirmation. LAN access starts disabled and uses temporary pairing codes when enabled.
 
-The local Windows interface can optionally run over HTTPS. When the local certificate is trusted, the `127.0.0.1` connection is upgraded to HTTPS, while the certificate’s private key remains on the device. To use HTTPS from a phone, download the CA certificate from **Local processing engine → Mobile HTTPS certificate** in the interface. If you do not want to install the certificate, you can continue using the local HTTP connection.
+The application window uses loopback HTTP and needs no certificate installation. Optional LAN HTTPS uses a device-local CA, which can be downloaded from the interface; it is never installed into the system trust store automatically.
 
 ## Termux
 
@@ -108,7 +108,7 @@ Extract the ZIP package and open its directory in Termux. If the package is in A
 
 ```bash
 termux-setup-storage
-cd ~/storage/downloads/APK-Cleaner-Studio-v0.6.2-Termux
+cd ~/storage/downloads/APK-Cleaner-Studio-v0.6.3-Termux
 ```
 
 Run once for the initial installation:

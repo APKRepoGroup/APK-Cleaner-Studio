@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 ANDROID = ROOT / "android"
 APK = Path(os.environ.get(
     "APK_CLEANER_ANDROID_APK",
-    ROOT / "outputs" / "APK-Cleaner-Studio-v0.6.3-dev.7-Android.apk",
+    ROOT / "outputs" / "APK-Cleaner-Studio-v0.6.3-Android.apk",
 ))
 
 
@@ -42,8 +42,8 @@ class AndroidPackageTests(unittest.TestCase):
         gradle = (ANDROID / "app" / "build.gradle").read_text(encoding="utf-8")
         self.assertIn('applicationId "com.apkrepo.apkcleanerstudio"', gradle)
         self.assertNotIn("applicationIdSuffix", gradle)
-        self.assertIn("versionCode 6307", gradle)
-        self.assertIn('versionName "0.6.3-dev.7"', gradle)
+        self.assertIn("versionCode 6310", gradle)
+        self.assertIn('versionName "0.6.3"', gradle)
         self.assertGreaterEqual(gradle.count("signingConfig signingConfigs.studio"), 2)
         self.assertIn("enableV1Signing false", gradle)
         self.assertIn("enableV2Signing true", gradle)

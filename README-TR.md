@@ -1,14 +1,14 @@
-# APK Cleaner Studio v0.6.2
+# APK Cleaner Studio v0.6.3
 
 <p align="center">
   <img src="release-assets/APK-Cleaner-Studio-README-Kapagi.png" alt="APK Cleaner Studio tanıtım kapağı" width="100%">
 </p>
 
-[English README](README-EN.md) · [Termux kurulumu](README-TERMUX.md) · [Kaynaktan derleme](BUILDING.md) · [v0.6.2 sürüm notları](RELEASE-NOTES-v0.6.2.md)
+[English README](README-EN.md) · [Termux kurulumu](README-TERMUX.md) · [Kaynaktan derleme](BUILDING.md) · [v0.6.3 sürüm notları](RELEASE-NOTES-v0.6.3.md)
 
 APK Cleaner Studio; APK, APKS, APKM ve XAPK paketlerini yerel olarak analiz eden, doğrulanmış reklam izlerini temizleyen ve split paketleri tek kurulabilir APK’da birleştiren bir Android paket işleme aracıdır. Kaynak paket değiştirilmez; bütün işlemler yeni bir çıktı dosyası üzerinde gerçekleştirilir.
 
-**Kararlı sürüm:** v0.6.2 · **Motor:** 2.0 · **Platformlar:** Android, Windows ve Termux
+**Kararlı sürüm:** v0.6.3 · **Motor:** 2.0 · **Platformlar:** Android, Windows ve Termux
 
 ## İndirme
 
@@ -16,11 +16,11 @@ Güncel kararlı paketleri [GitHub Releases](https://github.com/APKRepoGroup/APK
 
 | Platform | Paket |
 | --- | --- |
-| Android | `APK-Cleaner-Studio-v0.6.2-Android.apk` |
-| Windows | `APK-Cleaner-Studio-v0.6.2-Windows.exe` |
-| Termux | `APK-Cleaner-Studio-v0.6.2-Termux.zip` |
+| Android | `APK-Cleaner-Studio-v0.6.3-Android.apk` |
+| Windows | `APK-Cleaner-Studio-v0.6.3-Windows.exe` |
+| Termux | `APK-Cleaner-Studio-v0.6.3-Termux.zip` |
 
-İndirdiğin paketi aynı sürümle yayımlanan `SHA256-v0.6.2.txt` dosyasıyla doğrulayabilirsin. Yeniliklerin görsellerle anlatıldığı sürüm özeti [Telegraph sayfasında](https://telegra.ph/APK-Cleaner-Studio-v062--Kararl%C4%B1-S%C3%BCr%C3%BCm-Notlar%C4%B1-09-20) yer alır.
+İndirdiğin paketi aynı sürümle yayımlanan `SHA256-v0.6.3.txt` dosyasıyla doğrulayabilirsin.
 
 ## Neler yapar?
 
@@ -83,7 +83,7 @@ Split paket dönüşümünde ayrıca **Dönüştürme sırasında reklam yaması
 
 ## Android
 
-Android paketi `com.apkrepo.apkcleanerstudio` kimliğini ve `62` sürüm kodunu kullanır. En düşük Android sürümü Android 8.0’dır (API 26). v0.6.2 paketi, aynı kimliğe sahip v0.6.1 kurulumunun üzerine güncellenebilir.
+Android paketi `com.apkrepo.apkcleanerstudio` kimliğini ve `6310` sürüm kodunu kullanır. En düşük Android sürümü Android 8.0’dır (API 26). Aynı yayın anahtarıyla imzalanan v0.6.3 paketi, önceki kararlı sürümün ve dev.1–dev.7 kurulumlarının üzerine güncellenebilir.
 
 Android sürümüne özgü özellikler:
 
@@ -96,11 +96,11 @@ Android sürümüne özgü özellikler:
 
 ## Windows
 
-`APK-Cleaner-Studio-v0.6.2-Windows.exe` dosyasını çalıştırman yeterlidir. Ayrı bir Python kurulumu veya BAT dosyası gerekmez. Java ya da gerekli işlem bileşenleri eksikse arayüzdeki **Eksik bileşenleri hazırla** düğmesi, doğrulanmış taşınabilir araç zincirini kullanıcı klasörüne kurar.
+`APK-Cleaner-Studio-v0.6.3-Windows.exe` dosyasını çalıştırman yeterlidir. Ayrı bir Python kurulumu veya BAT dosyası gerekmez. Java ya da gerekli işlem bileşenleri eksikse arayüzdeki **Eksik bileşenleri hazırla** düğmesi, doğrulanmış taşınabilir araç zincirini kullanıcı klasörüne kurar.
 
-Uygulama varsayılan olarak yerel ağda dinler. Konsolda bu bilgisayar için `127.0.0.1` adresi ve aynı güvenilir ağdaki diğer cihazlar için yerel ağ adresi gösterilir. LAN erişimi kimlik doğrulaması içermez; yalnızca güvendiğin özel ağlarda kullanılmalıdır.
+Windows sürümü konsol veya tarayıcı sekmesi yerine kendi penceresinde açılır. Pencere kapatıldığında motor da kapanır; devam eden işlem varsa önce onay istenir. Yerel ağ erişimi varsayılan olarak kapalıdır ve açıldığında geçici eşleştirme kodu gerekir.
 
-Windows yerel arayüzü isteğe bağlı HTTPS ile çalışabilir. Yerel sertifikaya güven verildiğinde `127.0.0.1` bağlantısı HTTPS’e yükseltilir; sertifikanın özel anahtarı cihazdan çıkarılmaz. Telefonda HTTPS kullanmak için arayüzdeki **Yerel işlem motoru → Mobil HTTPS sertifikası** bölümünden CA sertifikası indirilebilir. Sertifika kurulmak istenmiyorsa yerel HTTP bağlantısı kullanılmaya devam edilebilir.
+Uygulama penceresi yalnızca `127.0.0.1` üzerinde çalışır ve sertifika kurulumu gerektirmez. İsteğe bağlı yerel ağ erişimi için cihazın yerel CA sertifikası arayüzden indirilebilir; güven deposuna otomatik eklenmez.
 
 ## Termux
 
@@ -108,7 +108,7 @@ ZIP paketini çıkardıktan sonra Termux’ta ilgili klasöre gir. Paket Android
 
 ```bash
 termux-setup-storage
-cd ~/storage/downloads/APK-Cleaner-Studio-v0.6.2-Termux
+cd ~/storage/downloads/APK-Cleaner-Studio-v0.6.3-Termux
 ```
 
 İlk kurulumda bir kez:

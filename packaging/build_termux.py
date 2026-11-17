@@ -7,13 +7,13 @@ from pathlib import Path
 from build_java_tools import main as build_java_tools
 
 ROOT = Path(__file__).resolve().parents[1]
-OUTPUT = ROOT / "outputs" / "APK-Cleaner-Studio-v0.6.3-dev.7-Termux.zip"
+OUTPUT = ROOT / "outputs" / "APK-Cleaner-Studio-v0.6.3-Termux.zip"
 ROOT_FILES = (
     "install-termux.sh",
     "README-TERMUX.md",
     "README-TR.md",
     "README.md",
-    "RELEASE-NOTES-v0.6.3-dev.7.md",
+    "RELEASE-NOTES-v0.6.3.md",
     "start-termux.sh",
     "THIRD-PARTY-NOTICES.md",
     "VERSION.txt",

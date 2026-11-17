@@ -55,6 +55,11 @@ class Handler(SimpleHTTPRequestHandler):
             capture = capture_mode(self.path)
             query = parse_qs(request_url.query)
             footer_row = query.get("layout", [""])[0] == "row"
+            if capture == "stable-update-mobile":
+                self.reply('''<!doctype html><html lang="tr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Kararlı sürüm güncellemesi · Mobil</title>
+                <style>html,body{height:100%;margin:0}body{display:grid;grid-template-rows:auto minmax(0,1fr);height:100dvh;overflow:hidden;background:#0d1515;color:#e8efea;font:13px system-ui}header{padding:9px 12px;text-align:center}iframe{display:block;width:min(390px,100%);height:100%;min-height:0;margin:auto;border:0;outline:1px solid #34493f}</style></head>
+                <body><header>Dev.7 → Kararlı v0.6.3 · Örnek bildirim, gerçek indirme yapılmaz.</header><iframe title="Android güncelleme bildirimi" src="/?embedded=android&amp;capture=stable-update&amp;platform=android"></iframe></body></html>''', "text/html")
+                return
             if capture == "dev7-header-mobile":
                 self.reply('''<!doctype html><html lang="tr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Başlık logosu · Mobil önizleme</title>
                 <style>body{margin:0;height:100dvh;display:grid;grid-template-rows:auto minmax(0,1fr);background:#0d1515;color:#e8efea;font:14px system-ui}header{padding:8px 12px;text-align:center}iframe{display:block;width:min(390px,100%);height:100%;margin:auto;border:0;outline:1px solid #34493f}</style></head>
@@ -111,6 +116,9 @@ class Handler(SimpleHTTPRequestHandler):
                 <body><iframe title="Mobil sonuç" src="/?embedded=android&amp;capture=result"></iframe></body></html>''', "text/html")
                 return
             html = (WEB / "index.html").read_text(encoding="utf-8")
+            if capture == "stable-update":
+                html = html.replace('<b>v0.6.3</b> kararlı sürüm', '<b>v0.6.3-dev.7</b> test sürümü')
+                html = html.replace('</body>', '''<script>document.querySelector('#updateDownload').addEventListener('click',event=>{event.preventDefault();event.stopImmediatePropagation();toast('Bu bir görsel önizlemedir. Güncelleme indirilmez veya kurulmaz.');},true);</script></body>''', 1)
             if capture == "dev7-footer" and footer_row:
                 html = html.replace("</head>", '''<style id="qa-footer-row">
                   @media (max-width: 620px) {
@@ -250,7 +258,8 @@ class Handler(SimpleHTTPRequestHandler):
             self.reply(json.dumps({"message": f"Örnek: classes{count}.dex tarandı ({count}/20)",
                                    "progress": 5 + 3 * count, "cancel_requested": job["cancelled"]}))
         elif path == "/api/status":
-            self.reply(json.dumps(dict(toolchain=TOOLS, platform="android", clients=[], channel="dev", version=VERSION, engine_version="2.0")))
+            preview_version = "0.6.3-dev.7" if capture_mode(self.headers.get("Referer", "")) == "stable-update" else VERSION
+            self.reply(json.dumps(dict(toolchain=TOOLS, platform="android", clients=[], channel="dev", version=preview_version, engine_version="2.0")))
         elif path == "/api/history":
             capture = capture_mode(self.headers.get("Referer", ""))
             rows = self.preview_history() if capture in {"dev5-history", "dev5-history-filter"} else []
@@ -264,6 +273,18 @@ class Handler(SimpleHTTPRequestHandler):
             self.reply(json.dumps({"jobs": rows[offset:offset + 20], "total": total, "offset": offset, "limit": 20, "has_more": offset + 20 < total}))
         elif path == "/api/update":
             capture = capture_mode(self.headers.get("Referer", ""))
+            if capture == "stable-update":
+                platform = parse_qs(urlsplit(self.headers.get("Referer", "")).query).get("platform", ["windows"])[0]
+                update = {
+                    "latest_version": "0.6.3", "source": "github", "automatic": True,
+                    "install_mode": "android" if platform == "android" else "windows",
+                    "release_channel": "stable",
+                    "notes": "Yeni sürüm kullanıma hazır. Güncelleme notlarına aşağıdan ulaşabilirsiniz.",
+                    "release_notes": (ROOT / "RELEASE-NOTES-v0.6.3.md").read_text(encoding="utf-8"),
+                    "release_url": "https://example.invalid/preview-only",
+                }
+                self.reply(json.dumps({"available": True, "current_version": "0.6.3-dev.7", "configured": True, "warning": None, "update": update}))
+                return
             update = {
                 "latest_version": "0.6.3-dev.2", "source": "github", "automatic": True,
                 "install_mode": "android", "notes": "Yeni test sürümü kullanıma hazır. Güncelleme notlarına aşağıdan ulaşabilirsiniz.",
@@ -348,6 +369,9 @@ class Handler(SimpleHTTPRequestHandler):
             return
         raw = self.rfile.read(int(self.headers.get("Content-Length", "0")))
         request_path = urlsplit(self.path).path
+        if request_path == "/api/update/apply":
+            self.reply('{"error":"Bu bir görsel önizlemedir. Güncelleme indirilmez veya kurulmaz."}', status=409)
+            return
         if request_path.startswith("/api/analysis/") and request_path.endswith("/cancel"):
             token = request_path.split("/")[-2]
             job = self.preview_jobs.setdefault("analysis-" + token, {"start": time.monotonic(), "cancelled": False})
