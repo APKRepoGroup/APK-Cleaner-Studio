@@ -1873,12 +1873,25 @@ function restoreUpdateNotice() {
 async function checkForUpdates() {
   if (state.updateBusy || state.updateCheckInFlight) return;
   state.updateCheckInFlight = true;
+  const status = $("#updateCheckStatus"), retry = $("#updateCheckRetry");
+  status.textContent = "Güncellemeler denetleniyor.";
+  retry.disabled = true;
   try {
     const response = await apiFetch("/api/update", { cache: "no-store", headers: clientHeaders() });
     const data = await response.json();
     const update = data.update;
-    if (!response.ok) { rememberUpdateLaunch(false); revealUpdateLaunch(); updateNoticeFocusPending = false; return; }
+    if (!response.ok) throw new Error("Güncelleme denetimi tamamlanamadı.");
     if (state.updateBusy) return;
+    status.textContent = data.warning
+      ? "Güncellemeler denetlenemedi. Ağ bağlantısını kontrol edip yeniden deneyin."
+      : data.available && update ? "Yeni sürüm kullanıma hazır."
+        : data.configured === false ? "Güncelleme kanalı yapılandırılmadı." : "Güncel sürümü kullanıyorsunuz.";
+    if (data.warning && (!data.available || !update)) {
+      rememberUpdateLaunch(false);
+      revealUpdateLaunch();
+      updateNoticeFocusPending = false;
+      return;
+    }
     if (!data.available || !update) {
       rememberUpdateLaunch(false);
       revealUpdateLaunch();
@@ -1891,6 +1904,7 @@ async function checkForUpdates() {
     }
     renderAvailableUpdate(update);
   } catch {
+    status.textContent = "Güncellemeler denetlenemedi. Ağ bağlantısını kontrol edip yeniden deneyin.";
     if (!state.updateCheckOnResume) {
       rememberUpdateLaunch(false);
       revealUpdateLaunch();
@@ -1899,6 +1913,7 @@ async function checkForUpdates() {
   }
   finally {
     state.updateCheckInFlight = false;
+    retry.disabled = false;
     if (state.updateCheckOnResume) {
       state.updateCheckOnResume = false;
       if (isUiActive() && !state.updateBusy) checkForUpdates();
@@ -3644,6 +3659,7 @@ containModalTouch("#historyStatusDialog", ".history-status-options");
 $("#historyRetry").addEventListener("click", refreshHistory);
 $("#historyPrevious").addEventListener("click", () => { state.historyGeneration++; state.historyOffset = Math.max(0, state.historyOffset - 20); $("#historyList").scrollTop = 0; refreshHistory(); });
 $("#historyNext").addEventListener("click", () => { state.historyGeneration++; state.historyOffset += 20; $("#historyList").scrollTop = 0; refreshHistory(); });
+$("#updateCheckRetry").addEventListener("click", checkForUpdates);
 checkForUpdates();
 requestBackgroundPolicy();
 $("#batterySettingsButton").addEventListener("click", requestBatteryExemption);

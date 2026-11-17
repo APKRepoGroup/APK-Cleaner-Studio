@@ -3,10 +3,17 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from local_artifact_runtime import _native_ready_address, launch_arguments, local_open
+from local_artifact_runtime import _native_ready_address, launch_arguments, local_open, local_package_server
 
 
 class LocalArtifactRuntimeTests(unittest.TestCase):
+    def test_update_fixture_overrides_cannot_enable_external_requests_or_change_data_root(self):
+        for settings in ({'APK_CLEANER_UPDATE_URL':'https://example.invalid/manifest'},
+                         {'APK_CLEANER_UPDATE_URL':'https://127.0.0.1:1234/manifest', 'APK_CLEANER_DATA_ROOT':'outside'}):
+            with tempfile.TemporaryDirectory() as folder, self.assertRaises(ValueError):
+                with local_package_server(['must-not-be-launched'],folder,update_fixture=settings):
+                    self.fail('An unsafe fixture must never launch a process.')
+
     def test_windows_exe_and_console_server_get_different_arguments(self):
         self.assertEqual(launch_arguments(['studio.exe'], 0, True), ['studio.exe', '--port', '0'])
         self.assertEqual(launch_arguments(['python', 'server.py'], 8021, False),

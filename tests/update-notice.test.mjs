@@ -169,6 +169,28 @@ test('polling preserves the open notes, and an up-to-date installation hides the
   assert.equal(app.state.update, null);
 });
 
+test('failed update checks show a retryable status instead of claiming up to date', async () => {
+  const app = runtime();
+  app.reply({ available: false, update: null, warning: 'Ağ bağlantısı kurulamadı.' });
+  await app.context.checkForUpdates();
+  assert.match(app.get('#updateCheckStatus').textContent, /denetlenemedi/);
+  assert.equal(app.get('#updateCheckRetry').disabled, false);
+  app.reply({ available: true, update });
+  await app.context.checkForUpdates();
+  assert.equal(app.get('#updateNotice').classList.contains('hidden'), false);
+  assert.match(app.get('#updateCheckStatus').textContent, /hazır/);
+});
+
+test('a transient failed check does not erase a previously verified update', async () => {
+  const app = runtime();
+  await app.context.checkForUpdates();
+  app.reply({ available: false, update: null, warning: 'Geçici bağlantı hatası.' });
+  await app.context.checkForUpdates();
+  assert.equal(app.state.update.latest_version, update.latest_version);
+  assert.equal(app.get('#updateNotice').classList.contains('hidden'), false);
+  assert.match(app.get('#updateCheckStatus').textContent, /denetlenemedi/);
+});
+
 test('release headings, lists, emphasis and code are built as safe DOM nodes', () => {
   const app = runtime(); app.context.renderAvailableUpdate(update);
   const nodes = flatten(app.get('#updateReleaseNotesBody'));

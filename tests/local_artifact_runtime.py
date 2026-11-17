@@ -81,13 +81,21 @@ def _wait_port_closed(port):
 
 
 @contextmanager
-def local_package_server(command, folder, *, native=False):
+def local_package_server(command, folder, *, native=False, update_fixture=None):
     folder = Path(folder).resolve()
     data = folder / 'data'
     block_proxy = 'http://127.0.0.1:1'
     environment = dict(os.environ, LOCALAPPDATA=str(folder / 'appdata'), APK_CLEANER_DATA_ROOT=str(data),
                        HTTP_PROXY=block_proxy, HTTPS_PROXY=block_proxy, ALL_PROXY=block_proxy,
                        NO_PROXY='127.0.0.1,localhost', WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=f'--proxy-server={block_proxy}')
+    if update_fixture:
+        if set(update_fixture) - {'APK_CLEANER_UPDATE_URL', 'SSL_CERT_FILE', 'SSLKEYLOGFILE'}:
+            raise ValueError('Only local HTTPS fixture settings may override the child environment.')
+        address = urlsplit(update_fixture.get('APK_CLEANER_UPDATE_URL', ''))
+        if address.scheme != 'https' or address.hostname != '127.0.0.1' or address.username is not None:
+            raise ValueError('Update fixture must use loopback HTTPS.')
+        # Fault injection belongs to the child, not to this test client's TLS.
+        environment.update(update_fixture)
     base = None if native else f'http://127.0.0.1:{_free_port()}'
     port = urlsplit(base).port if base else 0
     session_path = data / 'logs/desktop-session.json'

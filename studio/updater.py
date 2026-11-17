@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import re
 import subprocess
+import ssl
 import sys
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
@@ -28,6 +31,40 @@ SHA256_PATTERN = re.compile(r"^[a-f0-9]{64}$")
 USER_AGENT = "APK-Cleaner-Studio-Updater/2.0"
 MAX_MANIFEST_BYTES = 1024 * 1024
 MAX_ASSET_BYTES = 750 * 1024 * 1024
+
+
+def _windows_https_context() -> ssl.SSLContext:
+    """Use Windows trust without depending on an optional SSL key-log path.
+
+    create_default_context honours SSLKEYLOGFILE and may fail with ENOENT
+    before making a request if another application removed that directory.
+    Updating does not need to write TLS session secrets. Certificate and
+    hostname validation, system trust and configured CA paths stay enabled.
+    """
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    context.minimum_version = ssl.TLSVersion.TLSv1_2
+    context.load_default_certs()
+    context.set_alpn_protocols(["http/1.1"])
+    return context
+
+
+def _open_https(request, timeout):
+    if os.name == "nt":
+        return urllib.request.urlopen(request, timeout=timeout, context=_windows_https_context())
+    return urllib.request.urlopen(request, timeout=timeout)
+
+
+def _update_warning(error: Exception) -> str:
+    if isinstance(error, urllib.error.HTTPError) and error.code in {403, 429}:
+        return "Güncelleme servisi istek sınırına ulaştı. Bir süre sonra yeniden deneyin."
+    reason = getattr(error, "reason", error)
+    if isinstance(reason, ssl.SSLError):
+        return "Güncelleme sunucusunun güvenli bağlantısı doğrulanamadı. Sistem tarihini ve ağ ayarlarını kontrol edin."
+    if isinstance(reason, FileNotFoundError):
+        return "Güncelleme için gerekli bir dosyaya erişilemedi. Uygulamayı kapatıp yeniden açın."
+    if isinstance(reason, OSError):
+        return "Güncelleme sunucusuna bağlanılamadı. Ağ bağlantısını kontrol edip yeniden deneyin."
+    return "Güncelleme bilgisi doğrulanamadı. Daha sonra yeniden deneyin."
 
 
 def version_tuple(value: str) -> tuple[int, int, int, int, int]:
@@ -157,7 +194,7 @@ def _read_json_response(url: str) -> dict | list:
             "X-GitHub-Api-Version": "2022-11-28",
         },
     )
-    with urllib.request.urlopen(request, timeout=8) as response:
+    with _open_https(request, timeout=8) as response:
         final = response.geturl() if hasattr(response, "geturl") else url
         parsed = urllib.parse.urlparse(final)
         if parsed.scheme != "https" or not parsed.netloc:
@@ -308,7 +345,8 @@ def check_for_updates(current_version: str) -> dict:
             request_url = GITHUB_RELEASES_API_URL if "-dev." in current_version and url == GITHUB_API_URL else url
             remote = fetch_remote_update(current_version, request_url)
         except (OSError, ValueError, json.JSONDecodeError) as exc:
-            warning = f"Güncelleme kanalı şu anda kontrol edilemedi: {exc}"
+            logging.getLogger("studio.updater").warning("Güncelleme denetimi başarısız", exc_info=True)
+            warning = _update_warning(exc)
     updates = [item for item in (local, remote) if item]
     selected = max(
         updates,
@@ -320,6 +358,7 @@ def check_for_updates(current_version: str) -> dict:
         "configured": bool(url),
         "update": selected,
         "warning": warning,
+        "check_status": "failed" if warning else "available" if selected else "up_to_date" if url else "unconfigured",
         "channel": "dev" if "-dev." in current_version else "stable",
     }
 
@@ -340,7 +379,7 @@ def _download_verified_asset(update: dict) -> Path:
     digest = hashlib.sha256()
     request = urllib.request.Request(address, headers={"User-Agent": USER_AGENT, "Accept": "application/octet-stream"})
     try:
-        with urllib.request.urlopen(request, timeout=30) as response:
+        with _open_https(request, timeout=30) as response:
             final = response.geturl() if hasattr(response, "geturl") else address
             if not _trusted_download_redirect(final):
                 raise ValueError("Güncelleme paketi güvenilir olmayan bir adrese yönlendirildi.")
